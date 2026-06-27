@@ -295,7 +295,7 @@ export default function LoginView({ onLoginSuccess, currentLanguage, onLanguageC
           </form>
 
           {/* Quick entry / public testing selector */}
-          {availableUsers.length > 0 && (
+          {availableUsers.filter(u => u.username.toLowerCase() !== 'owner').length > 0 && (
             <div className="border-t border-slate-800 pt-5 space-y-3">
               <div className="flex items-center gap-2 text-blue-400">
                 <Users size={14} className="stroke-[2.5]" />
@@ -304,7 +304,7 @@ export default function LoginView({ onLoginSuccess, currentLanguage, onLanguageC
               <p className="text-[10px] text-slate-500 font-bold leading-relaxed">{t.publicAccessSub}</p>
               
               <div className="grid grid-cols-2 gap-2">
-                {availableUsers.map((user) => (
+                {availableUsers.filter(u => u.username.toLowerCase() !== 'owner').map((user) => (
                   <button
                     key={user.username}
                     type="button"
