@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, KeyRound, User as UserIcon, AlertCircle, RefreshCw, Globe } from 'lucide-react';
+import { Shield, KeyRound, User as UserIcon, AlertCircle, RefreshCw, Globe, Share2, Check, Users } from 'lucide-react';
 import { User } from '../types';
 
 interface LoginViewProps {
@@ -13,8 +13,10 @@ export default function LoginView({ onLoginSuccess, currentLanguage, onLanguageC
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [availableUsers, setAvailableUsers] = useState<any[]>([]);
+  const [shareCopied, setShareCopied] = useState(false);
 
-  // Silently pre-fetch and cache users list for offline availability
+  // Silently pre-fetch and cache users list for offline availability and public display
   useEffect(() => {
     const cacheUsers = async () => {
       try {
@@ -22,13 +24,41 @@ export default function LoginView({ onLoginSuccess, currentLanguage, onLanguageC
         if (response.ok) {
           const data = await response.json();
           localStorage.setItem('wms_cached_users', JSON.stringify(data));
+          setAvailableUsers(data);
+        } else {
+          // fallback to localStorage cache
+          const cachedUsersStr = localStorage.getItem('wms_cached_users');
+          if (cachedUsersStr) {
+            setAvailableUsers(JSON.parse(cachedUsersStr));
+          }
         }
       } catch (err) {
         console.warn('Unable to sync users list for offline use, using existing cache:', err);
+        const cachedUsersStr = localStorage.getItem('wms_cached_users');
+        if (cachedUsersStr) {
+          try {
+            setAvailableUsers(JSON.parse(cachedUsersStr));
+          } catch (e) {}
+        }
       }
     };
     cacheUsers();
   }, []);
+
+  const getDeviceId = () => {
+    let devId = localStorage.getItem('wms_device_id');
+    if (!devId) {
+      devId = 'device-' + Math.random().toString(36).substring(2, 15) + '-' + Date.now();
+      localStorage.setItem('wms_device_id', devId);
+    }
+    return devId;
+  };
+
+  const handleCopyShareLink = () => {
+    navigator.clipboard.writeText(window.location.href);
+    setShareCopied(true);
+    setTimeout(() => setShareCopied(false), 3000);
+  };
 
   const t = {
     ar: {
@@ -46,6 +76,10 @@ export default function LoginView({ onLoginSuccess, currentLanguage, onLanguageC
       emptyError: 'يرجى إدخال اسم المستخدم وكلمة المرور',
       offlineError: 'تم تسجيل الدخول محلياً (وضع أوفلاين) - تعذر الاتصال بالخادم السحابي.',
       invalidError: 'اسم المستخدم أو كلمة المرور غير صحيحة',
+      shareBtn: 'مشاركة التطبيق ودعوة الآخرين 🔗',
+      shareCopiedText: 'تم نسخ رابط التطبيق بنجاح! جاهز للمشاركة 🚀',
+      publicAccessTitle: 'المستخدمين النشطين (الدخول العام السريع) 🌐',
+      publicAccessSub: 'اختر أي حساب للدخول المباشر واختبار مميزات النظام:',
     },
     en: {
       title: 'Al-Mada Smart WMS',
@@ -62,6 +96,10 @@ export default function LoginView({ onLoginSuccess, currentLanguage, onLanguageC
       emptyError: 'Please enter both username and password',
       offlineError: 'Logged in locally (Offline mode) - Could not contact cloud server.',
       invalidError: 'Incorrect username or password',
+      shareBtn: 'Share App & Invite Others 🔗',
+      shareCopiedText: 'App link copied to clipboard! Ready to share 🚀',
+      publicAccessTitle: 'Public Entry Accounts 🌐',
+      publicAccessSub: 'Select any user to auto-fill credentials & log in instantly:',
     },
   }[currentLanguage];
 
@@ -78,11 +116,11 @@ export default function LoginView({ onLoginSuccess, currentLanguage, onLanguageC
     }
 
     try {
-      // 1. Try server-side authentication first
+      // 1. Try server-side authentication with deviceId support
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: trimmedUser, password }),
+        body: JSON.stringify({ username: trimmedUser, password, deviceId: getDeviceId() }),
       });
 
       const data = await response.json();
@@ -127,12 +165,27 @@ export default function LoginView({ onLoginSuccess, currentLanguage, onLanguageC
     }
   };
 
+  const selectPublicUser = (user: any) => {
+    setUsername(user.username);
+    setPassword(user.password || '');
+    setError(null);
+  };
+
   const isRtl = currentLanguage === 'ar';
 
   return (
     <div className={`min-h-screen bg-slate-950 flex flex-col justify-center items-center px-4 py-12 font-sans relative overflow-hidden selection:bg-blue-500/30 selection:text-blue-300`} dir={isRtl ? 'rtl' : 'ltr'}>
-      {/* Language Toggle Button on top right/left */}
-      <div className={`absolute top-6 ${isRtl ? 'left-6' : 'right-6'} z-50`}>
+      {/* Language Toggle & Share Button */}
+      <div className={`absolute top-6 ${isRtl ? 'left-6' : 'right-6'} z-50 flex items-center gap-3`}>
+        <button
+          onClick={handleCopyShareLink}
+          className="bg-emerald-950/80 hover:bg-emerald-900 text-emerald-400 border border-emerald-800/60 p-2.5 px-4 rounded-2xl transition-all cursor-pointer flex items-center gap-2 text-xs font-black shadow-lg"
+          title={t.shareBtn}
+        >
+          {shareCopied ? <Check size={16} className="text-emerald-400 animate-bounce" /> : <Share2 size={16} className="text-emerald-400" />}
+          <span>{shareCopied ? (isRtl ? 'تم النسخ!' : 'Copied!') : (isRtl ? 'مشاركة التطبيق 🔗' : 'Share App 🔗')}</span>
+        </button>
+
         <button
           onClick={() => onLanguageChange(currentLanguage === 'ar' ? 'en' : 'ar')}
           className="bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 hover:border-slate-700 p-2.5 px-4 rounded-2xl transition-all cursor-pointer flex items-center gap-2 text-xs font-bold shadow-lg"
@@ -150,7 +203,7 @@ export default function LoginView({ onLoginSuccess, currentLanguage, onLanguageC
       <div className="absolute top-1/4 left-1/4 -translate-x-1/2 -translate-y-1/2 w-80 h-80 bg-blue-600/10 rounded-full blur-3xl"></div>
       <div className="absolute bottom-1/4 right-1/4 translate-x-1/2 translate-y-1/2 w-96 h-96 bg-purple-600/10 rounded-full blur-3xl"></div>
 
-      <div className="w-full max-w-md relative z-10 space-y-8 animate-fade-in">
+      <div className="w-full max-w-md relative z-10 space-y-6 animate-fade-in">
         {/* Title and Branding */}
         <div className="text-center space-y-3">
           <div className="inline-flex bg-gradient-to-tr from-blue-600 to-indigo-500 text-white p-3.5 rounded-3xl shadow-xl shadow-blue-500/10 border border-blue-400/20 hover:scale-105 transition-all">
@@ -161,6 +214,13 @@ export default function LoginView({ onLoginSuccess, currentLanguage, onLanguageC
             <p className="text-slate-400 text-xs font-bold">{t.sub}</p>
           </div>
         </div>
+
+        {/* Share Banner Alert */}
+        {shareCopied && (
+          <div className="bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-bold p-4 rounded-2xl text-center animate-bounce shadow-lg">
+            {t.shareCopiedText}
+          </div>
+        )}
 
         {/* Login Form Card */}
         <div className="bg-slate-900/80 border border-slate-800/80 backdrop-blur-xl rounded-3xl shadow-2xl p-7 space-y-6">
@@ -233,6 +293,42 @@ export default function LoginView({ onLoginSuccess, currentLanguage, onLanguageC
               )}
             </button>
           </form>
+
+          {/* Quick entry / public testing selector */}
+          {availableUsers.length > 0 && (
+            <div className="border-t border-slate-800 pt-5 space-y-3">
+              <div className="flex items-center gap-2 text-blue-400">
+                <Users size={14} className="stroke-[2.5]" />
+                <span className="text-[11px] font-black uppercase tracking-wider">{t.publicAccessTitle}</span>
+              </div>
+              <p className="text-[10px] text-slate-500 font-bold leading-relaxed">{t.publicAccessSub}</p>
+              
+              <div className="grid grid-cols-2 gap-2">
+                {availableUsers.map((user) => (
+                  <button
+                    key={user.username}
+                    type="button"
+                    onClick={() => selectPublicUser(user)}
+                    className={`p-2.5 rounded-xl border transition-all text-right cursor-pointer flex flex-col justify-between ${
+                      username === user.username
+                        ? 'bg-blue-600/15 border-blue-500/50 text-blue-300'
+                        : 'bg-slate-950 hover:bg-slate-900 border-slate-800/80 hover:border-slate-700 text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    <span className="text-[11px] font-black">{user.username}</span>
+                    <span className="text-[9px] font-bold text-slate-500 mt-1">
+                      {currentLanguage === 'ar' ? 'صلاحية:' : 'Role:'} {user.role}
+                    </span>
+                    {user.maxDevices && (
+                      <span className="text-[8px] font-medium text-slate-600 mt-0.5">
+                        {currentLanguage === 'ar' ? `الأجهزة: ${user.maxDevices}` : `Devices: ${user.maxDevices}`}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Footer info */}
@@ -243,4 +339,3 @@ export default function LoginView({ onLoginSuccess, currentLanguage, onLanguageC
     </div>
   );
 }
-

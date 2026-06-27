@@ -26,7 +26,8 @@ function readDB() {
           warehouses: "write",
           transfers: "write"
         },
-        warehouseId: "WH-001"
+        warehouseId: "WH-001",
+        maxDevices: 10
       }
     ],
     warehouseData: {
@@ -162,6 +163,17 @@ function readDB() {
           createdBy: 'Owner',
           handledBy: 'admin',
         }
+      ],
+      auditLogs: [
+        {
+          id: 'log-1',
+          username: 'System',
+          role: 'Owner',
+          action: 'other',
+          entityType: 'system',
+          details: 'تهيئة النظام وتثبيت الإعدادات الافتراضية للمستودع',
+          date: '2026-06-27T10:00:00.000Z'
+        }
       ]
     }
   };
@@ -195,6 +207,9 @@ function readDB() {
     if (!db.warehouseData.transfers) {
       db.warehouseData.transfers = defaultDB.warehouseData.transfers;
     }
+    if (!db.warehouseData.auditLogs) {
+      db.warehouseData.auditLogs = defaultDB.warehouseData.auditLogs;
+    }
 
     // Support admin account by default if not exists, for testing manager flow
     const hasAdmin = db.users.some((u: any) => u.username.toLowerCase() === "admin");
@@ -212,7 +227,8 @@ function readDB() {
           warehouses: "write",
           transfers: "write"
         },
-        warehouseId: "WH-002"
+        warehouseId: "WH-002",
+        maxDevices: 5
       });
     }
 
@@ -234,6 +250,9 @@ function readDB() {
       }
       if (!u.warehouseId) {
         u.warehouseId = u.username.toLowerCase() === "owner" ? "WH-001" : "WH-002";
+      }
+      if (!u.maxDevices) {
+        u.maxDevices = u.role === "Owner" ? 10 : (u.role === "Admin" ? 5 : 1);
       }
     });
 
@@ -259,9 +278,12 @@ readDB();
 
 // API Endpoints
 
+// Active sessions tracker: username -> array of active deviceIds
+const activeSessions: Record<string, string[]> = {};
+
 // Login endpoint
 app.post("/api/auth/login", (req, res) => {
-  const { username, password } = req.body;
+  const { username, password, deviceId } = req.body;
   if (!username || !password) {
     return res.status(400).json({ success: false, error: "اسم المستخدم وكلمة المرور مطلوبة" });
   }
@@ -275,15 +297,77 @@ app.post("/api/auth/login", (req, res) => {
     return res.status(401).json({ success: false, error: "اسم المستخدم أو كلمة المرور غير صحيحة" });
   }
 
+  // Enforce maxDevices limit
+  const uName = user.username.toLowerCase();
+  const maxDevices = user.maxDevices || 1;
+  
+  if (!activeSessions[uName]) {
+    activeSessions[uName] = [];
+  }
+
+  if (deviceId) {
+    const hasDevice = activeSessions[uName].includes(deviceId);
+    if (!hasDevice) {
+      if (activeSessions[uName].length >= maxDevices) {
+        return res.status(403).json({
+          success: false,
+          error: `⚠️ عذراً، تجاوزت الحد الأقصى للأجهزة المفتوحة في نفس الوقت لهذا الحساب وهو (${maxDevices}) أجهزة.`
+        });
+      }
+      activeSessions[uName].push(deviceId);
+    }
+  }
+
   res.json({
     success: true,
     user: {
       username: user.username,
       role: user.role,
       permissions: user.permissions,
-      warehouseId: user.warehouseId
+      warehouseId: user.warehouseId,
+      maxDevices: user.maxDevices || 1
     }
   });
+});
+
+// Verify password endpoint for critical operations (like database reset)
+app.post("/api/auth/verify-reset", (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) {
+    return res.status(400).json({ success: false, error: "البيانات ناقصة" });
+  }
+
+  const db = readDB();
+  const user = db.users.find(
+    (u: any) => u.username.toLowerCase() === username.trim().toLowerCase() && u.password === password
+  );
+
+  if (!user) {
+    return res.status(401).json({ success: false, error: "كلمة المرور غير صحيحة للتأكيد" });
+  }
+
+  res.json({ success: true });
+});
+
+// Logout / session release endpoint
+app.post("/api/auth/logout", (req, res) => {
+  const { username, deviceId } = req.body;
+  if (username && deviceId) {
+    const uName = username.toLowerCase();
+    if (activeSessions[uName]) {
+      activeSessions[uName] = activeSessions[uName].filter(id => id !== deviceId);
+    }
+  }
+  res.json({ success: true });
+});
+
+// Reset sessions for user
+app.post("/api/auth/reset-sessions", (req, res) => {
+  const { username } = req.body;
+  if (username) {
+    activeSessions[username.toLowerCase()] = [];
+  }
+  res.json({ success: true });
 });
 
 // Users management endpoints (List Users)
@@ -294,14 +378,16 @@ app.get("/api/users", (req, res) => {
     role: u.role,
     permissions: u.permissions,
     warehouseId: u.warehouseId,
-    password: u.password // included for easy management in this local tool
+    password: u.password, // included for easy management in this local tool
+    maxDevices: u.maxDevices || 1,
+    activeDevicesCount: activeSessions[u.username.toLowerCase()]?.length || 0
   }));
   res.json(safeUsers);
 });
 
 // Create user
 app.post("/api/users", (req, res) => {
-  const { username, password, role, permissions, warehouseId } = req.body;
+  const { username, password, role, permissions, warehouseId, maxDevices } = req.body;
   if (!username || !password || !role || !permissions) {
     return res.status(400).json({ success: false, error: "جميع حقول المستخدم مطلوبة" });
   }
@@ -317,7 +403,8 @@ app.post("/api/users", (req, res) => {
     password,
     role,
     permissions,
-    warehouseId: warehouseId || "WH-001"
+    warehouseId: warehouseId || "WH-001",
+    maxDevices: Number(maxDevices) || 1
   };
 
   db.users.push(newUser);
@@ -329,7 +416,8 @@ app.post("/api/users", (req, res) => {
       username: newUser.username, 
       role: newUser.role, 
       permissions: newUser.permissions,
-      warehouseId: newUser.warehouseId
+      warehouseId: newUser.warehouseId,
+      maxDevices: newUser.maxDevices
     } 
   });
 });
@@ -337,7 +425,7 @@ app.post("/api/users", (req, res) => {
 // Update user
 app.put("/api/users/:username", (req, res) => {
   const targetUsername = req.params.username;
-  const { password, role, permissions, warehouseId } = req.body;
+  const { password, role, permissions, warehouseId, maxDevices } = req.body;
 
   const db = readDB();
   const userIndex = db.users.findIndex((u: any) => u.username.toLowerCase() === targetUsername.toLowerCase());
@@ -350,11 +438,13 @@ app.put("/api/users/:username", (req, res) => {
   if (targetUsername.toLowerCase() === "owner") {
     if (password) db.users[userIndex].password = password;
     if (warehouseId) db.users[userIndex].warehouseId = warehouseId;
+    if (maxDevices !== undefined) db.users[userIndex].maxDevices = Number(maxDevices);
   } else {
     if (password) db.users[userIndex].password = password;
     if (role) db.users[userIndex].role = role;
     if (permissions) db.users[userIndex].permissions = permissions;
     if (warehouseId) db.users[userIndex].warehouseId = warehouseId;
+    if (maxDevices !== undefined) db.users[userIndex].maxDevices = Number(maxDevices);
   }
 
   writeDB(db);
@@ -364,7 +454,8 @@ app.put("/api/users/:username", (req, res) => {
       username: db.users[userIndex].username, 
       role: db.users[userIndex].role, 
       permissions: db.users[userIndex].permissions,
-      warehouseId: db.users[userIndex].warehouseId
+      warehouseId: db.users[userIndex].warehouseId,
+      maxDevices: db.users[userIndex].maxDevices || 1
     } 
   });
 });
@@ -396,7 +487,7 @@ app.get("/api/sync/pull", (req, res) => {
 
 // Data Push / Sync
 app.post("/api/sync/push", (req, res) => {
-  const { items, movements, suppliers, warehouses, transfers, groups } = req.body;
+  const { items, movements, suppliers, warehouses, transfers, auditLogs, groups } = req.body;
   if (!items || !movements || !suppliers) {
     return res.status(400).json({ success: false, error: "بيانات المزامنة غير مكتملة" });
   }
@@ -410,6 +501,7 @@ app.post("/api/sync/push", (req, res) => {
     suppliers,
     warehouses: warehouses || db.warehouseData.warehouses || [],
     transfers: transfers || db.warehouseData.transfers || [],
+    auditLogs: auditLogs || db.warehouseData.auditLogs || [],
     groups: groups || db.warehouseData.groups || []
   };
 

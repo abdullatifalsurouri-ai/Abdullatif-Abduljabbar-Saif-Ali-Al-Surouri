@@ -19,7 +19,7 @@ import {
   Lock,
   Unlock
 } from 'lucide-react';
-import { Item, Movement, Supplier } from '../types';
+import { Item, Movement, Supplier, User } from '../types';
 
 interface HomeViewProps {
   items: Item[];
@@ -31,6 +31,7 @@ interface HomeViewProps {
   onOpenSuppliers: () => void;
   onImportData: (items: Item[], suppliers: Supplier[], movements: Movement[]) => void;
   onResetData: () => void;
+  currentUser: User;
 }
 
 export default function HomeView({
@@ -43,6 +44,7 @@ export default function HomeView({
   onOpenSuppliers,
   onImportData,
   onResetData,
+  currentUser,
 }: HomeViewProps) {
   // PWA installation state
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
@@ -55,6 +57,9 @@ export default function HomeView({
   // Data management state
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [showConfirmReset, setShowConfirmReset] = useState(false);
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [isResetting, setIsResetting] = useState(false);
 
   useEffect(() => {
     if (toast) {
@@ -550,22 +555,68 @@ export default function HomeView({
             <div className="space-y-1.5">
               <h4 className="font-extrabold text-slate-800 text-base">مسح وإعادة تعيين المستودع؟</h4>
               <p className="text-xs text-slate-500 font-semibold leading-relaxed">
-                سيتم حذف كافة الأصناف الحالية والحركات والبيانات المسجلة، وإعادتها للحالة الافتراضية. هل أنت متأكد من رغبتك بالاستمرار؟
+                سيتم حذف كافة الأصناف الحالية والحركات والبيانات المسجلة، وإعادتها للحالة الافتراضية. هذا الإجراء لا يمكن التراجع عنه!
               </p>
             </div>
+            
+            <div className="space-y-2 pt-1">
+              <label className="block text-[10px] font-black text-slate-500">كلمة المرور لتأكيد الهوية والمسح *</label>
+              <input
+                type="password"
+                placeholder="أدخل كلمة مرور حسابك للتأكيد"
+                value={confirmPassword}
+                onChange={(e) => {
+                  setConfirmPassword(e.target.value);
+                  setPasswordError(null);
+                }}
+                className="w-full bg-slate-50 border border-slate-200 text-xs px-3.5 py-3 rounded-xl font-mono text-right outline-hidden focus:border-red-500 focus:bg-white"
+              />
+              {passwordError && (
+                <p className="text-[10px] text-red-500 font-bold">{passwordError}</p>
+              )}
+            </div>
+
             <div className="flex gap-2.5 pt-2">
               <button
-                onClick={() => {
-                  onResetData();
-                  setShowConfirmReset(false);
-                  setToast({ message: 'تم مسح البيانات وإعادة تعيين المستودع بنجاح.', type: 'success' });
+                disabled={isResetting}
+                onClick={async () => {
+                  if (!confirmPassword) {
+                    setPasswordError('يرجى إدخال كلمة المرور للتأكيد');
+                    return;
+                  }
+                  setIsResetting(true);
+                  setPasswordError(null);
+                  try {
+                    const response = await fetch('/api/auth/verify-reset', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ username: currentUser.username, password: confirmPassword })
+                    });
+                    const data = await response.json();
+                    if (response.ok && data.success) {
+                      onResetData();
+                      setShowConfirmReset(false);
+                      setConfirmPassword('');
+                      setToast({ message: 'تم مسح البيانات وإعادة تعيين المستودع بنجاح.', type: 'success' });
+                    } else {
+                      setPasswordError(data.error || 'كلمة المرور غير صحيحة للتأكيد');
+                    }
+                  } catch (err) {
+                    setPasswordError('خطأ في الاتصال بالخادم للتأكيد');
+                  } finally {
+                    setIsResetting(false);
+                  }
                 }}
-                className="flex-1 bg-red-600 hover:bg-red-700 text-white font-extrabold text-xs py-3 rounded-xl transition-all cursor-pointer"
+                className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white font-extrabold text-xs py-3 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1"
               >
-                نعم، احذف وأعد التعيين
+                {isResetting ? 'جاري التحقق...' : 'نعم، احذف وأعد التعيين'}
               </button>
               <button
-                onClick={() => setShowConfirmReset(false)}
+                onClick={() => {
+                  setShowConfirmReset(false);
+                  setConfirmPassword('');
+                  setPasswordError(null);
+                }}
                 className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xs py-3 rounded-xl transition-all cursor-pointer"
               >
                 إلغاء

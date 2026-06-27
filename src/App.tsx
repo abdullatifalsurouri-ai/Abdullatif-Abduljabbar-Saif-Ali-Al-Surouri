@@ -14,7 +14,13 @@ import {
   CloudCheck,
   RefreshCw,
   Warehouse as WarehouseIcon,
-  Bell
+  Bell,
+  Maximize,
+  Minimize,
+  MoreHorizontal,
+  ChevronUp,
+  ChevronDown,
+  Layers
 } from 'lucide-react';
 import { 
   TabType, 
@@ -24,11 +30,13 @@ import {
   User,
   Warehouse,
   WarehouseTransfer,
+  AuditLogEntry,
   INITIAL_ITEMS, 
   INITIAL_SUPPLIERS, 
   INITIAL_MOVEMENTS,
   INITIAL_WAREHOUSES,
-  INITIAL_TRANSFERS
+  INITIAL_TRANSFERS,
+  INITIAL_AUDIT_LOGS
 } from './types';
 
 // Import our modular subviews
@@ -72,6 +80,7 @@ export default function App() {
   }, [currentUser]);
 
   const [activeTab, setActiveTab] = useState<TabType>('home');
+  const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
   const [isSuppliersOpen, setIsSuppliersOpen] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
     return localStorage.getItem('wms_theme') === 'dark';
@@ -79,6 +88,31 @@ export default function App() {
   const [currentLanguage, setCurrentLanguage] = useState<'ar' | 'en'>(() => {
     return (localStorage.getItem('wms_lang') as 'ar' | 'en') || 'ar';
   });
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().then(() => {
+        setIsFullscreen(true);
+      }).catch((err) => {
+        console.error('Error attempting to enable fullscreen:', err);
+      });
+    } else {
+      document.exitFullscreen().then(() => {
+        setIsFullscreen(false);
+      }).catch((err) => {
+        console.error('Error attempting to exit fullscreen:', err);
+      });
+    }
+  };
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
 
   // Centralized State loaded with localStorage persistence
   const [items, setItems] = useState<Item[]>(() => {
@@ -104,6 +138,11 @@ export default function App() {
   const [transfers, setTransfers] = useState<WarehouseTransfer[]>(() => {
     const saved = localStorage.getItem('wms_transfers');
     return saved ? JSON.parse(saved) : INITIAL_TRANSFERS;
+  });
+
+  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>(() => {
+    const saved = localStorage.getItem('wms_audit_logs');
+    return saved ? JSON.parse(saved) : INITIAL_AUDIT_LOGS;
   });
 
   const [isDataLocked, setIsDataLocked] = useState<boolean>(() => {
@@ -191,6 +230,10 @@ export default function App() {
           setTransfers(data.transfers);
           localStorage.setItem('wms_transfers', JSON.stringify(data.transfers));
         }
+        if (data.auditLogs) {
+          setAuditLogs(data.auditLogs);
+          localStorage.setItem('wms_audit_logs', JSON.stringify(data.auditLogs));
+        }
         
         const syncTime = new Date().toLocaleString('ar-SA', { hour12: true });
         setLastSyncTime(syncTime);
@@ -226,6 +269,7 @@ export default function App() {
     currentMovements = movements,
     currentWarehouses = warehouses,
     currentTransfers = transfers,
+    currentAuditLogs = auditLogs,
     showToast = false
   ) => {
     if (!isOnline) {
@@ -248,7 +292,8 @@ export default function App() {
           suppliers: currentSuppliers,
           movements: currentMovements,
           warehouses: currentWarehouses,
-          transfers: currentTransfers
+          transfers: currentTransfers,
+          auditLogs: currentAuditLogs
         })
       });
       if (response.ok) {
@@ -288,7 +333,7 @@ export default function App() {
       'info'
     );
     // First push local data, then pull latest to ensure everyone is unified
-    const pushOk = await pushDataToServer(items, suppliers, movements, warehouses, transfers, false);
+    const pushOk = await pushDataToServer(items, suppliers, movements, warehouses, transfers, auditLogs, false);
     const pullOk = await pullDataFromServer(false);
     
     if (pushOk && pullOk) {
@@ -329,11 +374,11 @@ export default function App() {
   useEffect(() => {
     if (currentUser && isOnline) {
       const delayFn = setTimeout(() => {
-        pushDataToServer(items, suppliers, movements, warehouses, transfers);
+        pushDataToServer(items, suppliers, movements, warehouses, transfers, auditLogs);
       }, 1500); // 1.5 seconds debounce
       return () => clearTimeout(delayFn);
     }
-  }, [items, suppliers, movements, warehouses, transfers, isOnline, currentUser]);
+  }, [items, suppliers, movements, warehouses, transfers, auditLogs, isOnline, currentUser]);
 
   // Sync state with localStorage
   useEffect(() => {
@@ -355,6 +400,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('wms_transfers', JSON.stringify(transfers));
   }, [transfers]);
+
+  useEffect(() => {
+    localStorage.setItem('wms_audit_logs', JSON.stringify(auditLogs));
+  }, [auditLogs]);
 
   useEffect(() => {
     localStorage.setItem('wms_is_data_locked', String(isDataLocked));
@@ -381,9 +430,34 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    if (currentUser) {
+      const devId = localStorage.getItem('wms_device_id');
+      fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: currentUser.username, deviceId: devId }),
+      }).catch(err => console.error('Error release device session on server:', err));
+    }
     localStorage.removeItem('wms_current_user');
     setCurrentUser(null);
     setActiveTab('home');
+  };
+
+  const logAction = (
+    action: 'add' | 'edit' | 'delete' | 'sync' | 'import' | 'other',
+    entityType: 'items' | 'movements' | 'suppliers' | 'warehouses' | 'transfers' | 'system',
+    details: string
+  ) => {
+    const newLog: AuditLogEntry = {
+      id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+      username: currentUser?.username || 'Guest',
+      role: currentUser?.role || 'Viewer',
+      action,
+      entityType,
+      details,
+      date: new Date().toISOString(),
+    };
+    setAuditLogs((prev) => [newLog, ...prev]);
   };
 
   // User permission-aware lock status calculations
@@ -398,6 +472,7 @@ export default function App() {
   const handleAddItem = (item: Item) => {
     if (itemsLocked) return;
     setItems((prev) => [...prev, item]);
+    logAction('add', 'items', `إضافة صنف جديد: ${item.name} (رمز: ${item.id}) بسعر ${item.price} ر.س`);
     addToast(
       currentLanguage === 'ar' 
         ? `تم إضافة الصنف "${item.name}" بنجاح وجاري التزامن...` 
@@ -406,9 +481,22 @@ export default function App() {
     );
   };
 
+  const handleImportItems = (newItems: Item[]) => {
+    if (itemsLocked) return;
+    setItems((prev) => [...prev, ...newItems]);
+    logAction('import', 'items', `استيراد قائمة أصناف جديدة بعدد ${newItems.length} صنف من ملف CSV/Excel`);
+    addToast(
+      currentLanguage === 'ar' 
+        ? `تم استيراد ${newItems.length} صنف بنجاح وجاري التزامن...` 
+        : `Successfully imported ${newItems.length} items. Syncing...`, 
+      'success'
+    );
+  };
+
   const handleEditItem = (updatedItem: Item) => {
     if (itemsLocked) return;
     setItems((prev) => prev.map((item) => (item.id === updatedItem.id ? updatedItem : item)));
+    logAction('edit', 'items', `تعديل الصنف: ${updatedItem.name} (رمز: ${updatedItem.id})`);
     addToast(
       currentLanguage === 'ar' 
         ? `تم تحديث الصنف "${updatedItem.name}" بنجاح وجاري التزامن...` 
@@ -419,8 +507,10 @@ export default function App() {
 
   const handleDeleteItem = (id: string) => {
     if (itemsLocked) return;
+    const deletedItem = items.find((item) => item.id === id);
     setItems((prev) => prev.filter((item) => item.id !== id));
     setMovements((prev) => prev.filter((m) => m.itemId !== id));
+    logAction('delete', 'items', `حذف الصنف: ${deletedItem?.name || id} (رمز: ${id}) وجميع حركاته المخزنية`);
     addToast(
       currentLanguage === 'ar' 
         ? 'تم حذف الصنف والحركات المتعلقة به بنجاح!' 
@@ -433,6 +523,13 @@ export default function App() {
   const handleAddMovement = (movement: Movement) => {
     if (movementsLocked) return;
     setMovements((prev) => [...prev, movement]);
+    const item = items.find((i) => i.id === movement.itemId);
+    const typeStr = movement.type === 'in' ? 'وارد' : 'صرف';
+    logAction(
+      'add',
+      'movements',
+      `تسجيل حركة ${typeStr} للصنف: ${item?.name || movement.itemId} بكمية ${movement.quantity} ${item?.unit || 'حبة'} من/إلى ${movement.partner}`
+    );
     addToast(
       currentLanguage === 'ar' 
         ? `تم تسجيل الحركة المخزنية بنجاح وجاري التزامن...` 
@@ -443,7 +540,10 @@ export default function App() {
 
   const handleDeleteMovement = (id: number) => {
     if (movementsLocked) return;
+    const deletedMov = movements.find((m) => m.id === id);
+    const item = items.find((i) => i.id === deletedMov?.itemId);
     setMovements((prev) => prev.filter((m) => m.id !== id));
+    logAction('delete', 'movements', `حذف حركة مخزنية رقم #${id} للصنف: ${item?.name || deletedMov?.itemId || ''}`);
     addToast(
       currentLanguage === 'ar' 
         ? `تم حذف الحركة المخزنية #${id} بنجاح` 
@@ -456,6 +556,7 @@ export default function App() {
   const handleAddSupplier = (supplier: Supplier) => {
     if (suppliersLocked) return;
     setSuppliers((prev) => [...prev, supplier]);
+    logAction('add', 'suppliers', `إضافة المورد الجديد: ${supplier.name} (رمز: ${supplier.id})`);
     addToast(
       currentLanguage === 'ar' 
         ? `تم إضافة المورد "${supplier.name}" بنجاح وجاري التزامن...` 
@@ -467,6 +568,7 @@ export default function App() {
   const handleEditSupplier = (updatedSupplier: Supplier) => {
     if (suppliersLocked) return;
     setSuppliers((prev) => prev.map((s) => (s.id === updatedSupplier.id ? updatedSupplier : s)));
+    logAction('edit', 'suppliers', `تعديل بيانات المورد: ${updatedSupplier.name} (رمز: ${updatedSupplier.id})`);
     addToast(
       currentLanguage === 'ar' 
         ? `تم تحديث المورد "${updatedSupplier.name}" بنجاح وجاري التزامن...` 
@@ -477,7 +579,9 @@ export default function App() {
 
   const handleDeleteSupplier = (id: string) => {
     if (suppliersLocked) return;
+    const deletedSup = suppliers.find((s) => s.id === id);
     setSuppliers((prev) => prev.filter((s) => s.id !== id));
+    logAction('delete', 'suppliers', `حذف المورد: ${deletedSup?.name || id}`);
     addToast(
       currentLanguage === 'ar' 
         ? 'تم حذف المورد بنجاح!' 
@@ -490,6 +594,7 @@ export default function App() {
   const handleAddWarehouse = (warehouse: Warehouse) => {
     if (warehousesLocked) return;
     setWarehouses((prev) => [...prev, warehouse]);
+    logAction('add', 'warehouses', `إضافة مستودع جديد: ${warehouse.name} (رمز: ${warehouse.id}) بإدارة ${warehouse.manager}`);
     addToast(
       currentLanguage === 'ar' 
         ? `تم إضافة المستودع "${warehouse.name}" بنجاح وجاري التزامن...` 
@@ -501,6 +606,7 @@ export default function App() {
   const handleEditWarehouse = (updatedWarehouse: Warehouse) => {
     if (warehousesLocked) return;
     setWarehouses((prev) => prev.map((w) => (w.id === updatedWarehouse.id ? updatedWarehouse : w)));
+    logAction('edit', 'warehouses', `تعديل بيانات المستودع: ${updatedWarehouse.name} (رمز: ${updatedWarehouse.id})`);
     addToast(
       currentLanguage === 'ar' 
         ? `تم تحديث بيانات المستودع "${updatedWarehouse.name}" بنجاح وجاري التزامن...` 
@@ -511,7 +617,9 @@ export default function App() {
 
   const handleDeleteWarehouse = (id: string) => {
     if (warehousesLocked) return;
+    const deletedWh = warehouses.find((w) => w.id === id);
     setWarehouses((prev) => prev.filter((w) => w.id !== id));
+    logAction('delete', 'warehouses', `حذف المستودع: ${deletedWh?.name || id}`);
     addToast(
       currentLanguage === 'ar' 
         ? 'تم حذف المستودع بنجاح!' 
@@ -524,6 +632,10 @@ export default function App() {
   const handleAddTransfer = (transfer: WarehouseTransfer) => {
     if (transfersLocked) return;
     setTransfers((prev) => [...prev, transfer]);
+    const item = items.find((i) => i.id === transfer.itemId);
+    const fromWh = warehouses.find((w) => w.id === transfer.fromWarehouseId)?.name || transfer.fromWarehouseId;
+    const toWh = warehouses.find((w) => w.id === transfer.toWarehouseId)?.name || transfer.toWarehouseId;
+    logAction('add', 'transfers', `طلب تحويل مخزني لـ ${transfer.quantity} من ${item?.name || transfer.itemId} من (${fromWh}) إلى (${toWh})`);
     addToast(
       currentLanguage === 'ar' 
         ? `تم إنشاء طلب التحويل المخزني بنجاح وجاري التزامن...` 
@@ -534,10 +646,6 @@ export default function App() {
 
   const handleAcceptTransfer = (transferId: string) => {
     if (transfersLocked) return;
-    // When a transfer is accepted:
-    // 1. Update the transfer status to 'accepted'
-    // 2. Create outbound movement from 'fromWarehouseId'
-    // 3. Create inbound movement to 'toWarehouseId'
     const transfer = transfers.find((t) => t.id === transferId);
     if (!transfer) return;
 
@@ -554,7 +662,6 @@ export default function App() {
       )
     );
 
-    // Outbound movement from sender warehouse
     const outMovement: Movement = {
       id: Date.now(),
       itemId: transfer.itemId,
@@ -565,7 +672,6 @@ export default function App() {
       warehouseId: transfer.fromWarehouseId,
     };
 
-    // Inbound movement to receiver warehouse
     const inMovement: Movement = {
       id: Date.now() + 1,
       itemId: transfer.itemId,
@@ -578,6 +684,11 @@ export default function App() {
 
     setMovements((prev) => [...prev, outMovement, inMovement]);
 
+    const item = items.find((i) => i.id === transfer.itemId);
+    const fromWh = warehouses.find((w) => w.id === transfer.fromWarehouseId)?.name || transfer.fromWarehouseId;
+    const toWh = warehouses.find((w) => w.id === transfer.toWarehouseId)?.name || transfer.toWarehouseId;
+    logAction('edit', 'transfers', `قبول التحويل المخزني رقم #${transferId} لـ ${transfer.quantity} من ${item?.name || transfer.itemId} من (${fromWh}) إلى (${toWh})`);
+
     addToast(
       currentLanguage === 'ar' 
         ? `تم قبول التحويل المخزني بنجاح وتحديث كميات المستودعين!` 
@@ -588,6 +699,9 @@ export default function App() {
 
   const handleRejectTransfer = (transferId: string) => {
     if (transfersLocked) return;
+    const transfer = transfers.find((t) => t.id === transferId);
+    if (!transfer) return;
+
     setTransfers((prev) =>
       prev.map((t) =>
         t.id === transferId
@@ -600,6 +714,10 @@ export default function App() {
           : t
       )
     );
+
+    const item = items.find((i) => i.id === transfer.itemId);
+    logAction('edit', 'transfers', `رفض التحويل المخزني رقم #${transferId} لـ ${transfer.quantity} من ${item?.name || transfer.itemId}`);
+
     addToast(
       currentLanguage === 'ar' 
         ? 'تم رفض طلب التحويل المخزني.' 
@@ -615,9 +733,10 @@ export default function App() {
     setMovements(INITIAL_MOVEMENTS);
     setWarehouses(INITIAL_WAREHOUSES);
     setTransfers(INITIAL_TRANSFERS);
+    setAuditLogs(INITIAL_AUDIT_LOGS);
     localStorage.removeItem('wms_item_groups');
     setTimeout(() => {
-      pushDataToServer(INITIAL_ITEMS, INITIAL_SUPPLIERS, INITIAL_MOVEMENTS, INITIAL_WAREHOUSES, INITIAL_TRANSFERS);
+      pushDataToServer(INITIAL_ITEMS, INITIAL_SUPPLIERS, INITIAL_MOVEMENTS, INITIAL_WAREHOUSES, INITIAL_TRANSFERS, INITIAL_AUDIT_LOGS);
     }, 200);
   };
 
@@ -679,6 +798,7 @@ export default function App() {
               }
               handleResetAllDataOnServer();
             }}
+            currentUser={currentUser}
           />
         );
       case 'items':
@@ -691,6 +811,7 @@ export default function App() {
             onAddItem={handleAddItem}
             onEditItem={handleEditItem}
             onDeleteItem={handleDeleteItem}
+            onImportItems={handleImportItems}
           />
         );
       case 'movements':
@@ -762,6 +883,7 @@ export default function App() {
             isOnline={isOnline}
             onResetAllData={handleResetAllDataOnServer}
             warehouses={warehouses}
+            auditLogs={auditLogs}
           />
         );
       default:
@@ -849,6 +971,17 @@ export default function App() {
               <span className="text-[10px] uppercase">{currentLanguage === 'ar' ? 'EN' : 'عربي'}</span>
             </button>
 
+            {/* Fullscreen Toggle Button */}
+            <button
+              onClick={toggleFullscreen}
+              className={`p-2 rounded-xl transition-all cursor-pointer flex items-center justify-center ${
+                isDarkMode ? 'bg-slate-800 text-teal-400 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+              title={isFullscreen ? (currentLanguage === 'ar' ? 'الخروج من ملء الشاشة' : 'Exit Fullscreen') : (currentLanguage === 'ar' ? 'وضع ملء الشاشة' : 'Fullscreen Mode')}
+            >
+              {isFullscreen ? <Minimize size={18} className="stroke-[2.5]" /> : <Maximize size={18} className="stroke-[2.5]" />}
+            </button>
+
             {/* Dark Mode Toggle Button */}
             <button
               onClick={() => setIsDarkMode(prev => !prev)}
@@ -868,13 +1001,133 @@ export default function App() {
         {renderView()}
       </main>
 
+      {/* More Menu Floating Popup */}
+      {isMoreMenuOpen && (
+        <div className="fixed bottom-22 left-4 right-4 max-w-sm mx-auto bg-white/95 dark:bg-slate-900/95 border border-slate-200/50 dark:border-slate-800/80 backdrop-blur-xl rounded-3xl shadow-2xl p-4.5 z-45 animate-fade-in print:hidden">
+          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2.5 mb-3">
+            <div className="flex items-center gap-2">
+              <Layers size={14} className="text-blue-500 stroke-[2.5]" />
+              <span className="text-[11px] font-black text-slate-700 dark:text-slate-300">
+                {currentLanguage === 'ar' ? 'خيارات إضافية' : 'More Options'}
+              </span>
+            </div>
+            <button
+              onClick={() => setIsMoreMenuOpen(false)}
+              className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 rounded-lg transition-colors cursor-pointer"
+            >
+              <ChevronDown size={16} />
+            </button>
+          </div>
+          
+          <div className="grid grid-cols-2 gap-2.5">
+            {/* Tab: التقرير */}
+            {currentUser.permissions.reports !== 'none' && (
+              <button
+                onClick={() => {
+                  setActiveTab('report');
+                  setIsMoreMenuOpen(false);
+                }}
+                className={`flex items-center gap-2 p-2.5 rounded-xl border transition-all cursor-pointer ${
+                  activeTab === 'report'
+                    ? 'bg-blue-600/10 border-blue-500/40 text-blue-600 dark:text-blue-400 font-black'
+                    : 'bg-slate-50/50 dark:bg-slate-950/30 hover:bg-slate-100 border-slate-100 dark:border-slate-800 text-slate-600 dark:text-slate-400'
+                }`}
+              >
+                <TrendingUp size={15} className="stroke-[2.5]" />
+                <span className="text-[10px] font-bold">{t.navReport}</span>
+              </button>
+            )}
+
+            {/* Tab: السندات */}
+            {currentUser.permissions.reports !== 'none' && (
+              <button
+                onClick={() => {
+                  setActiveTab('print');
+                  setIsMoreMenuOpen(false);
+                }}
+                className={`flex items-center gap-2 p-2.5 rounded-xl border transition-all cursor-pointer ${
+                  activeTab === 'print'
+                    ? 'bg-blue-600/10 border-blue-500/40 text-blue-600 dark:text-blue-400 font-black'
+                    : 'bg-slate-50/50 dark:bg-slate-950/30 hover:bg-slate-100 border-slate-100 dark:border-slate-800 text-slate-600 dark:text-slate-400'
+                }`}
+              >
+                <FileText size={15} className="stroke-[2.5]" />
+                <span className="text-[10px] font-bold">{t.navPrint}</span>
+              </button>
+            )}
+
+            {/* Tab: المستودعات */}
+            {currentUser.permissions.warehouses !== 'none' && (
+              <button
+                onClick={() => {
+                  setActiveTab('warehouses');
+                  setIsMoreMenuOpen(false);
+                }}
+                className={`flex items-center gap-2 p-2.5 rounded-xl border transition-all cursor-pointer ${
+                  activeTab === 'warehouses'
+                    ? 'bg-blue-600/10 border-blue-500/40 text-blue-600 dark:text-blue-400 font-black'
+                    : 'bg-slate-50/50 dark:bg-slate-950/30 hover:bg-slate-100 border-slate-100 dark:border-slate-800 text-slate-600 dark:text-slate-400'
+                }`}
+              >
+                <WarehouseIcon size={15} className="stroke-[2.5]" />
+                <span className="text-[10px] font-bold">{t.navWarehouses}</span>
+              </button>
+            )}
+
+            {/* Tab: التحويلات المخزنية */}
+            {currentUser.permissions.transfers !== 'none' && (
+              <button
+                onClick={() => {
+                  setActiveTab('transfers');
+                  setIsMoreMenuOpen(false);
+                }}
+                className={`flex items-center gap-2 p-2.5 rounded-xl border transition-all cursor-pointer relative ${
+                  activeTab === 'transfers'
+                    ? 'bg-blue-600/10 border-blue-500/40 text-blue-600 dark:text-blue-400 font-black'
+                    : 'bg-slate-50/50 dark:bg-slate-950/30 hover:bg-slate-100 border-slate-100 dark:border-slate-800 text-slate-600 dark:text-slate-400'
+                }`}
+              >
+                <div className="relative">
+                  {pendingIncomingTransfersCount > 0 && (
+                    <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-[9px] font-black text-white animate-bounce shadow-xs">
+                      {pendingIncomingTransfersCount}
+                    </span>
+                  )}
+                  <Bell size={15} className="stroke-[2.5]" />
+                </div>
+                <span className="text-[10px] font-bold">{t.navTransfers}</span>
+              </button>
+            )}
+
+            {/* Tab: الإعدادات */}
+            <button
+              onClick={() => {
+                setActiveTab('settings');
+                setIsMoreMenuOpen(false);
+              }}
+              className={`flex items-center gap-2 p-2.5 rounded-xl border transition-all cursor-pointer col-span-2 ${
+                activeTab === 'settings'
+                  ? 'bg-blue-600/10 border-blue-500/40 text-blue-600 dark:text-blue-400 font-black'
+                  : 'bg-slate-50/50 dark:bg-slate-950/30 hover:bg-slate-100 border-slate-100 dark:border-slate-800 text-slate-600 dark:text-slate-400'
+              }`}
+            >
+              <SettingsIcon size={15} className="stroke-[2.5]" />
+              <span className="text-[10px] font-bold">{t.navSettings}</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Persistent Bottom Tab Navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 py-3.5 px-2 z-40 print:hidden shadow-lg rounded-t-3xl dark:bg-slate-900 dark:border-slate-800">
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 py-3 px-2 z-40 print:hidden shadow-lg rounded-t-3xl dark:bg-slate-900 dark:border-slate-800">
         <div className="max-w-xl mx-auto flex items-center justify-around">
           
           {/* Tab: الرئيسية */}
           <button
-            onClick={() => setActiveTab('home')}
+            onClick={() => {
+              setActiveTab('home');
+              setIsMoreMenuOpen(false);
+            }}
             className={`flex flex-col items-center gap-1 transition-all cursor-pointer ${
               activeTab === 'home' ? 'text-blue-600 scale-105' : 'text-slate-400 hover:text-slate-500'
             }`}
@@ -882,11 +1135,14 @@ export default function App() {
             <Home size={20} className={activeTab === 'home' ? 'stroke-[2.5]' : 'stroke-[2]'} />
             <span className="text-[10px] font-black">{t.navHome}</span>
           </button>
-
+ 
           {/* Tab: الأصناف */}
           {currentUser.permissions.items !== 'none' && (
             <button
-              onClick={() => setActiveTab('items')}
+              onClick={() => {
+                setActiveTab('items');
+                setIsMoreMenuOpen(false);
+              }}
               className={`flex flex-col items-center gap-1 transition-all cursor-pointer ${
                 activeTab === 'items' ? 'text-blue-600 scale-105' : 'text-slate-400 hover:text-slate-500'
               }`}
@@ -895,11 +1151,14 @@ export default function App() {
               <span className="text-[10px] font-black">{t.navItems}</span>
             </button>
           )}
-
+ 
           {/* Tab: الحركات */}
           {currentUser.permissions.movements !== 'none' && (
             <button
-              onClick={() => setActiveTab('movements')}
+              onClick={() => {
+                setActiveTab('movements');
+                setIsMoreMenuOpen(false);
+              }}
               className={`flex flex-col items-center gap-1 transition-all cursor-pointer ${
                 activeTab === 'movements' ? 'text-blue-600 scale-105' : 'text-slate-400 hover:text-slate-500'
               }`}
@@ -908,11 +1167,14 @@ export default function App() {
               <span className="text-[10px] font-black">{t.navMovements}</span>
             </button>
           )}
-
+ 
           {/* Tab: الجرد */}
           {currentUser.permissions.reports !== 'none' && (
             <button
-              onClick={() => setActiveTab('inventory')}
+              onClick={() => {
+                setActiveTab('inventory');
+                setIsMoreMenuOpen(false);
+              }}
               className={`flex flex-col items-center gap-1 transition-all cursor-pointer ${
                 activeTab === 'inventory' ? 'text-blue-600 scale-105' : 'text-slate-400 hover:text-slate-500'
               }`}
@@ -922,74 +1184,24 @@ export default function App() {
             </button>
           )}
 
-          {/* Tab: التقرير */}
-          {currentUser.permissions.reports !== 'none' && (
-            <button
-              onClick={() => setActiveTab('report')}
-              className={`flex flex-col items-center gap-1 transition-all cursor-pointer ${
-                activeTab === 'report' ? 'text-blue-600 scale-105' : 'text-slate-400 hover:text-slate-500'
-              }`}
-            >
-              <TrendingUp size={20} className={activeTab === 'report' ? 'stroke-[2.5]' : 'stroke-[2]'} />
-              <span className="text-[10px] font-black">{t.navReport}</span>
-            </button>
-          )}
-
-          {/* Tab: السندات */}
-          {currentUser.permissions.reports !== 'none' && (
-            <button
-              onClick={() => setActiveTab('print')}
-              className={`flex flex-col items-center gap-1 transition-all cursor-pointer ${
-                activeTab === 'print' ? 'text-blue-600 scale-105' : 'text-slate-400 hover:text-slate-500'
-              }`}
-            >
-              <FileText size={20} className={activeTab === 'print' ? 'stroke-[2.5]' : 'stroke-[2]'} />
-              <span className="text-[10px] font-black">{t.navPrint}</span>
-            </button>
-          )}
-
-          {/* Tab: المستودعات */}
-          {currentUser.permissions.warehouses !== 'none' && (
-            <button
-              onClick={() => setActiveTab('warehouses')}
-              className={`flex flex-col items-center gap-1 transition-all cursor-pointer ${
-                activeTab === 'warehouses' ? 'text-blue-600 scale-105' : 'text-slate-400 hover:text-slate-500'
-              }`}
-            >
-              <WarehouseIcon size={20} className={activeTab === 'warehouses' ? 'stroke-[2.5]' : 'stroke-[2]'} />
-              <span className="text-[10px] font-black">{t.navWarehouses}</span>
-            </button>
-          )}
-
-          {/* Tab: التحويلات المخزنية */}
-          {currentUser.permissions.transfers !== 'none' && (
-            <button
-              onClick={() => setActiveTab('transfers')}
-              className={`flex flex-col items-center gap-1 transition-all cursor-pointer relative ${
-                activeTab === 'transfers' ? 'text-blue-600 scale-105' : 'text-slate-400 hover:text-slate-500'
-              }`}
-            >
-              {pendingIncomingTransfersCount > 0 && (
-                <span className="absolute -top-1.5 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-[9px] font-black text-white animate-bounce shadow-xs">
-                  {pendingIncomingTransfersCount}
-                </span>
-              )}
-              <Bell size={20} className={activeTab === 'transfers' ? 'stroke-[2.5]' : 'stroke-[2]'} />
-              <span className="text-[10px] font-black">{t.navTransfers}</span>
-            </button>
-          )}
-
-          {/* Tab: الإعدادات */}
+          {/* Tab: المزيد */}
           <button
-            onClick={() => setActiveTab('settings')}
-            className={`flex flex-col items-center gap-1 transition-all cursor-pointer ${
-              activeTab === 'settings' ? 'text-blue-600 scale-105' : 'text-slate-400 hover:text-slate-500'
+            onClick={() => setIsMoreMenuOpen(prev => !prev)}
+            className={`flex flex-col items-center gap-1 transition-all cursor-pointer relative ${
+              ['report', 'print', 'warehouses', 'transfers', 'settings'].includes(activeTab) || isMoreMenuOpen
+                ? 'text-blue-600 scale-105' 
+                : 'text-slate-400 hover:text-slate-500'
             }`}
           >
-            <SettingsIcon size={20} className={activeTab === 'settings' ? 'stroke-[2.5]' : 'stroke-[2]'} />
-            <span className="text-[10px] font-black">{t.navSettings}</span>
+            {pendingIncomingTransfersCount > 0 && (
+              <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-[9px] font-black text-white animate-bounce shadow-xs">
+                {pendingIncomingTransfersCount}
+              </span>
+            )}
+            <MoreHorizontal size={20} className={['report', 'print', 'warehouses', 'transfers', 'settings'].includes(activeTab) || isMoreMenuOpen ? 'stroke-[2.5]' : 'stroke-[2]'} />
+            <span className="text-[10px] font-black">{currentLanguage === 'ar' ? 'المزيد ☰' : 'More ☰'}</span>
           </button>
-
+ 
         </div>
       </nav>
 

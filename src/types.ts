@@ -65,6 +65,17 @@ export interface User {
   role: RoleType;
   permissions: UserPermissions;
   warehouseId?: string; // Link user with managed warehouse
+  maxDevices?: number; // كم عدد الأجهزة المسموح بها لفتح نفس الحساب في نفس الوقت
+}
+
+export interface AuditLogEntry {
+  id: string;
+  username: string;
+  role: string;
+  action: 'add' | 'edit' | 'delete' | 'sync' | 'import' | 'other';
+  entityType: 'items' | 'movements' | 'suppliers' | 'warehouses' | 'transfers' | 'system';
+  details: string;
+  date: string;
 }
 
 export interface SyncPayload {
@@ -73,6 +84,7 @@ export interface SyncPayload {
   suppliers: Supplier[];
   warehouses: Warehouse[];
   transfers: WarehouseTransfer[];
+  auditLogs?: AuditLogEntry[];
   groups?: any[]; // optional groups array
 }
 
@@ -201,5 +213,17 @@ export const INITIAL_TRANSFERS: WarehouseTransfer[] = [
     date: '2026-06-25',
     createdBy: 'Owner',
     handledBy: 'admin',
+  }
+];
+
+export const INITIAL_AUDIT_LOGS: AuditLogEntry[] = [
+  {
+    id: 'log-1',
+    username: 'System',
+    role: 'Owner',
+    action: 'other',
+    entityType: 'system',
+    details: 'تهيئة النظام وتثبيت الإعدادات الافتراضية للمستودع',
+    date: '2026-06-27T10:00:00.000Z'
   }
 ];
