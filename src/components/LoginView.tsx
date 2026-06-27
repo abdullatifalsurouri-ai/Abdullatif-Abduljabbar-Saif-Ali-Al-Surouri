@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, KeyRound, User as UserIcon, AlertCircle, RefreshCw, Globe, Share2, Check, Users } from 'lucide-react';
+import { Shield, KeyRound, User as UserIcon, AlertCircle, RefreshCw, Globe, Share2, Check, Users, Smartphone, ArrowDownToLine, Info, ChevronDown, ChevronUp } from 'lucide-react';
 import { User } from '../types';
 
 interface LoginViewProps {
@@ -15,6 +15,36 @@ export default function LoginView({ onLoginSuccess, currentLanguage, onLanguageC
   const [error, setError] = useState<string | null>(null);
   const [availableUsers, setAvailableUsers] = useState<any[]>([]);
   const [shareCopied, setShareCopied] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [showInstructions, setShowInstructions] = useState(false);
+  const [isInstalled, setIsInstalled] = useState(false);
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    if (window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone) {
+      setIsInstalled(true);
+    }
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setIsInstalled(true);
+    }
+    setDeferredPrompt(null);
+  };
 
   // Silently pre-fetch and cache users list for offline availability and public display
   useEffect(() => {
@@ -175,17 +205,19 @@ export default function LoginView({ onLoginSuccess, currentLanguage, onLanguageC
 
   return (
     <div className={`min-h-screen bg-slate-950 flex flex-col justify-center items-center px-4 py-12 font-sans relative overflow-hidden selection:bg-blue-500/30 selection:text-blue-300`} dir={isRtl ? 'rtl' : 'ltr'}>
-      {/* Language Toggle & Share Button */}
-      <div className={`absolute top-6 ${isRtl ? 'left-6' : 'right-6'} z-50 flex items-center gap-3`}>
+      {/* Language Toggle & Share Button in separate corners */}
+      <div className={`absolute top-6 ${isRtl ? 'right-6' : 'left-6'} z-50`}>
         <button
           onClick={handleCopyShareLink}
-          className="bg-emerald-950/80 hover:bg-emerald-900 text-emerald-400 border border-emerald-800/60 p-2.5 px-4 rounded-2xl transition-all cursor-pointer flex items-center gap-2 text-xs font-black shadow-lg"
+          className="bg-emerald-950/80 hover:bg-emerald-900 text-emerald-400 border border-emerald-800/60 p-1.5 px-3 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 text-[10px] font-black shadow-md"
           title={t.shareBtn}
         >
-          {shareCopied ? <Check size={16} className="text-emerald-400 animate-bounce" /> : <Share2 size={16} className="text-emerald-400" />}
+          {shareCopied ? <Check size={13} className="text-emerald-400 animate-bounce" /> : <Share2 size={13} className="text-emerald-400" />}
           <span>{shareCopied ? (isRtl ? 'تم النسخ!' : 'Copied!') : (isRtl ? 'مشاركة التطبيق 🔗' : 'Share App 🔗')}</span>
         </button>
+      </div>
 
+      <div className={`absolute top-6 ${isRtl ? 'left-6' : 'right-6'} z-50`}>
         <button
           onClick={() => onLanguageChange(currentLanguage === 'ar' ? 'en' : 'ar')}
           className="bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 hover:border-slate-700 p-2.5 px-4 rounded-2xl transition-all cursor-pointer flex items-center gap-2 text-xs font-bold shadow-lg"
@@ -326,6 +358,79 @@ export default function LoginView({ onLoginSuccess, currentLanguage, onLanguageC
                     )}
                   </button>
                 ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* PWA Install Guide Card */}
+        <div className="bg-slate-900/60 border border-slate-800/60 backdrop-blur-md rounded-3xl p-5 space-y-3.5 text-right">
+          <div className="flex items-center gap-2.5 text-blue-400">
+            <Smartphone size={18} className="stroke-[2.5]" />
+            <h3 className="font-extrabold text-xs text-slate-200">
+              {isRtl ? 'كيف تشارك أو تستخدم التطبيق كأيقونة؟ 📱' : 'How to use or share the app as an icon? 📱'}
+            </h3>
+          </div>
+          <p className="text-[10px] text-slate-400 font-bold leading-relaxed">
+            {isRtl 
+              ? 'بما أن هذا تطبيق ويب ذكي متطور (PWA)، يمكنك تثبيته مباشرة على شاشة جوالك كأيقونة تطبيق كاملة ومستقلة دون الحاجة لمتجر التطبيقات!' 
+              : 'Since this is a smart progressive web app (PWA), you can install it directly on your home screen as a full, independent app icon without needing any App Store!'}
+          </p>
+
+          <div className="flex gap-2">
+            {deferredPrompt && (
+              <button
+                type="button"
+                onClick={handleInstallClick}
+                className="flex-1 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-black text-[10px] py-2.5 px-3 rounded-xl shadow-lg shadow-blue-500/10 transition-all flex items-center justify-center gap-1 cursor-pointer"
+              >
+                <ArrowDownToLine size={13} className="stroke-[2.5]" />
+                <span>{isRtl ? 'تثبيت كأيقونة الآن' : 'Install as Icon Now'}</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setShowInstructions(!showInstructions)}
+              className="flex-1 bg-slate-800 hover:bg-slate-750 text-slate-200 font-extrabold text-[10px] py-2.5 px-3 rounded-xl border border-slate-700/60 transition-all flex items-center justify-center gap-1 cursor-pointer"
+            >
+              <Info size={13} />
+              <span>{isRtl ? 'شرح طريقة التثبيت بالتفصيل' : 'Detailed Installation Guide'}</span>
+              {showInstructions ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+            </button>
+          </div>
+
+          {showInstructions && (
+            <div className="pt-2 border-t border-slate-800/80 space-y-3 text-[10px] text-slate-400 font-semibold leading-relaxed animate-fade-in">
+              <div className="bg-slate-950/50 p-3 rounded-2xl border border-slate-800/40 space-y-2.5">
+                {/* iOS instructions */}
+                <div className="space-y-1">
+                  <span className="font-extrabold text-blue-400 flex items-center gap-1">
+                    🍏 هواتف آيفون (iPhone / Safari):
+                  </span>
+                  <p className="text-slate-500 pr-1 text-[9px]">
+                    افتح الرابط في متصفح <strong className="text-slate-300 font-extrabold">Safari</strong> 👈 اضغط على زر <strong className="text-slate-300 font-extrabold">"مشاركة" (المربع مع السهم)</strong> 👈 اختر <strong className="text-slate-300 font-extrabold">"إضافة إلى الصفحة الرئيسية" (Add to Home Screen)</strong>.
+                  </p>
+                </div>
+
+                {/* Android instructions */}
+                <div className="space-y-1 border-t border-slate-800/60 pt-2.5">
+                  <span className="font-extrabold text-emerald-400 flex items-center gap-1">
+                    🤖 هواتف أندرويد (Android / Chrome):
+                  </span>
+                  <p className="text-slate-500 pr-1 text-[9px]">
+                    افتح الرابط في متصفح <strong className="text-slate-300 font-extrabold">Chrome</strong> 👈 اضغط على زر <strong className="text-slate-300 font-extrabold">الثلاث نقاط (⋮)</strong> في الأعلى 👈 اختر <strong className="text-slate-300 font-extrabold">"إضافة إلى الشاشة الرئيسية"</strong> أو <strong className="text-slate-300 font-extrabold">"تثبيت التطبيق"</strong>.
+                  </p>
+                </div>
+
+                {/* PC/Desktop instructions */}
+                <div className="space-y-1 border-t border-slate-800/60 pt-2.5">
+                  <span className="font-extrabold text-indigo-400 flex items-center gap-1">
+                    💻 أجهزة الكمبيوتر (Desktop / Chrome):
+                  </span>
+                  <p className="text-slate-500 pr-1 text-[9px]">
+                    اضغط على أيقونة <strong className="text-slate-300 font-extrabold">الشاشة مع السهم</strong> في شريط العناوين بالأعلى 👈 اختر <strong className="text-slate-300 font-extrabold">"تثبيت" (Install)</strong> لتثبيته كبرنامج مستقل على سطح المكتب.
+                  </p>
+                </div>
               </div>
             </div>
           )}

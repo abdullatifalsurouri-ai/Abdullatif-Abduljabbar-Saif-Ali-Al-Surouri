@@ -938,7 +938,7 @@ export default function App() {
       
       {/* Top Banner (Print-only Hidden or Styled properly) */}
       <header className={`border-b ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-800'} py-4 px-6 sticky top-0 z-40 print:hidden shadow-xs`}>
-        <div className="max-w-xl mx-auto flex items-center justify-between">
+        <div className="max-w-xl md:max-w-3xl lg:max-w-5xl xl:max-w-7xl w-full mx-auto flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <div className="bg-blue-600 text-white p-2 rounded-2xl shadow-xs">
               <Receipt size={20} className="stroke-[2.5]" />
@@ -997,7 +997,7 @@ export default function App() {
       </header>
 
       {/* Main Container */}
-      <main className="flex-1 w-full max-w-xl mx-auto px-4 py-6">
+      <main className="flex-1 w-full max-w-xl md:max-w-3xl lg:max-w-5xl xl:max-w-7xl mx-auto px-4 py-6">
         {renderView()}
       </main>
 
@@ -1120,7 +1120,7 @@ export default function App() {
 
       {/* Persistent Bottom Tab Navigation */}
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 py-3 px-2 z-40 print:hidden shadow-lg rounded-t-3xl dark:bg-slate-900 dark:border-slate-800">
-        <div className="max-w-xl mx-auto flex items-center justify-around">
+        <div className="max-w-xl md:max-w-3xl lg:max-w-5xl xl:max-w-7xl w-full mx-auto flex items-center justify-around">
           
           {/* Tab: الرئيسية */}
           <button

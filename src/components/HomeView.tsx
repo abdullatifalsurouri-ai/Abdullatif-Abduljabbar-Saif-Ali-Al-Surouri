@@ -340,7 +340,7 @@ export default function HomeView({
       )}
 
       {/* Stats Grid (4 cards) */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         
         {/* Suppliers Card */}
         <div className="bg-white border border-slate-100 rounded-3xl p-5 hover:shadow-md transition-all flex flex-col items-center justify-center text-center">
