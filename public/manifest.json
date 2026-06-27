@@ -1,0 +1,30 @@
+{
+  "name": "مستودع المدى الذكي",
+  "short_name": "مستودع المدى",
+  "description": "نظام متكامل ومصمم بذكاء لإدارة المستودعات، تتبع الحركات (وارد/صرف)، جرد الأصناف، تحليل التقارير، وطباعة السندات.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#2563eb",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "any"
+    }
+  ]
+}
