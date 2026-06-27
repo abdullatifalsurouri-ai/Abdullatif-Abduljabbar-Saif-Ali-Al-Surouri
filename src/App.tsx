@@ -12,7 +12,9 @@ import {
   Globe,
   Settings as SettingsIcon,
   CloudCheck,
-  RefreshCw
+  RefreshCw,
+  Warehouse as WarehouseIcon,
+  Bell
 } from 'lucide-react';
 import { 
   TabType, 
@@ -20,9 +22,13 @@ import {
   Movement, 
   Supplier, 
   User,
+  Warehouse,
+  WarehouseTransfer,
   INITIAL_ITEMS, 
   INITIAL_SUPPLIERS, 
-  INITIAL_MOVEMENTS 
+  INITIAL_MOVEMENTS,
+  INITIAL_WAREHOUSES,
+  INITIAL_TRANSFERS
 } from './types';
 
 // Import our modular subviews
@@ -32,6 +38,8 @@ import MovementsView from './components/MovementsView';
 import InventoryView from './components/InventoryView';
 import ReportView from './components/ReportView';
 import PrintView from './components/PrintView';
+import WarehousesView from './components/WarehousesView';
+import TransfersView from './components/TransfersView';
 import SuppliersModal from './components/SuppliersModal';
 import LoginView from './components/LoginView';
 import SettingsView from './components/SettingsView';
@@ -42,6 +50,26 @@ export default function App() {
     const saved = localStorage.getItem('wms_current_user');
     return saved ? JSON.parse(saved) : null;
   });
+
+  const [usersList, setUsersList] = useState<User[]>([]);
+
+  const fetchUsers = async () => {
+    try {
+      const response = await fetch('/api/users');
+      if (response.ok) {
+        const data = await response.json();
+        setUsersList(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch users:', err);
+    }
+  };
+
+  useEffect(() => {
+    if (currentUser) {
+      fetchUsers();
+    }
+  }, [currentUser]);
 
   const [activeTab, setActiveTab] = useState<TabType>('home');
   const [isSuppliersOpen, setIsSuppliersOpen] = useState(false);
@@ -66,6 +94,16 @@ export default function App() {
   const [movements, setMovements] = useState<Movement[]>(() => {
     const saved = localStorage.getItem('wms_movements');
     return saved ? JSON.parse(saved) : INITIAL_MOVEMENTS;
+  });
+
+  const [warehouses, setWarehouses] = useState<Warehouse[]>(() => {
+    const saved = localStorage.getItem('wms_warehouses');
+    return saved ? JSON.parse(saved) : INITIAL_WAREHOUSES;
+  });
+
+  const [transfers, setTransfers] = useState<WarehouseTransfer[]>(() => {
+    const saved = localStorage.getItem('wms_transfers');
+    return saved ? JSON.parse(saved) : INITIAL_TRANSFERS;
   });
 
   const [isDataLocked, setIsDataLocked] = useState<boolean>(() => {
@@ -145,6 +183,14 @@ export default function App() {
           setMovements(data.movements);
           localStorage.setItem('wms_movements', JSON.stringify(data.movements));
         }
+        if (data.warehouses) {
+          setWarehouses(data.warehouses);
+          localStorage.setItem('wms_warehouses', JSON.stringify(data.warehouses));
+        }
+        if (data.transfers) {
+          setTransfers(data.transfers);
+          localStorage.setItem('wms_transfers', JSON.stringify(data.transfers));
+        }
         
         const syncTime = new Date().toLocaleString('ar-SA', { hour12: true });
         setLastSyncTime(syncTime);
@@ -178,6 +224,8 @@ export default function App() {
     currentItems = items,
     currentSuppliers = suppliers,
     currentMovements = movements,
+    currentWarehouses = warehouses,
+    currentTransfers = transfers,
     showToast = false
   ) => {
     if (!isOnline) {
@@ -198,7 +246,9 @@ export default function App() {
         body: JSON.stringify({
           items: currentItems,
           suppliers: currentSuppliers,
-          movements: currentMovements
+          movements: currentMovements,
+          warehouses: currentWarehouses,
+          transfers: currentTransfers
         })
       });
       if (response.ok) {
@@ -238,7 +288,7 @@ export default function App() {
       'info'
     );
     // First push local data, then pull latest to ensure everyone is unified
-    const pushOk = await pushDataToServer(items, suppliers, movements, false);
+    const pushOk = await pushDataToServer(items, suppliers, movements, warehouses, transfers, false);
     const pullOk = await pullDataFromServer(false);
     
     if (pushOk && pullOk) {
@@ -279,11 +329,11 @@ export default function App() {
   useEffect(() => {
     if (currentUser && isOnline) {
       const delayFn = setTimeout(() => {
-        pushDataToServer(items, suppliers, movements);
+        pushDataToServer(items, suppliers, movements, warehouses, transfers);
       }, 1500); // 1.5 seconds debounce
       return () => clearTimeout(delayFn);
     }
-  }, [items, suppliers, movements, isOnline, currentUser]);
+  }, [items, suppliers, movements, warehouses, transfers, isOnline, currentUser]);
 
   // Sync state with localStorage
   useEffect(() => {
@@ -297,6 +347,14 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('wms_movements', JSON.stringify(movements));
   }, [movements]);
+
+  useEffect(() => {
+    localStorage.setItem('wms_warehouses', JSON.stringify(warehouses));
+  }, [warehouses]);
+
+  useEffect(() => {
+    localStorage.setItem('wms_transfers', JSON.stringify(transfers));
+  }, [transfers]);
 
   useEffect(() => {
     localStorage.setItem('wms_is_data_locked', String(isDataLocked));
@@ -333,6 +391,8 @@ export default function App() {
   const itemsLocked = isDataLocked || !currentUser || currentUser.permissions.items === 'read' || currentUser.permissions.items === 'none';
   const movementsLocked = isDataLocked || !currentUser || currentUser.permissions.movements === 'read' || currentUser.permissions.movements === 'none';
   const suppliersLocked = isDataLocked || !currentUser || currentUser.permissions.suppliers === 'read' || currentUser.permissions.suppliers === 'none';
+  const warehousesLocked = isDataLocked || !currentUser || currentUser.permissions.warehouses === 'read' || currentUser.permissions.warehouses === 'none';
+  const transfersLocked = isDataLocked || !currentUser || currentUser.permissions.transfers === 'read' || currentUser.permissions.transfers === 'none';
 
   // Handler functions for adding/modifying/deleting items
   const handleAddItem = (item: Item) => {
@@ -426,14 +486,138 @@ export default function App() {
     );
   };
 
+  // Handler functions for adding/editing/deleting warehouses
+  const handleAddWarehouse = (warehouse: Warehouse) => {
+    if (warehousesLocked) return;
+    setWarehouses((prev) => [...prev, warehouse]);
+    addToast(
+      currentLanguage === 'ar' 
+        ? `تم إضافة المستودع "${warehouse.name}" بنجاح وجاري التزامن...` 
+        : `Successfully added warehouse "${warehouse.name}". Syncing...`, 
+      'success'
+    );
+  };
+
+  const handleEditWarehouse = (updatedWarehouse: Warehouse) => {
+    if (warehousesLocked) return;
+    setWarehouses((prev) => prev.map((w) => (w.id === updatedWarehouse.id ? updatedWarehouse : w)));
+    addToast(
+      currentLanguage === 'ar' 
+        ? `تم تحديث بيانات المستودع "${updatedWarehouse.name}" بنجاح وجاري التزامن...` 
+        : `Successfully updated warehouse "${updatedWarehouse.name}". Syncing...`, 
+      'success'
+    );
+  };
+
+  const handleDeleteWarehouse = (id: string) => {
+    if (warehousesLocked) return;
+    setWarehouses((prev) => prev.filter((w) => w.id !== id));
+    addToast(
+      currentLanguage === 'ar' 
+        ? 'تم حذف المستودع بنجاح!' 
+        : 'Successfully deleted warehouse!', 
+      'success'
+    );
+  };
+
+  // Handler functions for Warehouse Transfers
+  const handleAddTransfer = (transfer: WarehouseTransfer) => {
+    if (transfersLocked) return;
+    setTransfers((prev) => [...prev, transfer]);
+    addToast(
+      currentLanguage === 'ar' 
+        ? `تم إنشاء طلب التحويل المخزني بنجاح وجاري التزامن...` 
+        : `Created warehouse transfer successfully. Syncing...`, 
+      'success'
+    );
+  };
+
+  const handleAcceptTransfer = (transferId: string) => {
+    if (transfersLocked) return;
+    // When a transfer is accepted:
+    // 1. Update the transfer status to 'accepted'
+    // 2. Create outbound movement from 'fromWarehouseId'
+    // 3. Create inbound movement to 'toWarehouseId'
+    const transfer = transfers.find((t) => t.id === transferId);
+    if (!transfer) return;
+
+    setTransfers((prev) =>
+      prev.map((t) =>
+        t.id === transferId
+          ? {
+              ...t,
+              status: 'accepted',
+              handledBy: currentUser?.username || 'Owner',
+              handledDate: new Date().toISOString().split('T')[0],
+            }
+          : t
+      )
+    );
+
+    // Outbound movement from sender warehouse
+    const outMovement: Movement = {
+      id: Date.now(),
+      itemId: transfer.itemId,
+      quantity: transfer.quantity,
+      type: 'out',
+      partner: `تحويل إلى مستودع: ${warehouses.find(w => w.id === transfer.toWarehouseId)?.name || transfer.toWarehouseId}`,
+      date: new Date().toISOString().split('T')[0],
+      warehouseId: transfer.fromWarehouseId,
+    };
+
+    // Inbound movement to receiver warehouse
+    const inMovement: Movement = {
+      id: Date.now() + 1,
+      itemId: transfer.itemId,
+      quantity: transfer.quantity,
+      type: 'in',
+      partner: `تحويل من مستودع: ${warehouses.find(w => w.id === transfer.fromWarehouseId)?.name || transfer.fromWarehouseId}`,
+      date: new Date().toISOString().split('T')[0],
+      warehouseId: transfer.toWarehouseId,
+    };
+
+    setMovements((prev) => [...prev, outMovement, inMovement]);
+
+    addToast(
+      currentLanguage === 'ar' 
+        ? `تم قبول التحويل المخزني بنجاح وتحديث كميات المستودعين!` 
+        : `Warehouse transfer accepted successfully. Stock levels updated!`, 
+      'success'
+    );
+  };
+
+  const handleRejectTransfer = (transferId: string) => {
+    if (transfersLocked) return;
+    setTransfers((prev) =>
+      prev.map((t) =>
+        t.id === transferId
+          ? {
+              ...t,
+              status: 'rejected',
+              handledBy: currentUser?.username || 'Owner',
+              handledDate: new Date().toISOString().split('T')[0],
+            }
+          : t
+      )
+    );
+    addToast(
+      currentLanguage === 'ar' 
+        ? 'تم رفض طلب التحويل المخزني.' 
+        : 'Warehouse transfer request rejected.', 
+      'warning'
+    );
+  };
+
   // Reset and initialize back to factory default
   const handleResetAllDataOnServer = () => {
     setItems(INITIAL_ITEMS);
     setSuppliers(INITIAL_SUPPLIERS);
     setMovements(INITIAL_MOVEMENTS);
+    setWarehouses(INITIAL_WAREHOUSES);
+    setTransfers(INITIAL_TRANSFERS);
     localStorage.removeItem('wms_item_groups');
     setTimeout(() => {
-      pushDataToServer(INITIAL_ITEMS, INITIAL_SUPPLIERS, INITIAL_MOVEMENTS);
+      pushDataToServer(INITIAL_ITEMS, INITIAL_SUPPLIERS, INITIAL_MOVEMENTS, INITIAL_WAREHOUSES, INITIAL_TRANSFERS);
     }, 200);
   };
 
@@ -516,20 +700,50 @@ export default function App() {
             movements={movements}
             items={items}
             suppliers={suppliers}
+            warehouses={warehouses}
+            currentUser={currentUser}
             isDataLocked={movementsLocked}
             onAddMovement={handleAddMovement}
             onDeleteMovement={handleDeleteMovement}
           />
         );
+      case 'warehouses':
+        if (currentUser.permissions.warehouses === 'none') return <div className="text-center py-12 text-slate-400 font-bold">🔒 عذراً، تصفح المستودعات غير متاح لحسابك الحالي.</div>;
+        return (
+          <WarehousesView
+            warehouses={warehouses}
+            users={usersList}
+            items={items}
+            movements={movements}
+            isDataLocked={warehousesLocked}
+            onAddWarehouse={handleAddWarehouse}
+            onEditWarehouse={handleEditWarehouse}
+            onDeleteWarehouse={handleDeleteWarehouse}
+          />
+        );
+      case 'transfers':
+        if (currentUser.permissions.transfers === 'none') return <div className="text-center py-12 text-slate-400 font-bold">🔒 عذراً، تحويلات المستودعات غير متاحة لحسابك الحالي.</div>;
+        return (
+          <TransfersView
+            transfers={transfers}
+            warehouses={warehouses}
+            items={items}
+            currentUser={currentUser}
+            isDataLocked={transfersLocked}
+            onAddTransfer={handleAddTransfer}
+            onAcceptTransfer={handleAcceptTransfer}
+            onRejectTransfer={handleRejectTransfer}
+          />
+        );
       case 'inventory':
         if (currentUser.permissions.reports === 'none') return <div className="text-center py-12 text-slate-400 font-bold">🔒 عذراً، تصفح الجرد مخفي عن حسابك الحالي.</div>;
-        return <InventoryView items={items} movements={movements} />;
+        return <InventoryView items={items} movements={movements} warehouses={warehouses} />;
       case 'report':
         if (currentUser.permissions.reports === 'none') return <div className="text-center py-12 text-slate-400 font-bold">🔒 عذراً، التقارير غير متاحة لحسابك الحالي.</div>;
-        return <ReportView items={items} movements={movements} suppliers={suppliers} />;
+        return <ReportView items={items} movements={movements} suppliers={suppliers} warehouses={warehouses} />;
       case 'print':
         if (currentUser.permissions.reports === 'none') return <div className="text-center py-12 text-slate-400 font-bold">🔒 عذراً، السندات غير متاحة لحسابك الحالي.</div>;
-        return <PrintView movements={movements} items={items} />;
+        return <PrintView movements={movements} items={items} warehouses={warehouses} />;
       case 'settings':
         return (
           <SettingsView
@@ -547,6 +761,7 @@ export default function App() {
             lastSyncTime={lastSyncTime}
             isOnline={isOnline}
             onResetAllData={handleResetAllDataOnServer}
+            warehouses={warehouses}
           />
         );
       default:
@@ -565,6 +780,8 @@ export default function App() {
       navInventory: "الجرد",
       navReport: "التقرير",
       navPrint: "السندات",
+      navWarehouses: "المستودعات",
+      navTransfers: "التحويلات المخزنية",
       navSettings: "الإعدادات"
     },
     en: {
@@ -577,11 +794,22 @@ export default function App() {
       navInventory: "Inventory",
       navReport: "Report",
       navPrint: "Vouchers",
+      navWarehouses: "Warehouses",
+      navTransfers: "Inventory Transfers",
       navSettings: "Settings"
     }
   };
 
   const t = translations[currentLanguage];
+
+  // Find transfers that are pending and belong to the current user's managed warehouse
+  const managedWarehouseIds = warehouses
+    .filter((wh) => wh.manager.toLowerCase() === (currentUser?.username || '').toLowerCase())
+    .map((wh) => wh.id);
+
+  const pendingIncomingTransfersCount = transfers.filter(
+    (tr) => tr.status === 'pending' && managedWarehouseIds.includes(tr.toWarehouseId)
+  ).length;
 
   return (
     <div className={`min-h-screen ${isDarkMode ? 'bg-slate-950 text-slate-100 dark' : 'bg-slate-50 text-slate-800'} flex flex-col pb-24 font-sans select-none transition-colors duration-200`} dir={currentLanguage === 'ar' ? 'rtl' : 'ltr'}>
@@ -717,6 +945,37 @@ export default function App() {
             >
               <FileText size={20} className={activeTab === 'print' ? 'stroke-[2.5]' : 'stroke-[2]'} />
               <span className="text-[10px] font-black">{t.navPrint}</span>
+            </button>
+          )}
+
+          {/* Tab: المستودعات */}
+          {currentUser.permissions.warehouses !== 'none' && (
+            <button
+              onClick={() => setActiveTab('warehouses')}
+              className={`flex flex-col items-center gap-1 transition-all cursor-pointer ${
+                activeTab === 'warehouses' ? 'text-blue-600 scale-105' : 'text-slate-400 hover:text-slate-500'
+              }`}
+            >
+              <WarehouseIcon size={20} className={activeTab === 'warehouses' ? 'stroke-[2.5]' : 'stroke-[2]'} />
+              <span className="text-[10px] font-black">{t.navWarehouses}</span>
+            </button>
+          )}
+
+          {/* Tab: التحويلات المخزنية */}
+          {currentUser.permissions.transfers !== 'none' && (
+            <button
+              onClick={() => setActiveTab('transfers')}
+              className={`flex flex-col items-center gap-1 transition-all cursor-pointer relative ${
+                activeTab === 'transfers' ? 'text-blue-600 scale-105' : 'text-slate-400 hover:text-slate-500'
+              }`}
+            >
+              {pendingIncomingTransfersCount > 0 && (
+                <span className="absolute -top-1.5 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-[9px] font-black text-white animate-bounce shadow-xs">
+                  {pendingIncomingTransfersCount}
+                </span>
+              )}
+              <Bell size={20} className={activeTab === 'transfers' ? 'stroke-[2.5]' : 'stroke-[2]'} />
+              <span className="text-[10px] font-black">{t.navTransfers}</span>
             </button>
           )}
 

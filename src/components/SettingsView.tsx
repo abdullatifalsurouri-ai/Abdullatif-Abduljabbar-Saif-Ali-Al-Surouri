@@ -19,7 +19,7 @@ import {
   Shield,
   Edit2
 } from 'lucide-react';
-import { User, RoleType, UserPermissions } from '../types';
+import { User, RoleType, UserPermissions, Warehouse } from '../types';
 
 interface SettingsViewProps {
   currentUser: User;
@@ -30,6 +30,7 @@ interface SettingsViewProps {
   lastSyncTime: string | null;
   isOnline: boolean;
   onResetAllData: () => void;
+  warehouses?: Warehouse[];
 }
 
 export default function SettingsView({
@@ -40,7 +41,8 @@ export default function SettingsView({
   onTriggerSync,
   lastSyncTime,
   isOnline,
-  onResetAllData
+  onResetAllData,
+  warehouses = []
 }: SettingsViewProps) {
   const [usersList, setUsersList] = useState<any[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
@@ -51,12 +53,15 @@ export default function SettingsView({
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newRole, setNewRole] = useState<RoleType>('Storekeeper');
+  const [newWarehouseId, setNewWarehouseId] = useState<string>('');
   const [newPermissions, setNewPermissions] = useState<UserPermissions>({
     items: 'read',
     movements: 'write',
     suppliers: 'read',
     reports: 'read',
-    settings: 'none'
+    settings: 'none',
+    warehouses: 'read',
+    transfers: 'write'
   });
 
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -66,13 +71,23 @@ export default function SettingsView({
   const [editingUser, setEditingUser] = useState<any | null>(null);
   const [editPassword, setEditPassword] = useState('');
   const [editRole, setEditRole] = useState<RoleType>('Storekeeper');
+  const [editWarehouseId, setEditWarehouseId] = useState<string>('');
   const [editPermissions, setEditPermissions] = useState<UserPermissions>({
     items: 'read',
     movements: 'none',
     suppliers: 'none',
     reports: 'none',
-    settings: 'none'
+    settings: 'none',
+    warehouses: 'none',
+    transfers: 'none'
   });
+
+  // Keep newWarehouseId in sync with warehouses if not set
+  useEffect(() => {
+    if (!newWarehouseId && warehouses.length > 0) {
+      setNewWarehouseId(warehouses[0].id);
+    }
+  }, [warehouses, newWarehouseId]);
 
   // Check if current user has permissions to write settings (manage users)
   const canManageUsers = currentUser.permissions.settings === 'write' || currentUser.role === 'Owner';
@@ -105,7 +120,9 @@ export default function SettingsView({
       movements: 'none',
       suppliers: 'none',
       reports: 'none',
-      settings: 'none'
+      settings: 'none',
+      warehouses: 'none',
+      transfers: 'none'
     };
 
     if (role === 'Owner') {
@@ -114,7 +131,9 @@ export default function SettingsView({
         movements: 'write',
         suppliers: 'write',
         reports: 'read',
-        settings: 'write'
+        settings: 'write',
+        warehouses: 'write',
+        transfers: 'write'
       };
     } else if (role === 'Admin') {
       defaultPerms = {
@@ -122,7 +141,9 @@ export default function SettingsView({
         movements: 'write',
         suppliers: 'write',
         reports: 'read',
-        settings: 'read' // Can read settings, not write them by default
+        settings: 'read', // Can read settings, not write them by default
+        warehouses: 'write',
+        transfers: 'write'
       };
     } else if (role === 'Storekeeper') {
       defaultPerms = {
@@ -130,7 +151,9 @@ export default function SettingsView({
         movements: 'write',
         suppliers: 'read',
         reports: 'read',
-        settings: 'none'
+        settings: 'none',
+        warehouses: 'read',
+        transfers: 'write'
       };
     } else if (role === 'Viewer') {
       defaultPerms = {
@@ -138,7 +161,9 @@ export default function SettingsView({
         movements: 'read',
         suppliers: 'read',
         reports: 'read',
-        settings: 'none'
+        settings: 'none',
+        warehouses: 'read',
+        transfers: 'read'
       };
     }
 
@@ -171,7 +196,8 @@ export default function SettingsView({
           username: trimmedUser,
           password: newPassword,
           role: newRole,
-          permissions: newPermissions
+          permissions: newPermissions,
+          warehouseId: newWarehouseId
         })
       });
 
@@ -182,6 +208,7 @@ export default function SettingsView({
         setSuccessMessage(`تم إنشاء حساب المستخدم "${trimmedUser}" بنجاح!`);
         setNewUsername('');
         setNewPassword('');
+        setNewWarehouseId(warehouses[0]?.id || '');
         handleRoleChange('Storekeeper', 'create');
         fetchUsers();
       }
@@ -205,7 +232,8 @@ export default function SettingsView({
         body: JSON.stringify({
           password: editPassword || undefined,
           role: editRole,
-          permissions: editPermissions
+          permissions: editPermissions,
+          warehouseId: editWarehouseId
         })
       });
 
@@ -501,7 +529,7 @@ export default function SettingsView({
               </div>
 
               <form onSubmit={handleUpdateUserSubmit} className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div>
                     <label className="block text-[10px] font-bold text-slate-500 mb-1">تحديث كلمة المرور (اتركه فارغاً للاحتفاظ بالحالية)</label>
                     <input
@@ -518,7 +546,7 @@ export default function SettingsView({
                       value={editRole}
                       onChange={(e) => handleRoleChange(e.target.value as RoleType, 'edit')}
                       disabled={editingUser.username.toLowerCase() === 'owner'}
-                      className="w-full bg-white border border-slate-200 text-xs px-3 py-2 rounded-xl text-right cursor-pointer"
+                      className="w-full bg-white border border-slate-200 text-xs px-3 py-2 rounded-xl text-right cursor-pointer font-bold"
                     >
                       <option value="Owner">المالك العام (Owner)</option>
                       <option value="Admin">مدير للنظام (Admin)</option>
@@ -526,12 +554,26 @@ export default function SettingsView({
                       <option value="Viewer">مشاهد تقارير فقط (Viewer)</option>
                     </select>
                   </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 mb-1">المستودع المرتبط بالمسؤول *</label>
+                    <select
+                      value={editWarehouseId}
+                      onChange={(e) => setEditWarehouseId(e.target.value)}
+                      className="w-full bg-white border border-slate-200 text-xs px-3 py-2.5 rounded-xl text-right cursor-pointer font-bold text-slate-700"
+                    >
+                      {warehouses.map((wh) => (
+                        <option key={wh.id} value={wh.id}>
+                          {wh.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
 
                 {/* Granular Permission Toggles (Edit) */}
                 <div className="space-y-2">
                   <span className="text-[10px] font-black text-slate-500 block">تخصيص صلاحيات الوصول المحددة:</span>
-                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 text-[10px]">
+                  <div className="grid grid-cols-2 sm:grid-cols-7 gap-2.5 text-[10px]">
                     {/* Items */}
                     <div className="bg-white p-2.5 rounded-xl border border-slate-200 space-y-1.5">
                       <span className="font-extrabold text-slate-500 block text-center">الأصناف</span>
@@ -605,6 +647,36 @@ export default function SettingsView({
                         <option value="none">محجوب</option>
                       </select>
                     </div>
+
+                    {/* Warehouses */}
+                    <div className="bg-white p-2.5 rounded-xl border border-slate-200 space-y-1.5">
+                      <span className="font-extrabold text-slate-500 block text-center">المستودعات</span>
+                      <select
+                        value={editPermissions.warehouses}
+                        onChange={(e) => setEditPermissions({ ...editPermissions, warehouses: e.target.value as any })}
+                        disabled={editingUser.username.toLowerCase() === 'owner'}
+                        className="w-full bg-slate-50 text-[10px] p-1 rounded-md text-right border border-slate-200 cursor-pointer"
+                      >
+                        <option value="write">إدارة كاملة</option>
+                        <option value="read">عرض فقط</option>
+                        <option value="none">محجوب</option>
+                      </select>
+                    </div>
+
+                    {/* Transfers */}
+                    <div className="bg-white p-2.5 rounded-xl border border-slate-200 space-y-1.5">
+                      <span className="font-extrabold text-slate-500 block text-center">التحويلات المخزنية</span>
+                      <select
+                        value={editPermissions.transfers}
+                        onChange={(e) => setEditPermissions({ ...editPermissions, transfers: e.target.value as any })}
+                        disabled={editingUser.username.toLowerCase() === 'owner'}
+                        className="w-full bg-slate-50 text-[10px] p-1 rounded-md text-right border border-slate-200 cursor-pointer"
+                      >
+                        <option value="write">إنشاء وقبول/رفض</option>
+                        <option value="read">عرض فقط</option>
+                        <option value="none">محجوب</option>
+                      </select>
+                    </div>
                   </div>
                 </div>
 
@@ -659,6 +731,7 @@ export default function SettingsView({
                               setEditPassword('');
                               setEditRole(userObj.role);
                               setEditPermissions(userObj.permissions);
+                              setEditWarehouseId(userObj.warehouseId || '');
                             }}
                             className="bg-slate-50 hover:bg-blue-50 text-slate-400 hover:text-blue-600 p-2 rounded-xl transition-all cursor-pointer"
                             title="تعديل صلاحيات المستخدم"
@@ -726,6 +799,21 @@ export default function SettingsView({
                     <option value="Admin">مدير للنظام (Admin)</option>
                     <option value="Storekeeper">أمين مستودع ومخازن</option>
                     <option value="Viewer">مشاهد تقارير وجرد</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-[10px] font-bold text-slate-500">المستودع المرتبط بالمسؤول *</label>
+                  <select
+                    value={newWarehouseId}
+                    onChange={(e) => setNewWarehouseId(e.target.value)}
+                    className="w-full bg-white border border-slate-200 text-xs px-3 py-2.5 rounded-xl text-right cursor-pointer font-bold text-slate-700"
+                  >
+                    {warehouses.map((wh) => (
+                      <option key={wh.id} value={wh.id}>
+                        {wh.name}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
