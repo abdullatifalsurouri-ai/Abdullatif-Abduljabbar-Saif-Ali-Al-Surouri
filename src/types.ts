@@ -4,6 +4,8 @@ export interface Item {
   safetyLimit: number;
   unit: string;
   price: number;
+  category?: string; // التصنيف
+  description?: string; // وصف المنتج
 }
 
 export interface Movement {
@@ -13,6 +15,8 @@ export interface Movement {
   type: 'in' | 'out'; // 'in' = وارد, 'out' = صرف
   partner: string; // Supplier (المورد) or Client (العميل)
   date: string; // YYYY-MM-DD
+  photo?: string; // Base64 data URI of captured camera photo
+  warehouseId?: string; // Associate movement with a warehouse
 }
 
 export interface Supplier {
@@ -22,7 +26,55 @@ export interface Supplier {
   email: string;
 }
 
-export type TabType = 'home' | 'items' | 'movements' | 'inventory' | 'report' | 'print';
+export interface Warehouse {
+  id: string; // e.g., WH-001
+  name: string;
+  manager: string; // Username of manager
+  location?: string;
+}
+
+export interface WarehouseTransfer {
+  id: string; // e.g., TR-1001
+  fromWarehouseId: string;
+  toWarehouseId: string;
+  itemId: string;
+  quantity: number;
+  status: 'pending' | 'accepted' | 'rejected';
+  date: string;
+  createdBy: string; // Sender username
+  handledBy?: string; // Receiver/Target manager username
+  handledDate?: string;
+}
+
+export type TabType = 'home' | 'items' | 'movements' | 'inventory' | 'warehouses' | 'transfers' | 'report' | 'print' | 'settings';
+
+export type RoleType = 'Owner' | 'Admin' | 'Storekeeper' | 'Viewer';
+
+export interface UserPermissions {
+  items: 'read' | 'write' | 'none';
+  movements: 'read' | 'write' | 'none';
+  reports: 'read' | 'none';
+  suppliers: 'read' | 'write' | 'none';
+  settings: 'read' | 'write' | 'none';
+  warehouses: 'read' | 'write' | 'none';
+  transfers: 'read' | 'write' | 'none';
+}
+
+export interface User {
+  username: string;
+  role: RoleType;
+  permissions: UserPermissions;
+  warehouseId?: string; // Link user with managed warehouse
+}
+
+export interface SyncPayload {
+  items: Item[];
+  movements: Movement[];
+  suppliers: Supplier[];
+  warehouses: Warehouse[];
+  transfers: WarehouseTransfer[];
+  groups?: any[]; // optional groups array
+}
 
 export type ReportFilterType = 'monthly' | 'items' | 'suppliers';
 
@@ -34,6 +86,8 @@ export const INITIAL_ITEMS: Item[] = [
     safetyLimit: 10,
     unit: 'حبة',
     price: 45,
+    category: 'شواحن',
+    description: 'شاحن سريع يدعم تقنية PD لشحن الأجهزة الذكية بكفاءة وسرعة فائقة.',
   },
   {
     id: 'PROD-002',
@@ -41,6 +95,8 @@ export const INITIAL_ITEMS: Item[] = [
     safetyLimit: 15,
     unit: 'حبة',
     price: 85,
+    category: 'سماعات',
+    description: 'سماعة رأس لاسلكية مريحة مع عزل ضوضاء ممتاز وبطارية تدوم طويلاً.',
   },
   {
     id: 'PROD-003',
@@ -48,6 +104,8 @@ export const INITIAL_ITEMS: Item[] = [
     safetyLimit: 30,
     unit: 'حبة',
     price: 15,
+    category: 'كابلات',
+    description: 'كابل مقاوم للقطع ومصنوع من النسيج المتين يدعم نقل البيانات والشحن السريع.',
   },
 ];
 
@@ -115,4 +173,33 @@ export const INITIAL_MOVEMENTS: Movement[] = [
     partner: 'المدى المتقدم لخدمات الجوال',
     date: '2026-06-15',
   },
+];
+
+export const INITIAL_WAREHOUSES: Warehouse[] = [
+  {
+    id: 'WH-001',
+    name: 'المستودع الرئيسي - الرياض',
+    manager: 'Owner',
+    location: 'الرياض - حي الملز',
+  },
+  {
+    id: 'WH-002',
+    name: 'مستودع الغربية - جدة',
+    manager: 'admin',
+    location: 'جدة - المنطقة الصناعية',
+  },
+];
+
+export const INITIAL_TRANSFERS: WarehouseTransfer[] = [
+  {
+    id: 'TR-1001',
+    fromWarehouseId: 'WH-001',
+    toWarehouseId: 'WH-002',
+    itemId: 'PROD-001',
+    quantity: 15,
+    status: 'pending',
+    date: '2026-06-25',
+    createdBy: 'Owner',
+    handledBy: 'admin',
+  }
 ];

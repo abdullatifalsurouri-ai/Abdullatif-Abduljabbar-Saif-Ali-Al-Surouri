@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Box, 
   Users, 
@@ -11,7 +11,13 @@ import {
   ChevronUp, 
   X, 
   CheckCircle, 
-  Info 
+  Info,
+  Database,
+  Download,
+  Upload,
+  Trash2,
+  Lock,
+  Unlock
 } from 'lucide-react';
 import { Item, Movement, Supplier } from '../types';
 
@@ -19,16 +25,24 @@ interface HomeViewProps {
   items: Item[];
   movements: Movement[];
   suppliers: Supplier[];
+  isDataLocked: boolean;
+  onToggleLock: (locked: boolean) => void;
   onNavigate: (tab: 'inventory' | 'items' | 'movements' | 'report' | 'print') => void;
   onOpenSuppliers: () => void;
+  onImportData: (items: Item[], suppliers: Supplier[], movements: Movement[]) => void;
+  onResetData: () => void;
 }
 
 export default function HomeView({
   items,
   movements,
   suppliers,
+  isDataLocked,
+  onToggleLock,
   onNavigate,
   onOpenSuppliers,
+  onImportData,
+  onResetData,
 }: HomeViewProps) {
   // PWA installation state
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
@@ -37,6 +51,83 @@ export default function HomeView({
   });
   const [showInstructions, setShowInstructions] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
+
+  // Data management state
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [showConfirmReset, setShowConfirmReset] = useState(false);
+
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => setToast(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
+
+  const handleExport = () => {
+    try {
+      const backupData = {
+        version: "1.0",
+        app: "wms_al_mada",
+        exportedAt: new Date().toISOString(),
+        data: {
+          items,
+          suppliers,
+          movements
+        }
+      };
+
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupData, null, 2));
+      const downloadAnchor = document.createElement('a');
+      downloadAnchor.setAttribute("href", dataStr);
+      
+      const dateStr = new Date().toISOString().split('T')[0];
+      downloadAnchor.setAttribute("download", `wms_backup_${dateStr}.json`);
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+
+      setToast({ message: 'تم تصدير نسخة احتياطية من البيانات بنجاح! 📥', type: 'success' });
+    } catch (error) {
+      console.error(error);
+      setToast({ message: 'حدث خطأ أثناء تصدير البيانات.', type: 'error' });
+    }
+  };
+
+  const handleImport = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (isDataLocked) {
+      setToast({ message: '⚠️ لا يمكن استيراد البيانات لأن خيار "قفل البيانات" مفعّل حالياً في الإعدادات.', type: 'error' });
+      event.target.value = '';
+      return;
+    }
+    const fileReader = new FileReader();
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    fileReader.onload = (e) => {
+      try {
+        const parsed = JSON.parse(e.target?.result as string);
+        
+        // Validate backup structure
+        if (parsed && parsed.data && Array.isArray(parsed.data.items) && Array.isArray(parsed.data.movements)) {
+          const importedItems = parsed.data.items;
+          const importedSuppliers = Array.isArray(parsed.data.suppliers) ? parsed.data.suppliers : [];
+          const importedMovements = parsed.data.movements;
+
+          // Perform restore
+          onImportData(importedItems, importedSuppliers, importedMovements);
+          setToast({ message: 'تم استيراد كافة البيانات واستعادة النسخة الاحتياطية بنجاح! 🎉', type: 'success' });
+        } else {
+          setToast({ message: 'ملف غير صالح. يرجى اختيار ملف نسخة احتياطية صحيح.', type: 'error' });
+        }
+      } catch (error) {
+        console.error(error);
+        setToast({ message: 'حدث خطأ أثناء قراءة الملف. يرجى التأكد من اختيار ملف JSON صحيح.', type: 'error' });
+      }
+    };
+    fileReader.readAsText(files[0]);
+    // Reset file input value so same file can be imported again if needed
+    event.target.value = '';
+  };
 
   useEffect(() => {
     const handleBeforeInstallPrompt = (e: Event) => {
@@ -284,6 +375,99 @@ export default function HomeView({
 
       </div>
 
+      {/* Settings & Backup Card */}
+      <div className="bg-white border border-slate-100 rounded-3xl p-5 hover:shadow-md transition-all space-y-4">
+        <div className="flex items-center gap-2.5 pb-2 border-b border-slate-50">
+          <div className="bg-blue-50 text-blue-600 p-2 rounded-xl">
+            <Database size={18} className="stroke-[2.5]" />
+          </div>
+          <div className="text-right">
+            <h3 className="font-extrabold text-slate-800 text-sm sm:text-base">إعدادات وإدارة البيانات</h3>
+            <p className="text-[11px] text-slate-400 font-semibold">تصدير واستيراد النسخ الاحتياطية للمستودع والعمل بدون إنترنت</p>
+          </div>
+        </div>
+
+        {/* Lock Data / Read-Only Mode Switch */}
+        <div className={`border rounded-2xl p-4 flex items-center justify-between gap-4 transition-all ${isDataLocked ? 'bg-amber-50/50 border-amber-100' : 'bg-slate-50 border-slate-100'}`}>
+          <div className="flex items-center gap-3">
+            <div className={`p-2.5 rounded-xl transition-colors ${isDataLocked ? 'bg-amber-50 text-amber-600 border border-amber-100 animate-pulse-subtle' : 'bg-white border border-slate-200 text-slate-400'}`}>
+              {isDataLocked ? <Lock size={18} className="stroke-[2.5]" /> : <Unlock size={18} className="stroke-[2.5]" />}
+            </div>
+            <div className="text-right">
+              <span className="font-extrabold text-xs text-slate-800 block">قفل البيانات (وضع القراءة فقط)</span>
+              <span className="text-[10px] text-slate-400 font-semibold block mt-0.5">يمنع التعديل أو الحذف أو الإضافة عن طريق الخطأ</span>
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              onToggleLock(!isDataLocked);
+              setToast({
+                message: !isDataLocked ? 'تم تفعيل وضع القراءة فقط وقفل البيانات بنجاح 🔒' : 'تم إلغاء قفل البيانات، وضع التعديل نشط الآن 🔓',
+                type: 'success'
+              });
+            }}
+            className={`w-12 h-6.5 rounded-full p-0.5 transition-all duration-300 relative cursor-pointer ${isDataLocked ? 'bg-amber-500' : 'bg-slate-300'}`}
+          >
+            <div className={`w-5.5 h-5.5 rounded-full bg-white shadow-xs transition-all duration-300 transform ${isDataLocked ? '-translate-x-5.5' : 'translate-x-0'}`} />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3.5">
+          {/* Export Button */}
+          <button
+            onClick={handleExport}
+            className="bg-slate-50 hover:bg-blue-50 border border-slate-100 hover:border-blue-200 text-slate-700 hover:text-blue-700 font-extrabold text-xs py-3.5 px-4 rounded-2xl transition-all flex items-center justify-center gap-2 cursor-pointer group"
+          >
+            <Download size={16} className="text-blue-500 stroke-[2.5] group-hover:scale-110 transition-transform" />
+            <span>تصدير البيانات (JSON)</span>
+          </button>
+
+          {/* Import Button */}
+          {isDataLocked ? (
+            <div
+              onClick={() => setToast({ message: '⚠️ يرجى إلغاء "قفل البيانات" أولاً لتتمكن من استيراد نسخة احتياطية.', type: 'error' })}
+              className="bg-slate-100 text-slate-400 border border-slate-200 font-extrabold text-xs py-3.5 px-4 rounded-2xl flex items-center justify-center gap-2 cursor-not-allowed opacity-60 text-center"
+            >
+              <Upload size={16} className="stroke-[2.5]" />
+              <span>استيراد البيانات مقفل</span>
+            </div>
+          ) : (
+            <label
+              className="bg-slate-50 hover:bg-emerald-50 border border-slate-100 hover:border-emerald-200 text-slate-700 hover:text-emerald-700 font-extrabold text-xs py-3.5 px-4 rounded-2xl transition-all flex items-center justify-center gap-2 cursor-pointer group text-center"
+            >
+              <Upload size={16} className="text-emerald-500 stroke-[2.5] group-hover:scale-110 transition-transform" />
+              <span>استيراد واستعادة البيانات</span>
+              <input
+                type="file"
+                accept=".json"
+                onChange={handleImport}
+                className="hidden"
+                disabled={isDataLocked}
+              />
+            </label>
+          )}
+        </div>
+
+        {/* Clear Data Option (Safe with custom modal) */}
+        <div className="text-[11px] text-slate-400 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pt-1 border-t border-slate-50">
+          <span>حجم البيانات الحالي: {JSON.stringify({ items, movements, suppliers }).length} بايت</span>
+          {isDataLocked ? (
+            <span className="text-slate-400 font-semibold flex items-center gap-1">
+              <Lock size={12} />
+              <span>إعادة تعيين البيانات معطلة (مقفل)</span>
+            </span>
+          ) : (
+            <button
+              onClick={() => setShowConfirmReset(true)}
+              className="text-red-500 hover:text-red-700 font-bold hover:underline transition-all cursor-pointer text-right flex items-center gap-1"
+            >
+              <Trash2 size={12} />
+              <span>مسح كافة البيانات وإعادة التعيين</span>
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Quick Stock Section (الجرد السريع) */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
@@ -340,6 +524,56 @@ export default function HomeView({
           ))}
         </div>
       </div>
+
+      {/* Custom Toast Notification */}
+      {toast && (
+        <div className={`fixed bottom-24 left-4 right-4 sm:left-auto sm:right-4 sm:max-w-sm p-4 rounded-2xl shadow-xl border flex items-center gap-3 z-50 animate-fade-in ${
+          toast.type === 'success' ? 'bg-emerald-50 border-emerald-100 text-emerald-800' : 'bg-red-50 border-red-100 text-red-800'
+        }`} style={{ direction: 'rtl' }}>
+          <div className={`p-1.5 rounded-lg ${toast.type === 'success' ? 'bg-emerald-100 text-emerald-600' : 'bg-red-100 text-red-600'}`}>
+            {toast.type === 'success' ? <CheckCircle size={18} /> : <AlertCircle size={18} />}
+          </div>
+          <p className="text-xs font-black flex-1 text-right">{toast.message}</p>
+          <button onClick={() => setToast(null)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
+      {/* Custom Reset Confirmation Modal */}
+      {showConfirmReset && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in" style={{ direction: 'rtl' }}>
+          <div className="bg-white rounded-3xl p-6 max-w-sm w-full border border-slate-100 shadow-xl space-y-4 text-right">
+            <div className="bg-red-50 text-red-600 p-3 rounded-2xl w-fit">
+              <AlertCircle size={24} className="stroke-[2.5]" />
+            </div>
+            <div className="space-y-1.5">
+              <h4 className="font-extrabold text-slate-800 text-base">مسح وإعادة تعيين المستودع؟</h4>
+              <p className="text-xs text-slate-500 font-semibold leading-relaxed">
+                سيتم حذف كافة الأصناف الحالية والحركات والبيانات المسجلة، وإعادتها للحالة الافتراضية. هل أنت متأكد من رغبتك بالاستمرار؟
+              </p>
+            </div>
+            <div className="flex gap-2.5 pt-2">
+              <button
+                onClick={() => {
+                  onResetData();
+                  setShowConfirmReset(false);
+                  setToast({ message: 'تم مسح البيانات وإعادة تعيين المستودع بنجاح.', type: 'success' });
+                }}
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white font-extrabold text-xs py-3 rounded-xl transition-all cursor-pointer"
+              >
+                نعم، احذف وأعد التعيين
+              </button>
+              <button
+                onClick={() => setShowConfirmReset(false)}
+                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xs py-3 rounded-xl transition-all cursor-pointer"
+              >
+                إلغاء
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

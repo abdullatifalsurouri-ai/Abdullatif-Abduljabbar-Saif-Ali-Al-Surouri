@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { X, Plus, Phone, Mail, Trash2, Edit2, Check, User } from 'lucide-react';
+import { X, Plus, Phone, Mail, Trash2, Edit2, Check, User, Lock } from 'lucide-react';
 import { Supplier } from '../types';
 
 interface SuppliersModalProps {
   isOpen: boolean;
   onClose: () => void;
   suppliers: Supplier[];
+  isDataLocked: boolean;
   onAddSupplier: (supplier: Supplier) => void;
   onEditSupplier: (supplier: Supplier) => void;
   onDeleteSupplier: (id: string) => void;
@@ -15,6 +16,7 @@ export default function SuppliersModal({
   isOpen,
   onClose,
   suppliers,
+  isDataLocked,
   onAddSupplier,
   onEditSupplier,
   onDeleteSupplier,
@@ -104,7 +106,7 @@ export default function SuppliersModal({
             onChange={(e) => setSearch(e.target.value)}
             className="flex-1 bg-slate-50 border border-slate-200 focus:border-blue-500 focus:bg-white text-sm px-4 py-3 rounded-xl outline-hidden transition-all text-slate-700"
           />
-          {!isFormOpen && (
+          {!isFormOpen && !isDataLocked && (
             <button
               onClick={() => {
                 setEditingSupplier(null);
@@ -121,6 +123,17 @@ export default function SuppliersModal({
 
         {/* Modal Main Content Container */}
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
+          
+          {isDataLocked && (
+            <div className="bg-amber-50 border border-amber-100 text-amber-800 p-4 rounded-3xl flex items-center gap-3">
+              <div className="bg-amber-100 p-2 rounded-xl text-amber-600 shrink-0">
+                <Lock size={16} className="stroke-[2.5]" />
+              </div>
+              <div className="text-xs font-bold leading-relaxed text-right">
+                وضع القراءة فقط نشط: تم قفل البيانات في الإعدادات لمنع إضافة الموردين أو تعديلهم أو حذفهم.
+              </div>
+            </div>
+          )}
           
           {/* Form inside Modal */}
           {isFormOpen && (
@@ -216,24 +229,33 @@ export default function SuppliersModal({
 
                   {/* Actions */}
                   <div className="flex items-center justify-end gap-1 border-t sm:border-0 pt-3 sm:pt-0 border-slate-100">
-                    <button
-                      onClick={() => handleEdit(supplier)}
-                      className="text-slate-500 hover:text-blue-600 hover:bg-blue-50 p-2.5 rounded-xl transition-all"
-                      title="تعديل المورد"
-                    >
-                      <Edit2 size={15} />
-                    </button>
-                    <button
-                      onClick={() => {
-                        if (confirm(`هل أنت متأكد من حذف المورد "${supplier.name}"؟`)) {
-                          onDeleteSupplier(supplier.id);
-                        }
-                      }}
-                      className="text-slate-400 hover:text-red-600 hover:bg-red-50 p-2.5 rounded-xl transition-all"
-                      title="حذف المورد"
-                    >
-                      <Trash2 size={15} />
-                    </button>
+                    {isDataLocked ? (
+                      <span className="text-amber-600 bg-amber-50 text-[11px] font-bold px-3 py-1.5 rounded-xl flex items-center gap-1 border border-amber-100/50">
+                        <Lock size={12} className="stroke-[2.5]" />
+                        <span>عرض فقط</span>
+                      </span>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => handleEdit(supplier)}
+                          className="text-slate-500 hover:text-blue-600 hover:bg-blue-50 p-2.5 rounded-xl transition-all cursor-pointer"
+                          title="تعديل المورد"
+                        >
+                          <Edit2 size={15} />
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (confirm(`هل أنت متأكد من حذف المورد "${supplier.name}"؟`)) {
+                              onDeleteSupplier(supplier.id);
+                            }
+                          }}
+                          className="text-slate-400 hover:text-red-600 hover:bg-red-50 p-2.5 rounded-xl transition-all cursor-pointer"
+                          title="حذف المورد"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               ))

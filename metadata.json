@@ -1,7 +1,7 @@
 {
   "name": "Remix: نظام إدارة المستودعات V3",
   "description": "نظام متكامل ومصمم بذكاء لإدارة المستودعات، تتبع الحركات (وارد/صرف)، جرد الأصناف، تحليل التقارير، وطباعة السندات.",
-  "requestFramePermissions": [],
+  "requestFramePermissions": ["camera"],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
   ]

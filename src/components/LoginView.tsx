@@ -1,0 +1,246 @@
+import React, { useState, useEffect } from 'react';
+import { Shield, KeyRound, User as UserIcon, AlertCircle, RefreshCw, Globe } from 'lucide-react';
+import { User } from '../types';
+
+interface LoginViewProps {
+  onLoginSuccess: (user: User) => void;
+  currentLanguage: 'ar' | 'en';
+  onLanguageChange: (lang: 'ar' | 'en') => void;
+}
+
+export default function LoginView({ onLoginSuccess, currentLanguage, onLanguageChange }: LoginViewProps) {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Silently pre-fetch and cache users list for offline availability
+  useEffect(() => {
+    const cacheUsers = async () => {
+      try {
+        const response = await fetch('/api/users');
+        if (response.ok) {
+          const data = await response.json();
+          localStorage.setItem('wms_cached_users', JSON.stringify(data));
+        }
+      } catch (err) {
+        console.warn('Unable to sync users list for offline use, using existing cache:', err);
+      }
+    };
+    cacheUsers();
+  }, []);
+
+  const t = {
+    ar: {
+      title: 'مستودع المدى الذكي',
+      sub: 'بوابة تسجيل الدخول الآمن للمستودع والتوثيق السحابي',
+      cardTitle: 'المصادقة الأمنية',
+      cardSub: 'نظام الـ WMS المتقدم',
+      userLabel: 'اسم المستخدم',
+      userPlaceholder: 'أدخل اسم المستخدم (مثال: admin)',
+      passLabel: 'كلمة المرور السرية',
+      passPlaceholder: 'أدخل رمز المرور السري',
+      loginBtnLoading: 'يرجى الانتظار، جاري التحقق...',
+      loginBtn: 'دخول آمن للنظام وتزامن البيانات',
+      footer: '© ٢٠٢٦ مستودع المدى الذكي WMS. جميع الحقوق محفوظة للمهندس عبداللطيف السروري.',
+      emptyError: 'يرجى إدخال اسم المستخدم وكلمة المرور',
+      offlineError: 'تم تسجيل الدخول محلياً (وضع أوفلاين) - تعذر الاتصال بالخادم السحابي.',
+      invalidError: 'اسم المستخدم أو كلمة المرور غير صحيحة',
+    },
+    en: {
+      title: 'Al-Mada Smart WMS',
+      sub: 'Secure login gate for warehouse management & cloud synchronization',
+      cardTitle: 'Security Authentication',
+      cardSub: 'Advanced WMS System',
+      userLabel: 'Username',
+      userPlaceholder: 'Enter username (e.g., admin)',
+      passLabel: 'Secret Password',
+      passPlaceholder: 'Enter your secret password',
+      loginBtnLoading: 'Please wait, verifying...',
+      loginBtn: 'Secure Log In & Data Sync',
+      footer: '© 2026 Al-Mada Smart WMS. All rights reserved to Eng. Abdullatif Alsurouri.',
+      emptyError: 'Please enter both username and password',
+      offlineError: 'Logged in locally (Offline mode) - Could not contact cloud server.',
+      invalidError: 'Incorrect username or password',
+    },
+  }[currentLanguage];
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setIsLoading(true);
+
+    const trimmedUser = username.trim();
+    if (!trimmedUser || !password) {
+      setError(t.emptyError);
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      // 1. Try server-side authentication first
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: trimmedUser, password }),
+      });
+
+      const data = await response.json();
+      
+      if (!response.ok || !data.success) {
+        setError(data.error || t.invalidError);
+      } else {
+        // Successful online login -> cache the logged-in user
+        onLoginSuccess(data.user);
+      }
+    } catch (err) {
+      console.warn('Network issue or server offline. Checking local cache...', err);
+      
+      // 2. Fallback to Local Authentication (Offline support)
+      const cachedUsersStr = localStorage.getItem('wms_cached_users');
+      if (cachedUsersStr) {
+        try {
+          const cachedUsers = JSON.parse(cachedUsersStr);
+          const matchedUser = cachedUsers.find(
+            (u: any) => u.username.toLowerCase() === trimmedUser.toLowerCase() && u.password === password
+          );
+
+          if (matchedUser) {
+            // Successful offline login!
+            const safeUser: User = {
+              username: matchedUser.username,
+              role: matchedUser.role,
+              permissions: matchedUser.permissions,
+            };
+            onLoginSuccess(safeUser);
+            return;
+          }
+        } catch (jsonErr) {
+          console.error('Error parsing cached users list:', jsonErr);
+        }
+      }
+
+      // If no match was found locally or local storage is empty
+      setError(t.invalidError + ' (أوفلاين - لا توجد بيانات مسجلة مسبقاً)');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const isRtl = currentLanguage === 'ar';
+
+  return (
+    <div className={`min-h-screen bg-slate-950 flex flex-col justify-center items-center px-4 py-12 font-sans relative overflow-hidden selection:bg-blue-500/30 selection:text-blue-300`} dir={isRtl ? 'rtl' : 'ltr'}>
+      {/* Language Toggle Button on top right/left */}
+      <div className={`absolute top-6 ${isRtl ? 'left-6' : 'right-6'} z-50`}>
+        <button
+          onClick={() => onLanguageChange(currentLanguage === 'ar' ? 'en' : 'ar')}
+          className="bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 hover:border-slate-700 p-2.5 px-4 rounded-2xl transition-all cursor-pointer flex items-center gap-2 text-xs font-bold shadow-lg"
+          title={isRtl ? 'Switch language to English' : 'تغيير اللغة إلى العربية'}
+        >
+          <Globe size={16} className="stroke-[2.5] text-blue-400" />
+          <span className="uppercase tracking-wider">{isRtl ? 'English' : 'العربية'}</span>
+        </button>
+      </div>
+
+      {/* Dynamic Grid Background Accent */}
+      <div className="absolute inset-0 bg-[linear-gradient(to_right,#0f172a_1px,transparent_1px),linear-gradient(to_bottom,#0f172a_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)] opacity-60"></div>
+      
+      {/* Decorative Blur Spheres */}
+      <div className="absolute top-1/4 left-1/4 -translate-x-1/2 -translate-y-1/2 w-80 h-80 bg-blue-600/10 rounded-full blur-3xl"></div>
+      <div className="absolute bottom-1/4 right-1/4 translate-x-1/2 translate-y-1/2 w-96 h-96 bg-purple-600/10 rounded-full blur-3xl"></div>
+
+      <div className="w-full max-w-md relative z-10 space-y-8 animate-fade-in">
+        {/* Title and Branding */}
+        <div className="text-center space-y-3">
+          <div className="inline-flex bg-gradient-to-tr from-blue-600 to-indigo-500 text-white p-3.5 rounded-3xl shadow-xl shadow-blue-500/10 border border-blue-400/20 hover:scale-105 transition-all">
+            <Shield size={32} className="stroke-[2.2]" />
+          </div>
+          <div className="space-y-1">
+            <h1 className="text-2xl font-black text-white tracking-tight">{t.title}</h1>
+            <p className="text-slate-400 text-xs font-bold">{t.sub}</p>
+          </div>
+        </div>
+
+        {/* Login Form Card */}
+        <div className="bg-slate-900/80 border border-slate-800/80 backdrop-blur-xl rounded-3xl shadow-2xl p-7 space-y-6">
+          <div className={`flex items-center justify-between border-b border-slate-800 pb-4`}>
+            <span className="text-xs font-black text-blue-400 uppercase tracking-widest">{t.cardTitle}</span>
+            <span className="text-[10px] text-slate-500 font-bold">{t.cardSub}</span>
+          </div>
+
+          {error && (
+            <div className="bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs font-bold p-3.5 rounded-2xl flex items-start gap-2.5 animate-slide-down">
+              <AlertCircle size={16} className="shrink-0 mt-0.5 text-rose-400" />
+              <span className={`leading-relaxed ${isRtl ? 'text-right' : 'text-left'}`}>{error}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-4.5">
+            {/* Username Input */}
+            <div className="space-y-1.5">
+              <label className={`block text-[11px] font-black text-slate-400 ${isRtl ? 'text-right' : 'text-left'}`}>{t.userLabel}</label>
+              <div className="relative">
+                <div className={`absolute inset-y-0 ${isRtl ? 'right-0 pr-3.5' : 'left-0 pl-3.5'} flex items-center pointer-events-none text-slate-500`}>
+                  <UserIcon size={16} className="stroke-[2]" />
+                </div>
+                <input
+                  type="text"
+                  required
+                  placeholder={t.userPlaceholder}
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  className={`w-full bg-slate-950 border border-slate-800 text-slate-200 placeholder-slate-600 text-xs px-4 py-3.5 rounded-2xl outline-hidden focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 transition-all font-bold ${
+                    isRtl ? 'pr-10.5 text-right' : 'pl-10.5 text-left'
+                  }`}
+                />
+              </div>
+            </div>
+
+            {/* Password Input */}
+            <div className="space-y-1.5">
+              <label className={`block text-[11px] font-black text-slate-400 ${isRtl ? 'text-right' : 'text-left'}`}>{t.passLabel}</label>
+              <div className="relative">
+                <div className={`absolute inset-y-0 ${isRtl ? 'right-0 pr-3.5' : 'left-0 pl-3.5'} flex items-center pointer-events-none text-slate-500`}>
+                  <KeyRound size={16} className="stroke-[2]" />
+                </div>
+                <input
+                  type="password"
+                  required
+                  placeholder={t.passPlaceholder}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className={`w-full bg-slate-950 border border-slate-800 text-slate-200 placeholder-slate-600 text-xs px-4 py-3.5 rounded-2xl outline-hidden focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 transition-all font-mono ${
+                    isRtl ? 'pr-10.5 text-right' : 'pl-10.5 text-left'
+                  }`}
+                />
+              </div>
+            </div>
+
+            {/* Submit Button */}
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800/50 text-white text-xs font-black py-3.5 rounded-2xl transition-all shadow-lg shadow-blue-600/10 flex items-center justify-center gap-2 cursor-pointer hover:scale-[1.01] active:scale-[0.99] disabled:scale-100"
+            >
+              {isLoading ? (
+                <>
+                  <RefreshCw size={14} className="animate-spin" />
+                  <span>{t.loginBtnLoading}</span>
+                </>
+              ) : (
+                <span>{t.loginBtn}</span>
+              )}
+            </button>
+          </form>
+        </div>
+
+        {/* Footer info */}
+        <p className="text-[10px] text-slate-600 font-bold text-center">
+          {t.footer}
+        </p>
+      </div>
+    </div>
+  );
+}
+

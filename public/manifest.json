@@ -3,6 +3,7 @@
   "short_name": "مستودع المدى",
   "description": "نظام متكامل ومصمم بذكاء لإدارة المستودعات، تتبع الحركات (وارد/صرف)، جرد الأصناف، تحليل التقارير، وطباعة السندات.",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#f8fafc",
   "theme_color": "#2563eb",
@@ -10,7 +11,7 @@
   "icons": [
     {
       "src": "/icon.svg",
-      "sizes": "512x512",
+      "sizes": "72x72 96x96 128x128 144x144 152x152 192x192 384x384 512x512",
       "type": "image/svg+xml",
       "purpose": "any"
     },
@@ -22,7 +23,7 @@
     },
     {
       "src": "/icon.jpg",
-      "sizes": "512x512",
+      "sizes": "192x192 512x512",
       "type": "image/jpeg",
       "purpose": "any"
     }
