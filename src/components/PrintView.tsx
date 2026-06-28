@@ -568,15 +568,15 @@ export default function PrintView({ movements, items, warehouses = [] }: PrintVi
                     <td className="p-3 font-bold">{activeItem.name}</td>
                     <td className="p-3 text-center">{activeItem.unit}</td>
                     <td className="p-3 text-center font-mono font-bold text-slate-800">{queriedVoucher.quantity}</td>
-                    <td className="p-3 text-left font-mono">{activeItem.price.toFixed(2)} ر.س</td>
-                    <td className="p-3 text-left font-mono font-black text-slate-800">{totalValue.toFixed(2)} ر.س</td>
+                    <td className="p-3 text-left font-mono">{activeItem.price.toFixed(2)} {activeItem.currency || 'ر.س'}</td>
+                    <td className="p-3 text-left font-mono font-black text-slate-800">{totalValue.toFixed(2)} {activeItem.currency || 'ر.س'}</td>
                   </tr>
                   
                   {/* Total summary row */}
                   <tr className="bg-slate-50 border-t border-slate-200 font-black text-slate-800">
                     <td colSpan={4} className="p-3 text-left">المجموع الخاضع للضريبة:</td>
                     <td colSpan={2} className="p-3 text-left font-mono text-base text-blue-900">
-                      {totalValue.toFixed(2)} ر.س
+                      {totalValue.toFixed(2)} {activeItem.currency || 'ر.س'}
                     </td>
                   </tr>
                 </tbody>
@@ -751,8 +751,8 @@ export default function PrintView({ movements, items, warehouses = [] }: PrintVi
                       {item.balance}
                     </td>
                     <td className="p-3 text-center font-mono text-slate-400">{item.safetyLimit}</td>
-                    <td className="p-3 text-left font-mono">{item.price.toFixed(2)} ر.س</td>
-                    <td className="p-3 text-left font-mono font-black text-blue-900">{item.value.toFixed(2)} ر.س</td>
+                    <td className="p-3 text-left font-mono">{item.price.toFixed(2)} {item.currency || 'ر.س'}</td>
+                    <td className="p-3 text-left font-mono font-black text-blue-900">{item.value.toFixed(2)} {item.currency || 'ر.س'}</td>
                   </tr>
                 ))}
                 {/* Total Inventory sum line */}

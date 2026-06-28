@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Trash2, ArrowDownLeft, ArrowUpRight, X, Check, Calendar, ArrowLeftRight, Lock, Camera, Image as ImageIcon } from 'lucide-react';
+import { Plus, Trash2, ArrowDownLeft, ArrowUpRight, X, Check, Calendar, ArrowLeftRight, Lock, Camera, Image as ImageIcon, Search } from 'lucide-react';
 import { Movement, Item, Supplier, Warehouse, User } from '../types';
 import BarcodeScannerModal from './BarcodeScannerModal';
 import MovementPhotoCapture from './MovementPhotoCapture';
@@ -29,7 +29,9 @@ export default function MovementsView({
   const [activeType, setActiveType] = useState<'in' | 'out'>('in');
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [isSearchScannerOpen, setIsSearchScannerOpen] = useState(false);
   const [previewPhoto, setPreviewPhoto] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
 
   const [formData, setFormData] = useState({
     itemId: '',
@@ -41,9 +43,23 @@ export default function MovementsView({
     warehouseId: currentUser.warehouseId || (warehouses[0]?.id || ''),
   });
 
-  // Filter movements by selected type (وارد vs صرف)
+  // Filter movements by selected type and search
   const filteredMovements = movements
-    .filter((m) => m.type === activeType)
+    .filter((m) => {
+      const matchesType = m.type === activeType;
+      if (!matchesType) return false;
+
+      if (!search.trim()) return true;
+
+      const query = search.toLowerCase();
+      const item = items.find((i) => i.id === m.itemId);
+      const matchesItemName = item ? item.name.toLowerCase().includes(query) : false;
+      const matchesItemId = m.itemId.toLowerCase().includes(query);
+      const matchesPartner = m.partner.toLowerCase().includes(query);
+      const matchesId = String(m.id).includes(query);
+
+      return matchesItemName || matchesItemId || matchesPartner || matchesId;
+    })
     .sort((a, b) => b.id - a.id); // Show latest first
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -81,6 +97,14 @@ export default function MovementsView({
         {!isDataLocked && (
           <button
             onClick={() => {
+              if (activeType === 'in' && currentUser.permissions?.canAddIncoming === false) {
+                alert('🔒 عذراً، لا تمتلك صلاحية إضافة حركة وارد.');
+                return;
+              }
+              if (activeType === 'out' && currentUser.permissions?.canAddOutgoing === false) {
+                alert('🔒 عذراً، لا تمتلك صلاحية إضافة حركة صرف.');
+                return;
+              }
               setFormData({
                 itemId: items[0]?.id || '',
                 quantity: 1,
@@ -136,6 +160,35 @@ export default function MovementsView({
           <ArrowUpRight size={16} />
           <span>حركة الصرف</span>
         </button>
+      </div>
+
+      {/* Search and Scan Bar */}
+      <div className="bg-white border border-slate-100 p-4 rounded-3xl shadow-2xs">
+        <div className="flex gap-2">
+          {/* Main Search input */}
+          <div className="relative flex-1 flex gap-2">
+            <div className="relative flex-1">
+              <input
+                type="text"
+                placeholder="البحث بالاسم، رمز الصنف، أو الجهة... 🔍"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 focus:border-blue-500 focus:bg-white text-sm px-11 py-3.5 rounded-2xl outline-hidden transition-all text-slate-700 text-right font-bold placeholder:text-slate-400"
+              />
+              <Search size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 stroke-[2.5]" />
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setIsSearchScannerOpen(true)}
+              className="bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 px-4 rounded-2xl transition-all cursor-pointer flex items-center justify-center gap-1.5 hover:scale-105 active:scale-95 shrink-0"
+              title="مسح باركود للبحث في الحركات"
+            >
+              <Camera size={16} className="stroke-[2.5]" />
+              <span className="text-xs font-black hidden sm:inline">مسح باركود للبحث</span>
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Movements list */}
@@ -406,6 +459,16 @@ export default function MovementsView({
         items={items}
         onScan={(itemId) => {
           setFormData((prev) => ({ ...prev, itemId }));
+        }}
+      />
+
+      {/* Barcode Scanner Modal Component for searching movements */}
+      <BarcodeScannerModal
+        isOpen={isSearchScannerOpen}
+        onClose={() => setIsSearchScannerOpen(false)}
+        items={items}
+        onScan={(scannedCode) => {
+          setSearch(scannedCode);
         }}
       />
 

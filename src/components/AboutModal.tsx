@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Info, ShieldCheck, Cpu, Layers, HardDrive, Smartphone, Award, Sparkles, Receipt, Laptop, Tablet, CheckCircle } from 'lucide-react';
+import { X, Info, ShieldCheck, Cpu, Layers, HardDrive, Smartphone, Award, Sparkles, Receipt, Laptop, Tablet, CheckCircle, TrendingUp, Search, DollarSign, FileSpreadsheet } from 'lucide-react';
 
 interface AboutModalProps {
   isOpen: boolean;
@@ -35,8 +35,28 @@ export const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose, current
     features: [
       {
         icon: <Layers size={16} className="text-blue-500" />,
-        title: isRtl ? 'إدارة المخزون الذكية' : 'Smart Stock Management',
-        desc: isRtl ? 'تتبع دقيق ومبسط للأصناف، المستودعات، والكميات المتوفرة مع إحصائيات فورية.' : 'Precise, simplified tracking of items, warehouses, and stock levels with instant stats.'
+        title: isRtl ? 'إدارة المخزون الذكية والمخازن' : 'Smart Multi-Warehouse Stock',
+        desc: isRtl ? 'تتبع دقيق للأصناف والمستودعات والتحويلات المخزنية والكميات المتوفرة مع إحصائيات فورية لكل مستودع.' : 'Precise tracking of items, multi-warehouses, stock transfers, and balances with real-time stats.'
+      },
+      {
+        icon: <DollarSign size={16} className="text-emerald-500" />,
+        title: isRtl ? 'دعم العملات المتعددة' : 'Multi-Currency Support',
+        desc: isRtl ? 'إدخال وعرض أسعار الأصناف بالعملات المختلفة (ر.س، ر.ي، دولار) وحساب قيم المخزون بدقة.' : 'Configure and view item prices in various currencies (SAR, YER, USD) with accurate balance calculations.'
+      },
+      {
+        icon: <TrendingUp size={16} className="text-indigo-500" />,
+        title: isRtl ? 'رسوم بيانية وتحليلات' : 'Analytics & Trend Charts',
+        desc: isRtl ? 'مخطط بياني تفاعلي لآخر 7 أيام لتتبع حجم حركة الصرف والوارد، وتحليل أصناف المستودع الأكثر نشاطاً.' : 'Interactive 7-day volume trend charts for inbound/outbound movements, plus active items analysis.'
+      },
+      {
+        icon: <Search size={16} className="text-sky-500" />,
+        title: isRtl ? 'البحث الذكي والتنبيه الفوري' : 'Smart Search & Alerts',
+        desc: isRtl ? 'تصفية فورية للأصناف وتنبيهات بصرية ملونة عند بلوغ الحد الأدنى للأمان لمنع نقص المخزون.' : 'Instant item filtering by multiple parameters, with low-stock visual warning badges based on safety limits.'
+      },
+      {
+        icon: <FileSpreadsheet size={16} className="text-emerald-600" />,
+        title: isRtl ? 'استيراد وتصدير البيانات (CSV)' : 'CSV Import & Export',
+        desc: isRtl ? 'إمكانية رفع قوائم أصناف كاملة بلمحة عين عبر ملفات CSV، وتصدير التقارير لتسهيل العمل المكتبي.' : 'Upload complete item lists instantly using CSV files, and export data spreadsheets in one click.'
       },
       {
         icon: <ShieldCheck size={16} className="text-emerald-500" />,

@@ -4,8 +4,10 @@ export interface Item {
   safetyLimit: number;
   unit: string;
   price: number;
+  currency?: string; // العملة: ر.ي، ر.س، دولار
   category?: string; // التصنيف
   description?: string; // وصف المنتج
+  expirationDate?: string; // تاريخ انتهاء الصلاحية
 }
 
 export interface Movement {
@@ -58,6 +60,13 @@ export interface UserPermissions {
   settings: 'read' | 'write' | 'none';
   warehouses: 'read' | 'write' | 'none';
   transfers: 'read' | 'write' | 'none';
+  // صلاحيات العمليات
+  canAddIncoming?: boolean;
+  canAddOutgoing?: boolean;
+  canApproveTransfer?: boolean;
+  canEditPrices?: boolean;
+  canImportExportCSV?: boolean;
+  canResetSystem?: boolean;
 }
 
 export interface User {

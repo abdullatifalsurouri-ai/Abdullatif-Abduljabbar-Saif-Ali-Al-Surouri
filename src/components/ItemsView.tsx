@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, Plus, Trash2, Edit2, X, Check, Box, Tag, Filter, Lock, ChevronDown, ChevronUp, Calendar, User, Info, Camera, Sparkles, UploadCloud } from 'lucide-react';
+import { Search, Plus, Trash2, Edit2, X, Check, Box, Tag, Filter, Lock, ChevronDown, ChevronUp, Calendar, User, Info, Camera, Sparkles, UploadCloud, AlertTriangle } from 'lucide-react';
 import { Item, Movement } from '../types';
 import BarcodeScannerModal from './BarcodeScannerModal';
 import VirtualList from './VirtualList';
@@ -7,6 +7,7 @@ import VirtualList from './VirtualList';
 interface ItemsViewProps {
   items: Item[];
   movements?: Movement[];
+  currentUser?: any;
   isDataLocked: boolean;
   onAddItem: (item: Item) => void;
   onEditItem: (item: Item) => void;
@@ -17,16 +18,19 @@ interface ItemsViewProps {
 export default function ItemsView({
   items,
   movements = [],
+  currentUser,
   isDataLocked,
   onAddItem,
   onEditItem,
   onDeleteItem,
   onImportItems,
 }: ItemsViewProps) {
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('الكل');
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [isSearchScannerOpen, setIsSearchScannerOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Item | null>(null);
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
   const [previewPhoto, setPreviewPhoto] = useState<string | null>(null);
@@ -109,8 +113,10 @@ export default function ItemsView({
     safetyLimit: 10,
     unit: 'حبة',
     price: 0,
+    currency: 'ر.س',
     category: '',
     description: '',
+    expirationDate: '',
   });
 
   // Extract unique categories from dynamic groups & items list
@@ -183,6 +189,7 @@ export default function ItemsView({
       let priceIdx = headers.findIndex(h => h.includes('السعر') || h.toLowerCase() === 'price');
       let categoryIdx = headers.findIndex(h => h.includes('التصنيف') || h.includes('المجموعة') || h.includes('المجموعه') || h.toLowerCase() === 'category' || h.toLowerCase() === 'group');
       let descIdx = headers.findIndex(h => h.includes('الوصف') || h.includes('تفاصيل') || h.toLowerCase() === 'description' || h.toLowerCase() === 'desc');
+      let currencyIdx = headers.findIndex(h => h.includes('العملة') || h.includes('العمله') || h.toLowerCase() === 'currency');
 
       // Fallback indices if header names aren't detected
       if (idIdx === -1) idIdx = 0;
@@ -231,6 +238,7 @@ export default function ItemsView({
         const safetyLimit = Number(values[safetyIdx]) || 10;
         const unit = values[unitIdx] || 'حبة';
         const price = Number(values[priceIdx]) || 0;
+        const currency = currencyIdx !== -1 && values[currencyIdx] ? values[currencyIdx] : 'ر.س';
         const category = values[categoryIdx] || '';
         const description = values[descIdx] || '';
 
@@ -240,6 +248,7 @@ export default function ItemsView({
           safetyLimit,
           unit,
           price,
+          currency,
           category,
           description,
         });
@@ -281,8 +290,10 @@ export default function ItemsView({
       safetyLimit: 10,
       unit: 'حبة',
       price: 0,
+      currency: 'ر.س',
       category: '',
       description: '',
+      expirationDate: '',
     });
     setIsFormOpen(true);
   };
@@ -295,8 +306,10 @@ export default function ItemsView({
       safetyLimit: item.safetyLimit,
       unit: item.unit,
       price: item.price,
+      currency: item.currency || 'ر.س',
       category: item.category || '',
       description: item.description || '',
+      expirationDate: item.expirationDate || '',
     });
     setIsFormOpen(true);
   };
@@ -311,8 +324,10 @@ export default function ItemsView({
       safetyLimit: Number(formData.safetyLimit),
       unit: formData.unit.trim(),
       price: Number(formData.price),
+      currency: formData.currency,
       category: formData.category.trim() || undefined,
       description: formData.description.trim() || undefined,
+      expirationDate: formData.expirationDate ? formData.expirationDate : undefined,
     };
 
     if (editingItem) {
@@ -352,23 +367,27 @@ export default function ItemsView({
           {!isDataLocked && (
             <>
               {/* Import CSV Trigger */}
-              <div className="relative">
-                <input
-                  type="file"
-                  id="csv-file-import"
-                  accept=".csv, .txt"
-                  onChange={handleCSVImport}
-                  className="hidden"
-                />
-                <label
-                  htmlFor="csv-file-import"
-                  className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/50 px-4 py-3 rounded-2xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer shadow-2xs hover:scale-105 active:scale-95 whitespace-nowrap"
-                  title="استيراد قائمة أصناف كاملة من ملف CSV"
-                >
-                  <UploadCloud size={15} className="stroke-[2.5]" />
-                  <span>استيراد الأصناف (CSV) 📥</span>
-                </label>
-              </div>
+              {currentUser?.permissions?.canImportExportCSV !== false && (
+                <div className="relative">
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    id="csv-file-import"
+                    accept=".csv, .txt"
+                    onChange={handleCSVImport}
+                    className="hidden"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/50 px-4 py-3 rounded-2xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer shadow-2xs hover:scale-105 active:scale-95 whitespace-nowrap"
+                    title="استيراد قائمة أصناف كاملة من ملف CSV"
+                  >
+                    <UploadCloud size={15} className="stroke-[2.5]" />
+                    <span>استيراد الأصناف (CSV) 📥</span>
+                  </button>
+                </div>
+              )}
 
               <button
                 onClick={handleOpenAdd}
@@ -398,15 +417,27 @@ export default function ItemsView({
       <div className="bg-white border border-slate-100 p-4 rounded-3xl shadow-2xs space-y-4">
         <div className="flex gap-2">
           {/* Main Search input */}
-          <div className="relative flex-1">
-            <input
-              type="text"
-              placeholder="البحث عن اسم الصنف، الرمز، التصنيف أو الوصف..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 focus:border-blue-500 focus:bg-white text-sm px-11 py-3.5 rounded-2xl outline-hidden transition-all text-slate-700 text-right"
-            />
-            <Search size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 stroke-[2.5]" />
+          <div className="relative flex-1 flex gap-2">
+            <div className="relative flex-1">
+              <input
+                type="text"
+                placeholder="البحث الذكي الفوري بالاسم أو الرمز (ID)... ⚡"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 focus:border-blue-500 focus:bg-white text-sm px-11 py-3.5 rounded-2xl outline-hidden transition-all text-slate-700 text-right font-bold placeholder:text-slate-400"
+              />
+              <Search size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 stroke-[2.5]" />
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setIsSearchScannerOpen(true)}
+              className="bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 px-4 rounded-2xl transition-all cursor-pointer flex items-center justify-center gap-1.5 hover:scale-105 active:scale-95 shrink-0"
+              title="مسح باركود الصنف للبحث الفوري"
+            >
+              <Camera size={16} className="stroke-[2.5]" />
+              <span className="text-xs font-black hidden sm:inline">مسح باركود للبحث</span>
+            </button>
           </div>
 
           {/* Toggle Advanced Filters Button */}
@@ -533,6 +564,41 @@ export default function ItemsView({
                 .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
               const itemPhoto = lastPhotoMovement?.photo;
 
+              const balance = movements
+                ? movements
+                    .filter(m => m.itemId === item.id)
+                    .reduce((sum, m) => sum + (m.type === 'in' ? m.quantity : -m.quantity), 0)
+                : 0;
+              const isUnderSafetyLimit = balance <= item.safetyLimit;
+
+              // Compute Expiration Badge
+              let expBadge = null;
+              if (item.expirationDate) {
+                const expTime = new Date(item.expirationDate).setHours(0,0,0,0);
+                const todayTime = new Date().setHours(0,0,0,0);
+                const thirtyDaysFromNow = todayTime + (30 * 24 * 60 * 60 * 1000);
+
+                if (expTime <= todayTime) {
+                  expBadge = (
+                    <span className="bg-rose-50 text-rose-600 border border-rose-100 text-xs font-bold px-3 py-1.5 rounded-xl flex items-center gap-1 animate-pulse">
+                      منتهي الصلاحية ⚠️ ({item.expirationDate})
+                    </span>
+                  );
+                } else if (expTime <= thirtyDaysFromNow) {
+                  expBadge = (
+                    <span className="bg-amber-50 text-amber-700 border border-amber-100 text-xs font-bold px-3 py-1.5 rounded-xl flex items-center gap-1">
+                      قريب الانتهاء ⚠️ ({item.expirationDate})
+                    </span>
+                  );
+                } else {
+                  expBadge = (
+                    <span className="bg-slate-50 text-slate-500 border border-slate-100 text-xs font-medium px-3 py-1.5 rounded-xl flex items-center gap-1">
+                      صلاحية: {item.expirationDate}
+                    </span>
+                  );
+                }
+              }
+
               return (
                 <div
                   key={item.id}
@@ -545,6 +611,9 @@ export default function ItemsView({
                   <div className="p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                     <div className="space-y-2 text-right flex-1">
                       <div className="flex items-center gap-2">
+                        {isUnderSafetyLimit && (
+                          <AlertTriangle size={16} className="text-rose-500 stroke-[2.5] animate-pulse shrink-0" title="كمية منخفضة تحت حد الطلب الأدنى" />
+                        )}
                         <h3 className="font-bold text-slate-800 text-base">{item.name}</h3>
                         <span className="text-xs font-bold text-slate-400 font-mono">({item.id})</span>
                         <span className="text-slate-300 ml-auto sm:hidden">
@@ -555,7 +624,7 @@ export default function ItemsView({
                       {/* Badges row */}
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="bg-emerald-50 text-emerald-600 text-xs font-bold px-3 py-1.5 rounded-xl">
-                          {item.price} ر.س
+                          {item.price} {item.currency || 'ر.س'}
                         </span>
                         <span className="bg-slate-100 text-slate-600 text-xs font-bold px-3 py-1.5 rounded-xl">
                           {item.unit}
@@ -569,6 +638,7 @@ export default function ItemsView({
                             {item.category}
                           </span>
                         )}
+                        {expBadge}
                       </div>
                     </div>
 
@@ -816,17 +886,41 @@ export default function ItemsView({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-xs font-bold text-slate-500 mb-1.5">السعر (ر.س)</label>
+                  <label className="block text-xs font-bold text-slate-500 mb-1.5 flex items-center gap-1">
+                    <span>السعر</span>
+                    {currentUser?.permissions?.canEditPrices === false && <Lock size={12} className="text-slate-400" />}
+                  </label>
                   <input
                     type="number"
                     min="0"
                     step="any"
                     value={formData.price}
+                    disabled={currentUser?.permissions?.canEditPrices === false}
                     onChange={(e) => setFormData({ ...formData, price: Number(e.target.value) })}
-                    className="w-full bg-white border border-slate-200 focus:border-blue-500 text-sm px-4 py-2.5 rounded-xl outline-hidden text-slate-700"
+                    className={`w-full border text-sm px-4 py-2.5 rounded-xl outline-hidden text-slate-700 ${
+                      currentUser?.permissions?.canEditPrices === false ? 'bg-slate-100 border-slate-200 cursor-not-allowed text-slate-400' : 'bg-white border-slate-200 focus:border-blue-500'
+                    }`}
                   />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-1.5 flex items-center gap-1">
+                    <span>العملة</span>
+                    {currentUser?.permissions?.canEditPrices === false && <Lock size={12} className="text-slate-400" />}
+                  </label>
+                  <select
+                    value={formData.currency}
+                    disabled={currentUser?.permissions?.canEditPrices === false}
+                    onChange={(e) => setFormData({ ...formData, currency: e.target.value })}
+                    className={`w-full border text-sm px-4 py-2.5 rounded-xl outline-hidden text-right cursor-pointer ${
+                      currentUser?.permissions?.canEditPrices === false ? 'bg-slate-100 border-slate-200 cursor-not-allowed text-slate-400' : 'bg-white border-slate-200 focus:border-blue-500 text-slate-700'
+                    }`}
+                  >
+                    <option value="ر.س">ر.س</option>
+                    <option value="ر.ي">ر.ي</option>
+                    <option value="دولار">دولار</option>
+                  </select>
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-500 mb-1.5">الوحدة</label>
@@ -862,6 +956,17 @@ export default function ItemsView({
                 />
               </div>
 
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-1.5">تاريخ انتهاء الصلاحية (اختياري)</label>
+                <input
+                  type="date"
+                  value={formData.expirationDate}
+                  onChange={(e) => setFormData({ ...formData, expirationDate: e.target.value })}
+                  className="w-full bg-white border border-slate-200 focus:border-blue-500 text-sm px-4 py-2.5 rounded-xl outline-hidden text-slate-700 text-right"
+                />
+                <p className="text-[10px] text-slate-400 mt-1">يُستخدم لتتبع وتنبيه انتهاء صلاحية الصنف في لوحة التحكم.</p>
+              </div>
+
               <div className="flex gap-3 pt-4 border-t border-slate-100">
                 <button
                   type="submit"
@@ -892,6 +997,17 @@ export default function ItemsView({
         allowNewCode={true}
         onScan={(scannedCode) => {
           setFormData((prev) => ({ ...prev, id: scannedCode }));
+        }}
+      />
+
+      {/* Barcode Scanner Modal Component for searching items */}
+      <BarcodeScannerModal
+        isOpen={isSearchScannerOpen}
+        onClose={() => setIsSearchScannerOpen(false)}
+        items={items}
+        allowNewCode={true}
+        onScan={(scannedCode) => {
+          setSearch(scannedCode);
         }}
       />
 

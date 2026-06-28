@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
-import { TrendingUp, FileText, Calendar, Box, Users, BarChart3, ArrowUpRight, ArrowDownLeft, Printer, Filter } from 'lucide-react';
+import { TrendingUp, FileText, Calendar, Box, Users, BarChart3, ArrowUpRight, ArrowDownLeft, Printer, Filter, Download } from 'lucide-react';
 import { Item, Movement, Supplier, ReportFilterType, Warehouse } from '../types';
 import {
   ResponsiveContainer,
   AreaChart,
   Area,
+  BarChart,
+  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -171,23 +173,106 @@ export default function ReportView({ items, movements, suppliers, warehouses = [
     return data;
   }, [movements]);
 
+  // Generate last 7 days data for Recharts (Up to June 26, 2026)
+  const last7DaysChartData = React.useMemo(() => {
+    const data = [];
+    const today = new Date('2026-06-26');
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(today.getDate() - i);
+      const dateStr = d.toISOString().split('T')[0];
+
+      const dayInward = movements
+        .filter((m) => m.date === dateStr && m.type === 'in')
+        .reduce((sum, m) => sum + m.quantity, 0);
+
+      const dayOutward = movements
+        .filter((m) => m.date === dateStr && m.type === 'out')
+        .reduce((sum, m) => sum + m.quantity, 0);
+
+      // format day for Arabic display (e.g., "السبت، 20 يونيو")
+      const formattedDate = d.toLocaleDateString('ar-EG', { weekday: 'short', day: 'numeric', month: 'short' });
+
+      data.push({
+        rawDate: dateStr,
+        displayDate: formattedDate,
+        'الوارد': dayInward,
+        'الصرف': dayOutward,
+      });
+    }
+    return data;
+  }, [movements]);
+
+  const handleCSVExport = () => {
+    let headers: string[] = [];
+    let rows: any[][] = [];
+    let filename = `report_${activeFilter}_${startDate}_to_${endDate}.csv`;
+
+    if (activeFilter === 'monthly') {
+      headers = ['اسم الصنف', 'رمز الصنف', 'الوارد', 'الصرف', 'الرصيد'];
+      rows = itemsReportData.map(item => [item.name, item.code, item.inward, item.outward, item.balance]);
+    } else if (activeFilter === 'top-moving') {
+      headers = ['الترتيب', 'اسم الصنف', 'رمز الصنف', 'التصنيف', 'الوارد', 'الصرف', 'مجموع الكمية المتحركة'];
+      rows = topMovingItems.map((item, idx) => [
+        idx + 1,
+        item.item.name,
+        item.item.id,
+        item.item.category || '',
+        item.inQty,
+        item.outQty,
+        item.totalQty
+      ]);
+    } else if (activeFilter === 'items') {
+      headers = ['اسم الصنف', 'رمز الصنف', 'إجمالي الوارد', 'إجمالي الصرف', 'صافي المخزون'];
+      rows = itemsReportData.map(item => [item.name, item.code, item.inward, item.outward, item.balance]);
+    } else if (activeFilter === 'suppliers') {
+      headers = ['اسم الشريك', 'تأمين وارد', 'سحب صرف', 'صافي الحركات'];
+      rows = partnersReportData.map(partner => [partner.name, partner.inward, partner.outward, partner.balance]);
+    }
+
+    // Add BOM for proper Arabic Excel encoding
+    const csvContent = "\uFEFF" + [
+      headers.join(','),
+      ...rows.map(row => row.map(val => `"${String(val).replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="space-y-6 animate-fade-in text-right" dir="rtl">
       
-      {/* Title & Print Action */}
+      {/* Title & Print/Export Actions */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 print:hidden">
         <div>
           <h2 className="text-2xl font-black text-slate-800 tracking-tight">التقرير والتحليلات</h2>
           <p className="text-slate-500 font-medium text-sm mt-0.5">تحليل شامل للتدفقات المخزنية والرسوم البيانية التفاعلية لحركات الوارد والصرف</p>
         </div>
-        <button
-          onClick={() => window.print()}
-          className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-black px-5 py-3 rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xs self-start sm:self-center shrink-0 hover:scale-105 active:scale-95"
-          title="طباعة التقرير والتحليلات الفعال حالياً"
-        >
-          <Printer size={16} className="stroke-[2.5]" />
-          <span>طباعة هذا التقرير</span>
-        </button>
+        <div className="flex items-center gap-2.5 self-start sm:self-center">
+          <button
+            onClick={handleCSVExport}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black px-5 py-3 rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xs shrink-0 hover:scale-105 active:scale-95"
+            title="تصدير بيانات التقرير الحالي إلى ملف CSV مميز للإكسل"
+          >
+            <Download size={16} className="stroke-[2.5]" />
+            <span>تصدير إلى CSV</span>
+          </button>
+          <button
+            onClick={() => window.print()}
+            className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-black px-5 py-3 rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xs shrink-0 hover:scale-105 active:scale-95"
+            title="طباعة التقرير والتحليلات الفعال حالياً"
+          >
+            <Printer size={16} className="stroke-[2.5]" />
+            <span>طباعة هذا التقرير</span>
+          </button>
+        </div>
       </div>
 
       {/* Date & Group/Item Filters Panel */}
@@ -341,6 +426,81 @@ export default function ReportView({ items, movements, suppliers, warehouses = [
             <span className="text-2xl sm:text-3xl font-black block font-mono">{netBalance}</span>
             <span className="text-[10px] sm:text-xs font-semibold opacity-80 block">صافي الرصيد</span>
           </div>
+        </div>
+      </div>
+
+      {/* 7-Day Movements Bar Chart using Recharts */}
+      <div className="bg-white border border-slate-100 rounded-3xl p-5 sm:p-6 space-y-4 shadow-2xs">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="bg-emerald-50 text-emerald-600 p-2 rounded-xl">
+              <BarChart3 size={18} className="stroke-[2.5]" />
+            </div>
+            <div>
+              <h3 className="font-extrabold text-sm text-slate-800">حجم الحركات ومعدل دوران المخزون (آخر 7 أيام) 📊</h3>
+              <p className="text-[10px] text-slate-400 mt-0.5">مقارنة بصرية مباشرة للوارد مقابل الصرف لتسهيل تحليل دوران المخزون والسلع</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 text-[10px] font-bold">
+            <span className="flex items-center gap-1 text-emerald-600">
+              <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500"></span>
+              الوارد
+            </span>
+            <span className="flex items-center gap-1 text-orange-500">
+              <span className="w-2.5 h-2.5 rounded-sm bg-orange-500"></span>
+              الصرف
+            </span>
+          </div>
+        </div>
+
+        {/* Chart Container */}
+        <div className="h-64 sm:h-72 w-full text-xs" dir="ltr">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart
+              data={last7DaysChartData}
+              margin={{ top: 10, right: 10, left: -25, bottom: 0 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+              <XAxis 
+                dataKey="displayDate" 
+                tickLine={false}
+                axisLine={false}
+                stroke="#94a3b8"
+                dy={10}
+              />
+              <YAxis 
+                tickLine={false}
+                axisLine={false}
+                stroke="#94a3b8"
+                dx={-5}
+              />
+              <Tooltip 
+                content={({ active, payload }) => {
+                  if (active && payload && payload.length) {
+                    const data = payload[0].payload;
+                    return (
+                      <div className="bg-slate-900 text-white p-3 rounded-2xl shadow-xl border border-slate-800 text-right space-y-1.5 font-bold text-xs" style={{ direction: 'rtl' }}>
+                        <p className="text-[10px] text-slate-400 font-mono text-left">{data.rawDate}</p>
+                        <div className="space-y-1">
+                          <p className="flex items-center justify-between gap-4 text-emerald-400">
+                            <span>الوارد:</span>
+                            <span className="font-mono">{data['الوارد']}</span>
+                          </p>
+                          <p className="flex items-center justify-between gap-4 text-orange-400">
+                            <span>الصرف:</span>
+                            <span className="font-mono">{data['الصرف']}</span>
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  }
+                  return null;
+                }}
+              />
+              <Bar dataKey="الوارد" fill="#10b981" radius={[4, 4, 0, 0]} barSize={16} />
+              <Bar dataKey="الصرف" fill="#f97316" radius={[4, 4, 0, 0]} barSize={16} />
+            </BarChart>
+          </ResponsiveContainer>
         </div>
       </div>
 

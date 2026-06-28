@@ -152,6 +152,28 @@ export default function App() {
     return localStorage.getItem('wms_is_data_locked') === 'true';
   });
 
+  const [dashboardStatsConfig, setDashboardStatsConfig] = useState(() => {
+    const saved = localStorage.getItem('dashboard_stats_config');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return {
+      showSuppliers: true,
+      showItems: true,
+      showTotalOutward: true,
+      showTotalInward: true,
+      showTotalValue: true,
+      showDailyMovements: true,
+      showLowStock: true
+    };
+  });
+
+  useEffect(() => {
+    localStorage.setItem('dashboard_stats_config', JSON.stringify(dashboardStatsConfig));
+  }, [dashboardStatsConfig]);
+
   // Internet connectivity state
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(() => {
@@ -804,6 +826,7 @@ export default function App() {
               handleResetAllDataOnServer();
             }}
             currentUser={currentUser}
+            dashboardStatsConfig={dashboardStatsConfig}
           />
         );
       case 'items':
@@ -812,6 +835,7 @@ export default function App() {
           <ItemsView
             items={items}
             movements={movements}
+            currentUser={currentUser}
             isDataLocked={itemsLocked}
             onAddItem={handleAddItem}
             onEditItem={handleEditItem}
@@ -889,6 +913,12 @@ export default function App() {
             onResetAllData={handleResetAllDataOnServer}
             warehouses={warehouses}
             auditLogs={auditLogs}
+            items={items}
+            movements={movements}
+            suppliers={suppliers}
+            transfers={transfers}
+            dashboardStatsConfig={dashboardStatsConfig}
+            onChangeDashboardStatsConfig={setDashboardStatsConfig}
           />
         );
       default:
@@ -954,84 +984,93 @@ export default function App() {
               <span className="font-extrabold text-xs sm:text-sm tracking-tight">
                 {t.title}
               </span>
-              <span className="text-[8px] text-slate-400 font-bold">
-                الموظف الحالي: {currentUser.username} ({currentUser.role})
-              </span>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <span className={`text-[10px] font-extrabold px-3 py-1.5 rounded-full ${
-              isDarkMode ? 'bg-slate-800 text-blue-400' : 'bg-blue-50 text-blue-600'
+          <div className="flex items-center gap-3">
+            {/* Active Employee/Staff Status Badge */}
+            <span className={`text-[10px] sm:text-xs font-black px-3.5 py-2 rounded-2xl flex items-center gap-1.5 shadow-xs transition-all border ${
+              isDarkMode 
+                ? 'bg-blue-950/40 border-blue-900/30 text-blue-400' 
+                : 'bg-blue-50/80 border-blue-100/50 text-blue-600'
             }`}>
-              {isDataLocked ? t.readOnly : t.activeStaff}
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
+              {isDataLocked ? t.readOnly : (currentLanguage === 'ar' ? `الموظف: ${currentUser.username} مفعّل` : `Staff: ${currentUser.username} Active`)}
             </span>
             
-            {/* About App Info Button */}
-            <div className="group relative">
-              <button
-                onClick={() => setShowAboutModal(true)}
-                className={`p-2 rounded-xl transition-all cursor-pointer flex items-center justify-center ${
-                  isDarkMode ? 'bg-slate-800 text-blue-400 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
-                title={currentLanguage === 'ar' ? 'حول التطبيق ومميزاته' : 'About App & Features'}
-              >
-                <Info size={18} className="stroke-[2.5]" />
-              </button>
-              {/* Tooltip */}
-              <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 hidden group-hover:block bg-slate-950 dark:bg-slate-850 text-white text-[10px] font-bold px-2.5 py-1.5 rounded-lg shadow-xl whitespace-nowrap z-50 pointer-events-none border border-white/10">
-                {currentLanguage === 'ar' ? 'معلومات حول التطبيق ومميزاته ℹ️' : 'About App & Features ℹ️'}
-              </div>
-            </div>
+            {/* Divider */}
+            <span className="h-5 w-px bg-slate-200 dark:bg-slate-800 hidden md:block" />
 
-            {/* Language Toggle Button */}
-            <div className="group relative">
-              <button
-                onClick={() => setCurrentLanguage(prev => prev === 'ar' ? 'en' : 'ar')}
-                className={`p-2 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 text-xs font-bold ${
-                  isDarkMode ? 'bg-slate-800 text-blue-400 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
-                title={currentLanguage === 'ar' ? 'Switch language to English' : 'تغيير اللغة إلى العربية'}
-              >
-                <Globe size={16} className="stroke-[2.5]" />
-                <span className="text-[10px] uppercase">{currentLanguage === 'ar' ? 'EN' : 'عربي'}</span>
-              </button>
-              {/* Tooltip */}
-              <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 hidden group-hover:block bg-slate-950 dark:bg-slate-850 text-white text-[10px] font-bold px-2.5 py-1.5 rounded-lg shadow-xl whitespace-nowrap z-50 pointer-events-none border border-white/10">
-                {currentLanguage === 'ar' ? 'تغيير واجهة النظام إلى الإنجليزية 🌐' : 'Switch interface to Arabic 🌐'}
+            {/* Icons Button Group */}
+            <div className={`flex items-center gap-1 p-1 rounded-2xl border ${
+              isDarkMode ? 'bg-slate-900/50 border-slate-800' : 'bg-slate-50 border-slate-100'
+            }`}>
+              {/* About App Info Button */}
+              <div className="group relative">
+                <button
+                  onClick={() => setShowAboutModal(true)}
+                  className={`p-2 rounded-xl transition-all cursor-pointer flex items-center justify-center ${
+                    isDarkMode ? 'hover:bg-slate-800 text-slate-300 hover:text-white' : 'hover:bg-white text-slate-600 hover:text-slate-900 hover:shadow-2xs'
+                  }`}
+                  title={currentLanguage === 'ar' ? 'حول التطبيق ومميزاته' : 'About App & Features'}
+                >
+                  <Info size={17} className="stroke-[2.5]" />
+                </button>
+                {/* Tooltip */}
+                <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 hidden group-hover:block bg-slate-950 dark:bg-slate-850 text-white text-[10px] font-bold px-2.5 py-1.5 rounded-lg shadow-xl whitespace-nowrap z-50 pointer-events-none border border-white/10">
+                  {currentLanguage === 'ar' ? 'حول التطبيق ℹ️' : 'About App ℹ️'}
+                </div>
               </div>
-            </div>
 
-            {/* Fullscreen Toggle Button */}
-            <div className="group relative">
-              <button
-                onClick={toggleFullscreen}
-                className={`p-2 rounded-xl transition-all cursor-pointer flex items-center justify-center ${
-                  isDarkMode ? 'bg-slate-800 text-teal-400 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
-                title={isFullscreen ? (currentLanguage === 'ar' ? 'الخروج من ملء الشاشة' : 'Exit Fullscreen') : (currentLanguage === 'ar' ? 'وضع ملء الشاشة' : 'Fullscreen Mode')}
-              >
-                {isFullscreen ? <Minimize size={18} className="stroke-[2.5]" /> : <Maximize size={18} className="stroke-[2.5]" />}
-              </button>
-              {/* Tooltip */}
-              <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 hidden group-hover:block bg-slate-950 dark:bg-slate-850 text-white text-[10px] font-bold px-2.5 py-1.5 rounded-lg shadow-xl whitespace-nowrap z-50 pointer-events-none border border-white/10">
-                {isFullscreen ? (currentLanguage === 'ar' ? 'إلغاء وضع ملء الشاشة 🖥️' : 'Exit Fullscreen 🖥️') : (currentLanguage === 'ar' ? 'تفعيل وضع ملء الشاشة 🖥️' : 'Enter Fullscreen 🖥️')}
+              {/* Language Toggle Button */}
+              <div className="group relative">
+                <button
+                  onClick={() => setCurrentLanguage(prev => prev === 'ar' ? 'en' : 'ar')}
+                  className={`p-2 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1 text-xs font-black ${
+                    isDarkMode ? 'hover:bg-slate-800 text-slate-300 hover:text-white' : 'hover:bg-white text-slate-600 hover:text-slate-900 hover:shadow-2xs'
+                  }`}
+                  title={currentLanguage === 'ar' ? 'Switch language to English' : 'تغيير اللغة إلى العربية'}
+                >
+                  <Globe size={17} className="stroke-[2.5]" />
+                  <span className="text-[9px] uppercase tracking-wider font-extrabold">{currentLanguage === 'ar' ? 'EN' : 'AR'}</span>
+                </button>
+                {/* Tooltip */}
+                <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 hidden group-hover:block bg-slate-950 dark:bg-slate-850 text-white text-[10px] font-bold px-2.5 py-1.5 rounded-lg shadow-xl whitespace-nowrap z-50 pointer-events-none border border-white/10">
+                  {currentLanguage === 'ar' ? 'تغيير اللغة 🌐' : 'Switch Language 🌐'}
+                </div>
               </div>
-            </div>
 
-            {/* Dark Mode Toggle Button */}
-            <div className="group relative">
-              <button
-                onClick={() => setIsDarkMode(prev => !prev)}
-                className={`p-2 rounded-xl transition-all cursor-pointer flex items-center justify-center ${
-                  isDarkMode ? 'bg-slate-800 text-amber-400 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
-                title={isDarkMode ? 'الوضع النهاري' : 'الوضع الليلي'}
-              >
-                {isDarkMode ? <Sun size={18} className="stroke-[2.5]" /> : <Moon size={18} className="stroke-[2.5]" />}
-              </button>
-              {/* Tooltip */}
-              <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 hidden group-hover:block bg-slate-950 dark:bg-slate-850 text-white text-[10px] font-bold px-2.5 py-1.5 rounded-lg shadow-xl whitespace-nowrap z-50 pointer-events-none border border-white/10">
-                {isDarkMode ? (currentLanguage === 'ar' ? 'التحويل للمظهر النهاري ☀️' : 'Switch to Light Mode ☀️') : (currentLanguage === 'ar' ? 'التحويل للمظهر الليلي 🌙' : 'Switch to Dark Mode 🌙')}
+              {/* Fullscreen Toggle Button */}
+              <div className="group relative">
+                <button
+                  onClick={toggleFullscreen}
+                  className={`p-2 rounded-xl transition-all cursor-pointer flex items-center justify-center ${
+                    isDarkMode ? 'hover:bg-slate-800 text-slate-300 hover:text-white' : 'hover:bg-white text-slate-600 hover:text-slate-900 hover:shadow-2xs'
+                  }`}
+                  title={isFullscreen ? (currentLanguage === 'ar' ? 'الخروج من ملء الشاشة' : 'Exit Fullscreen') : (currentLanguage === 'ar' ? 'وضع ملء الشاشة' : 'Fullscreen Mode')}
+                >
+                  {isFullscreen ? <Minimize size={17} className="stroke-[2.5]" /> : <Maximize size={17} className="stroke-[2.5]" />}
+                </button>
+                {/* Tooltip */}
+                <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 hidden group-hover:block bg-slate-950 dark:bg-slate-850 text-white text-[10px] font-bold px-2.5 py-1.5 rounded-lg shadow-xl whitespace-nowrap z-50 pointer-events-none border border-white/10">
+                  {isFullscreen ? (currentLanguage === 'ar' ? 'إلغاء ملء الشاشة 🖥️' : 'Exit Fullscreen 🖥️') : (currentLanguage === 'ar' ? 'ملء الشاشة 🖥️' : 'Fullscreen 🖥️')}
+                </div>
+              </div>
+
+              {/* Dark Mode Toggle Button */}
+              <div className="group relative">
+                <button
+                  onClick={() => setIsDarkMode(prev => !prev)}
+                  className={`p-2 rounded-xl transition-all cursor-pointer flex items-center justify-center ${
+                    isDarkMode ? 'hover:bg-slate-800 text-amber-400' : 'hover:bg-white text-slate-600 hover:text-amber-500 hover:shadow-2xs'
+                  }`}
+                  title={isDarkMode ? 'الوضع النهاري' : 'الوضع الليلي'}
+                >
+                  {isDarkMode ? <Sun size={17} className="stroke-[2.5]" /> : <Moon size={17} className="stroke-[2.5]" />}
+                </button>
+                {/* Tooltip */}
+                <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 hidden group-hover:block bg-slate-950 dark:bg-slate-850 text-white text-[10px] font-bold px-2.5 py-1.5 rounded-lg shadow-xl whitespace-nowrap z-50 pointer-events-none border border-white/10">
+                  {isDarkMode ? (currentLanguage === 'ar' ? 'المظهر النهاري ☀️' : 'Light Mode ☀️') : (currentLanguage === 'ar' ? 'المظهر الليلي 🌙' : 'Dark Mode 🌙')}
+                </div>
               </div>
             </div>
           </div>

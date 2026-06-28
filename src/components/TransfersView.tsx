@@ -199,16 +199,26 @@ export default function TransfersView({
                     </div>
                   </div>
 
-                  {!isDataLocked && (
+                   {!isDataLocked && (
                     <div className="flex gap-2 shrink-0">
                       <button
-                        onClick={() => onAcceptTransfer(tr.id)}
+                        onClick={() => {
+                          if (currentUser.permissions?.canApproveTransfer === false) {
+                            alert('🔒 عذراً، لا تمتلك صلاحية اعتماد وقبول التحويلات.');
+                            return;
+                          }
+                          onAcceptTransfer(tr.id);
+                        }}
                         className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black px-4 py-2 rounded-xl transition-all shadow-xs cursor-pointer"
                       >
                         قبول التحويل ✅
                       </button>
                       <button
                         onClick={() => {
+                          if (currentUser.permissions?.canApproveTransfer === false) {
+                            alert('🔒 عذراً، لا تمتلك صلاحية رفض التحويلات.');
+                            return;
+                          }
                           if (confirm('هل أنت متأكد من رفض هذا التحويل المخزني؟')) {
                             onRejectTransfer(tr.id);
                           }

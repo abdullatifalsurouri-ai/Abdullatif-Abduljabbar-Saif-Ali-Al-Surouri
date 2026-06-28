@@ -17,7 +17,9 @@ import {
   Upload,
   Trash2,
   Lock,
-  Unlock
+  Unlock,
+  DollarSign,
+  Calendar
 } from 'lucide-react';
 import { Item, Movement, Supplier, User } from '../types';
 
@@ -32,6 +34,15 @@ interface HomeViewProps {
   onImportData: (items: Item[], suppliers: Supplier[], movements: Movement[]) => void;
   onResetData: () => void;
   currentUser: User;
+  dashboardStatsConfig: {
+    showSuppliers: boolean;
+    showItems: boolean;
+    showTotalOutward: boolean;
+    showTotalInward: boolean;
+    showTotalValue: boolean;
+    showDailyMovements: boolean;
+    showLowStock: boolean;
+  };
 }
 
 export default function HomeView({
@@ -45,6 +56,7 @@ export default function HomeView({
   onImportData,
   onResetData,
   currentUser,
+  dashboardStatsConfig,
 }: HomeViewProps) {
   // PWA installation state
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
@@ -205,6 +217,29 @@ export default function HomeView({
   // Number of items under safety limit
   const shortCount = itemStockStats.filter((i) => i.isUnderSafetyLimit).length;
 
+  // 1. Total Stock Value (إجمالي قيمة المخزون)
+  const totalStockValue = itemStockStats.reduce((sum, item) => sum + (item.price * Math.max(0, item.balance)), 0);
+
+  // 2. Daily Movements (عدد الحركات اليومية)
+  const todayStr = new Date().toISOString().split('T')[0];
+  const dailyMovementCount = movements.filter((m) => m.date === todayStr).length;
+
+  // 3. Expiration Tracking (تاريخ انتهاء الصلاحية)
+  const todayTime = new Date().setHours(0, 0, 0, 0);
+  const thirtyDaysFromNow = todayTime + (30 * 24 * 60 * 60 * 1000);
+
+  const expiredItems = itemStockStats.filter((item) => {
+    if (!item.expirationDate) return false;
+    const expTime = new Date(item.expirationDate).setHours(0, 0, 0, 0);
+    return expTime <= todayTime;
+  });
+
+  const expiringSoonItems = itemStockStats.filter((item) => {
+    if (!item.expirationDate) return false;
+    const expTime = new Date(item.expirationDate).setHours(0, 0, 0, 0);
+    return expTime > todayTime && expTime <= thirtyDaysFromNow;
+  });
+
   return (
     <div className="space-y-6 animate-fade-in" dir="rtl">
       
@@ -339,44 +374,125 @@ export default function HomeView({
         </button>
       )}
 
-      {/* Stats Grid (4 cards) */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      {/* Expired Items Alerts */}
+      {expiredItems.length > 0 && (
+        <button
+          onClick={() => onNavigate('items')}
+          className="w-full bg-rose-50 hover:bg-rose-100 border border-rose-100 text-rose-700 p-4 rounded-2xl flex items-center justify-between gap-3 text-right transition-all cursor-pointer group shadow-xs"
+        >
+          <div className="flex items-center gap-3">
+            <div className="bg-rose-100 p-2 rounded-xl text-rose-600 animate-pulse">
+              <AlertCircle size={20} className="stroke-[2.5]" />
+            </div>
+            <div className="text-sm font-bold">
+              تنبيه هام: يوجد {expiredItems.length} صنف منتهي الصلاحية حالياً! ⚠️
+            </div>
+          </div>
+          <span className="text-xs font-semibold text-rose-500 group-hover:translate-x-[-4px] transition-transform">
+            فرز وعرض الأصناف &larr;
+          </span>
+        </button>
+      )}
+
+      {/* Expiring Soon Items Alerts */}
+      {expiringSoonItems.length > 0 && (
+        <button
+          onClick={() => onNavigate('items')}
+          className="w-full bg-amber-50 hover:bg-amber-100 border border-amber-100 text-amber-700 p-4 rounded-2xl flex items-center justify-between gap-3 text-right transition-all cursor-pointer group shadow-xs animate-pulse-subtle"
+        >
+          <div className="flex items-center gap-3">
+            <div className="bg-amber-100 p-2 rounded-xl text-amber-600">
+              <AlertCircle size={20} className="stroke-[2.5]" />
+            </div>
+            <div className="text-sm font-bold">
+              تنبيه صلاحية: يوجد {expiringSoonItems.length} صنف تقترب صلاحيتها من الانتهاء (أقل من 30 يوماً).
+            </div>
+          </div>
+          <span className="text-xs font-semibold text-amber-500 group-hover:translate-x-[-4px] transition-transform">
+            عرض التفاصيل &larr;
+          </span>
+        </button>
+      )}
+
+      {/* Stats Grid (Dynamic Selection) */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
         
         {/* Suppliers Card */}
-        <div className="bg-white border border-slate-100 rounded-3xl p-5 hover:shadow-md transition-all flex flex-col items-center justify-center text-center">
-          <div className="bg-purple-50 text-purple-600 p-3.5 rounded-2xl mb-3.5">
-            <Users size={24} className="stroke-[2.5]" />
+        {dashboardStatsConfig.showSuppliers !== false && (
+          <div className="bg-white border border-slate-100 rounded-3xl p-5 hover:shadow-md transition-all flex flex-col items-center justify-center text-center">
+            <div className="bg-purple-50 text-purple-600 p-3.5 rounded-2xl mb-3.5">
+              <Users size={24} className="stroke-[2.5]" />
+            </div>
+            <p className="text-slate-400 font-bold text-xs">الموردون</p>
+            <p className="text-2xl font-black text-slate-800 mt-1">{totalSuppliers}</p>
           </div>
-          <p className="text-slate-400 font-bold text-xs">الموردون</p>
-          <p className="text-2xl font-black text-slate-800 mt-1">{totalSuppliers}</p>
-        </div>
+        )}
 
         {/* Items Card */}
-        <div className="bg-white border border-slate-100 rounded-3xl p-5 hover:shadow-md transition-all flex flex-col items-center justify-center text-center">
-          <div className="bg-blue-50 text-blue-600 p-3.5 rounded-2xl mb-3.5">
-            <Box size={24} className="stroke-[2.5]" />
+        {dashboardStatsConfig.showItems !== false && (
+          <div className="bg-white border border-slate-100 rounded-3xl p-5 hover:shadow-md transition-all flex flex-col items-center justify-center text-center">
+            <div className="bg-blue-50 text-blue-600 p-3.5 rounded-2xl mb-3.5">
+              <Box size={24} className="stroke-[2.5]" />
+            </div>
+            <p className="text-slate-400 font-bold text-xs">الأصناف</p>
+            <p className="text-2xl font-black text-slate-800 mt-1">{totalItems}</p>
           </div>
-          <p className="text-slate-400 font-bold text-xs">الأصناف</p>
-          <p className="text-2xl font-black text-slate-800 mt-1">{totalItems}</p>
-        </div>
+        )}
 
         {/* Total Outward Card */}
-        <div className="bg-white border border-slate-100 rounded-3xl p-5 hover:shadow-md transition-all flex flex-col items-center justify-center text-center">
-          <div className="bg-orange-50 text-orange-600 p-3.5 rounded-2xl mb-3.5">
-            <ArrowUpRight size={24} className="stroke-[2.5]" />
+        {dashboardStatsConfig.showTotalOutward !== false && (
+          <div className="bg-white border border-slate-100 rounded-3xl p-5 hover:shadow-md transition-all flex flex-col items-center justify-center text-center">
+            <div className="bg-orange-50 text-orange-600 p-3.5 rounded-2xl mb-3.5">
+              <ArrowUpRight size={24} className="stroke-[2.5]" />
+            </div>
+            <p className="text-slate-400 font-bold text-xs">إجمالي الصرف</p>
+            <p className="text-2xl font-black text-orange-600 mt-1">{totalOutward}</p>
           </div>
-          <p className="text-slate-400 font-bold text-xs">إجمالي الصرف</p>
-          <p className="text-2xl font-black text-orange-600 mt-1">{totalOutward}</p>
-        </div>
+        )}
 
         {/* Total Inward Card */}
-        <div className="bg-white border border-slate-100 rounded-3xl p-5 hover:shadow-md transition-all flex flex-col items-center justify-center text-center">
-          <div className="bg-emerald-50 text-emerald-600 p-3.5 rounded-2xl mb-3.5">
-            <ArrowDownLeft size={24} className="stroke-[2.5]" />
+        {dashboardStatsConfig.showTotalInward !== false && (
+          <div className="bg-white border border-slate-100 rounded-3xl p-5 hover:shadow-md transition-all flex flex-col items-center justify-center text-center">
+            <div className="bg-emerald-50 text-emerald-600 p-3.5 rounded-2xl mb-3.5">
+              <ArrowDownLeft size={24} className="stroke-[2.5]" />
+            </div>
+            <p className="text-slate-400 font-bold text-xs">إجمالي الوارد</p>
+            <p className="text-2xl font-black text-emerald-600 mt-1">{totalInward}</p>
           </div>
-          <p className="text-slate-400 font-bold text-xs">إجمالي الوارد</p>
-          <p className="text-2xl font-black text-emerald-600 mt-1">{totalInward}</p>
-        </div>
+        )}
+
+        {/* Total Stock Value Card */}
+        {dashboardStatsConfig.showTotalValue !== false && (
+          <div className="bg-white border border-slate-100 rounded-3xl p-5 hover:shadow-md transition-all flex flex-col items-center justify-center text-center">
+            <div className="bg-blue-50 text-blue-600 p-3.5 rounded-2xl mb-3.5">
+              <DollarSign size={24} className="stroke-[2.5]" />
+            </div>
+            <p className="text-slate-400 font-bold text-xs">قيمة المخزون</p>
+            <p className="text-2xl font-black text-blue-700 mt-1 truncate max-w-full px-1">{totalStockValue.toLocaleString()} ر.س</p>
+          </div>
+        )}
+
+        {/* Daily Movements Card */}
+        {dashboardStatsConfig.showDailyMovements !== false && (
+          <div className="bg-white border border-slate-100 rounded-3xl p-5 hover:shadow-md transition-all flex flex-col items-center justify-center text-center">
+            <div className="bg-indigo-50 text-indigo-600 p-3.5 rounded-2xl mb-3.5">
+              <Calendar size={24} className="stroke-[2.5]" />
+            </div>
+            <p className="text-slate-400 font-bold text-xs">الحركات اليومية</p>
+            <p className="text-2xl font-black text-indigo-700 mt-1">{dailyMovementCount}</p>
+          </div>
+        )}
+
+        {/* Low Stock Items Card */}
+        {dashboardStatsConfig.showLowStock !== false && (
+          <div className="bg-white border border-slate-100 rounded-3xl p-5 hover:shadow-md transition-all flex flex-col items-center justify-center text-center">
+            <div className="bg-rose-50 text-rose-600 p-3.5 rounded-2xl mb-3.5">
+              <AlertCircle size={24} className="stroke-[2.5]" />
+            </div>
+            <p className="text-slate-400 font-bold text-xs">منخفض المخزون</p>
+            <p className="text-2xl font-black text-rose-600 mt-1">{shortCount}</p>
+          </div>
+        )}
 
       </div>
 
@@ -495,6 +611,9 @@ export default function HomeView({
             >
               <div className="space-y-1.5 flex-1 min-w-0">
                 <div className="flex items-center gap-2.5">
+                  {item.isUnderSafetyLimit && (
+                    <AlertCircle size={16} className="text-red-500 animate-pulse shrink-0" />
+                  )}
                   <h4 className="font-bold text-slate-800 text-sm sm:text-base truncate">{item.name}</h4>
                   <span className="text-[10px] font-bold bg-slate-100 text-slate-500 px-2 py-0.5 rounded-md font-mono">
                     {item.id}
