@@ -20,8 +20,10 @@ import {
   MoreHorizontal,
   ChevronUp,
   ChevronDown,
-  Layers
+  Layers,
+  Info
 } from 'lucide-react';
+import { AboutModal } from './components/AboutModal';
 import { 
   TabType, 
   Item, 
@@ -89,6 +91,7 @@ export default function App() {
     return (localStorage.getItem('wms_lang') as 'ar' | 'en') || 'ar';
   });
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showAboutModal, setShowAboutModal] = useState(false);
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -904,7 +907,8 @@ export default function App() {
       navPrint: "السندات",
       navWarehouses: "المستودعات",
       navTransfers: "التحويلات المخزنية",
-      navSettings: "الإعدادات"
+      navSettings: "الإعدادات",
+      navAbout: "حول التطبيق"
     },
     en: {
       title: "Al-Mada Smart WMS",
@@ -918,7 +922,8 @@ export default function App() {
       navPrint: "Vouchers",
       navWarehouses: "Warehouses",
       navTransfers: "Inventory Transfers",
-      navSettings: "Settings"
+      navSettings: "Settings",
+      navAbout: "About App"
     }
   };
 
@@ -959,6 +964,17 @@ export default function App() {
               {isDataLocked ? t.readOnly : t.activeStaff}
             </span>
             
+            {/* About App Info Button */}
+            <button
+              onClick={() => setShowAboutModal(true)}
+              className={`p-2 rounded-xl transition-all cursor-pointer flex items-center justify-center ${
+                isDarkMode ? 'bg-slate-800 text-blue-400 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+              title={currentLanguage === 'ar' ? 'حول التطبيق ومميزاته' : 'About App & Features'}
+            >
+              <Info size={18} className="stroke-[2.5]" />
+            </button>
+
             {/* Language Toggle Button */}
             <button
               onClick={() => setCurrentLanguage(prev => prev === 'ar' ? 'en' : 'ar')}
@@ -1105,7 +1121,7 @@ export default function App() {
                 setActiveTab('settings');
                 setIsMoreMenuOpen(false);
               }}
-              className={`flex items-center gap-2 p-2.5 rounded-xl border transition-all cursor-pointer col-span-2 ${
+              className={`flex items-center gap-2 p-2.5 rounded-xl border transition-all cursor-pointer ${
                 activeTab === 'settings'
                   ? 'bg-blue-600/10 border-blue-500/40 text-blue-600 dark:text-blue-400 font-black'
                   : 'bg-slate-50/50 dark:bg-slate-950/30 hover:bg-slate-100 border-slate-100 dark:border-slate-800 text-slate-600 dark:text-slate-400'
@@ -1113,6 +1129,18 @@ export default function App() {
             >
               <SettingsIcon size={15} className="stroke-[2.5]" />
               <span className="text-[10px] font-bold">{t.navSettings}</span>
+            </button>
+
+            {/* Tab: حول التطبيق */}
+            <button
+              onClick={() => {
+                setShowAboutModal(true);
+                setIsMoreMenuOpen(false);
+              }}
+              className="flex items-center gap-2 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/30 hover:bg-slate-100 text-slate-600 dark:text-slate-400 transition-all cursor-pointer"
+            >
+              <Info size={15} className="stroke-[2.5] text-blue-500" />
+              <span className="text-[10px] font-bold">{t.navAbout}</span>
             </button>
           </div>
         </div>
@@ -1221,6 +1249,12 @@ export default function App() {
         toasts={toasts} 
         onClose={removeToast} 
         currentLanguage={currentLanguage} 
+      />
+
+      <AboutModal
+        isOpen={showAboutModal}
+        onClose={() => setShowAboutModal(false)}
+        currentLanguage={currentLanguage}
       />
 
     </div>

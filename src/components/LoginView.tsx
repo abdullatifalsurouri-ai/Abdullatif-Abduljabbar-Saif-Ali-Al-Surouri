@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Shield, KeyRound, User as UserIcon, AlertCircle, RefreshCw, Globe, Share2, Check, Users, Smartphone, ArrowDownToLine, Info, ChevronDown, ChevronUp } from 'lucide-react';
 import { User } from '../types';
+import { AboutModal } from './AboutModal';
 
 interface LoginViewProps {
   onLoginSuccess: (user: User) => void;
@@ -18,6 +19,7 @@ export default function LoginView({ onLoginSuccess, currentLanguage, onLanguageC
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showInstructions, setShowInstructions] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
+  const [showAboutModal, setShowAboutModal] = useState(false);
 
   useEffect(() => {
     const handleBeforeInstallPrompt = (e: Event) => {
@@ -102,7 +104,7 @@ export default function LoginView({ onLoginSuccess, currentLanguage, onLanguageC
       passPlaceholder: 'أدخل رمز المرور السري',
       loginBtnLoading: 'يرجى الانتظار، جاري التحقق...',
       loginBtn: 'دخول آمن للنظام وتزامن البيانات',
-      footer: '© ٢٠٢٦ مستودع المدى الذكي WMS. جميع الحقوق محفوظة للمهندس عبداللطيف السروري.',
+      footer: '© 2026 جميع الحقوق محفوظة – المهندس عبداللطيف عبدالجبار السروري.',
       emptyError: 'يرجى إدخال اسم المستخدم وكلمة المرور',
       offlineError: 'تم تسجيل الدخول محلياً (وضع أوفلاين) - تعذر الاتصال بالخادم السحابي.',
       invalidError: 'اسم المستخدم أو كلمة المرور غير صحيحة',
@@ -122,7 +124,7 @@ export default function LoginView({ onLoginSuccess, currentLanguage, onLanguageC
       passPlaceholder: 'Enter your secret password',
       loginBtnLoading: 'Please wait, verifying...',
       loginBtn: 'Secure Log In & Data Sync',
-      footer: '© 2026 Al-Mada Smart WMS. All rights reserved to Eng. Abdullatif Alsurouri.',
+      footer: '© 2026 All Rights Reserved – Eng. Abdullatif Abduljabbar Alsurouri.',
       emptyError: 'Please enter both username and password',
       offlineError: 'Logged in locally (Offline mode) - Could not contact cloud server.',
       invalidError: 'Incorrect username or password',
@@ -205,27 +207,47 @@ export default function LoginView({ onLoginSuccess, currentLanguage, onLanguageC
 
   return (
     <div className={`min-h-screen bg-slate-950 flex flex-col justify-center items-center px-4 py-12 font-sans relative overflow-hidden selection:bg-blue-500/30 selection:text-blue-300`} dir={isRtl ? 'rtl' : 'ltr'}>
-      {/* Language Toggle & Share Button in separate corners */}
-      <div className={`absolute top-6 ${isRtl ? 'right-6' : 'left-6'} z-50`}>
-        <button
-          onClick={handleCopyShareLink}
-          className="bg-emerald-950/80 hover:bg-emerald-900 text-emerald-400 border border-emerald-800/60 p-1.5 px-3 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 text-[10px] font-black shadow-md"
-          title={t.shareBtn}
-        >
-          {shareCopied ? <Check size={13} className="text-emerald-400 animate-bounce" /> : <Share2 size={13} className="text-emerald-400" />}
-          <span>{shareCopied ? (isRtl ? 'تم النسخ!' : 'Copied!') : (isRtl ? 'مشاركة التطبيق 🔗' : 'Share App 🔗')}</span>
-        </button>
-      </div>
+      {/* Cohesive, responsive top action bar */}
+      <div className="absolute top-6 left-4 right-4 z-50 flex items-center justify-between pointer-events-none">
+        {/* Left side (on LTR): Developer Brand/Title */}
+        <div className="hidden sm:flex items-center gap-2 bg-slate-900/40 border border-slate-800/40 px-3 py-1.5 rounded-xl backdrop-blur-md select-none">
+          <span className="text-[9px] font-black tracking-wider text-slate-400 uppercase">
+            {isRtl ? 'مستودع المدى الذكي' : 'Al-Mada Smart WMS'}
+          </span>
+        </div>
 
-      <div className={`absolute top-6 ${isRtl ? 'left-6' : 'right-6'} z-50`}>
-        <button
-          onClick={() => onLanguageChange(currentLanguage === 'ar' ? 'en' : 'ar')}
-          className="bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 hover:border-slate-700 p-2.5 px-4 rounded-2xl transition-all cursor-pointer flex items-center gap-2 text-xs font-bold shadow-lg"
-          title={isRtl ? 'Switch language to English' : 'تغيير اللغة إلى العربية'}
-        >
-          <Globe size={16} className="stroke-[2.5] text-blue-400" />
-          <span className="uppercase tracking-wider">{isRtl ? 'English' : 'العربية'}</span>
-        </button>
+        {/* Right side: Unified matching action group */}
+        <div className={`flex items-center gap-1.5 pointer-events-auto ${isRtl ? 'mr-auto' : 'ml-auto'}`}>
+          {/* Share Button */}
+          <button
+            onClick={handleCopyShareLink}
+            className="bg-emerald-950/80 hover:bg-emerald-900 text-emerald-400 border border-emerald-800/60 p-1.5 px-3 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 text-[10px] font-black shadow-md hover:scale-[1.02] active:scale-[0.98]"
+            title={t.shareBtn}
+          >
+            {shareCopied ? <Check size={13} className="text-emerald-400 animate-bounce" /> : <Share2 size={13} className="text-emerald-400" />}
+            <span>{shareCopied ? (isRtl ? 'تم النسخ!' : 'Copied!') : (isRtl ? 'مشاركة التطبيق' : 'Share App')}</span>
+          </button>
+
+          {/* About App Button */}
+          <button
+            onClick={() => setShowAboutModal(true)}
+            className="bg-blue-950/80 hover:bg-blue-900 text-blue-400 border border-blue-800/60 p-1.5 px-3 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 text-[10px] font-black shadow-md hover:scale-[1.02] active:scale-[0.98]"
+            title={isRtl ? 'حول التطبيق ومميزاته' : 'About App & Features'}
+          >
+            <Info size={13} className="text-blue-400" />
+            <span>{isRtl ? 'حول التطبيق' : 'About App'}</span>
+          </button>
+
+          {/* Language Toggle */}
+          <button
+            onClick={() => onLanguageChange(currentLanguage === 'ar' ? 'en' : 'ar')}
+            className="bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800/60 hover:border-slate-700/60 p-1.5 px-3 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 text-[10px] font-bold shadow-md hover:scale-[1.02] active:scale-[0.98]"
+            title={isRtl ? 'Switch language to English' : 'تغيير اللغة إلى العربية'}
+          >
+            <Globe size={13} className="text-blue-400" />
+            <span className="uppercase tracking-wider">{isRtl ? 'English' : 'العربية'}</span>
+          </button>
+        </div>
       </div>
 
       {/* Dynamic Grid Background Accent */}
@@ -441,6 +463,12 @@ export default function LoginView({ onLoginSuccess, currentLanguage, onLanguageC
           {t.footer}
         </p>
       </div>
+
+      <AboutModal 
+        isOpen={showAboutModal} 
+        onClose={() => setShowAboutModal(false)} 
+        currentLanguage={currentLanguage} 
+      />
     </div>
   );
 }
