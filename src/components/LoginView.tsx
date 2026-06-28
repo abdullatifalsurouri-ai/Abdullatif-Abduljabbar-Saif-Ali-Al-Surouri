@@ -207,47 +207,41 @@ export default function LoginView({ onLoginSuccess, currentLanguage, onLanguageC
 
   return (
     <div className={`min-h-screen bg-slate-950 flex flex-col justify-center items-center px-4 py-12 font-sans relative overflow-hidden selection:bg-blue-500/30 selection:text-blue-300`} dir={isRtl ? 'rtl' : 'ltr'}>
-      {/* Cohesive, responsive top action bar */}
-      <div className="absolute top-6 left-4 right-4 z-50 flex items-center justify-between pointer-events-none">
-        {/* Left side (on LTR): Developer Brand/Title */}
-        <div className="hidden sm:flex items-center gap-2 bg-slate-900/40 border border-slate-800/40 px-3 py-1.5 rounded-xl backdrop-blur-md select-none">
-          <span className="text-[9px] font-black tracking-wider text-slate-400 uppercase">
-            {isRtl ? 'مستودع المدى الذكي' : 'Al-Mada Smart WMS'}
-          </span>
-        </div>
+      {/* Positioned top action elements (Right: Share, Center: About, Left: Language) */}
+      {/* Top Right: Share App */}
+      <div className="absolute top-6 right-6 z-50">
+        <button
+          onClick={handleCopyShareLink}
+          className="bg-emerald-950/85 hover:bg-emerald-900 text-emerald-400 border border-emerald-800/60 p-1.5 px-3.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 text-[10px] font-black shadow-md hover:scale-[1.02] active:scale-[0.98]"
+          title={t.shareBtn}
+        >
+          {shareCopied ? <Check size={13} className="text-emerald-400 animate-bounce" /> : <Share2 size={13} className="text-emerald-400" />}
+          <span>{shareCopied ? (isRtl ? 'تم النسخ!' : 'Copied!') : (isRtl ? 'مشاركة التطبيق' : 'Share App')}</span>
+        </button>
+      </div>
 
-        {/* Right side: Unified matching action group */}
-        <div className={`flex items-center gap-1.5 pointer-events-auto ${isRtl ? 'mr-auto' : 'ml-auto'}`}>
-          {/* Share Button */}
-          <button
-            onClick={handleCopyShareLink}
-            className="bg-emerald-950/80 hover:bg-emerald-900 text-emerald-400 border border-emerald-800/60 p-1.5 px-3 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 text-[10px] font-black shadow-md hover:scale-[1.02] active:scale-[0.98]"
-            title={t.shareBtn}
-          >
-            {shareCopied ? <Check size={13} className="text-emerald-400 animate-bounce" /> : <Share2 size={13} className="text-emerald-400" />}
-            <span>{shareCopied ? (isRtl ? 'تم النسخ!' : 'Copied!') : (isRtl ? 'مشاركة التطبيق' : 'Share App')}</span>
-          </button>
+      {/* Top Center: About App */}
+      <div className="absolute top-6 left-1/2 -translate-x-1/2 z-50">
+        <button
+          onClick={() => setShowAboutModal(true)}
+          className="bg-blue-950/85 hover:bg-blue-900 text-blue-400 border border-blue-800/60 p-1.5 px-3.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 text-[10px] font-black shadow-md hover:scale-[1.02] active:scale-[0.98] whitespace-nowrap"
+          title={isRtl ? 'حول التطبيق ومميزاته' : 'About App & Features'}
+        >
+          <Info size={13} className="text-blue-400" />
+          <span>{isRtl ? 'حول التطبيق' : 'About App'}</span>
+        </button>
+      </div>
 
-          {/* About App Button */}
-          <button
-            onClick={() => setShowAboutModal(true)}
-            className="bg-blue-950/80 hover:bg-blue-900 text-blue-400 border border-blue-800/60 p-1.5 px-3 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 text-[10px] font-black shadow-md hover:scale-[1.02] active:scale-[0.98]"
-            title={isRtl ? 'حول التطبيق ومميزاته' : 'About App & Features'}
-          >
-            <Info size={13} className="text-blue-400" />
-            <span>{isRtl ? 'حول التطبيق' : 'About App'}</span>
-          </button>
-
-          {/* Language Toggle */}
-          <button
-            onClick={() => onLanguageChange(currentLanguage === 'ar' ? 'en' : 'ar')}
-            className="bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800/60 hover:border-slate-700/60 p-1.5 px-3 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 text-[10px] font-bold shadow-md hover:scale-[1.02] active:scale-[0.98]"
-            title={isRtl ? 'Switch language to English' : 'تغيير اللغة إلى العربية'}
-          >
-            <Globe size={13} className="text-blue-400" />
-            <span className="uppercase tracking-wider">{isRtl ? 'English' : 'العربية'}</span>
-          </button>
-        </div>
+      {/* Top Left: Language Switcher */}
+      <div className="absolute top-6 left-6 z-50">
+        <button
+          onClick={() => onLanguageChange(currentLanguage === 'ar' ? 'en' : 'ar')}
+          className="bg-slate-900/90 hover:bg-slate-800 text-slate-300 border border-slate-800/60 hover:border-slate-700/60 p-1.5 px-3.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 text-[10px] font-bold shadow-md hover:scale-[1.02] active:scale-[0.98]"
+          title={isRtl ? 'Switch language to English' : 'تغيير اللغة إلى العربية'}
+        >
+          <Globe size={13} className="text-blue-400" />
+          <span className="uppercase tracking-wider">{isRtl ? 'English' : 'العربية'}</span>
+        </button>
       </div>
 
       {/* Dynamic Grid Background Accent */}
