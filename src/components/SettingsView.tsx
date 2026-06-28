@@ -62,6 +62,9 @@ export default function SettingsView({
   const [auditSearch, setAuditSearch] = useState('');
   const [auditActionFilter, setAuditActionFilter] = useState<string>('all');
   const [auditEntityFilter, setAuditEntityFilter] = useState<string>('all');
+  const [auditUserFilter, setAuditUserFilter] = useState<string>('all');
+  const [auditStartDate, setAuditStartDate] = useState<string>('');
+  const [auditEndDate, setAuditEndDate] = useState<string>('');
 
   // New User Form State
   const [newUsername, setNewUsername] = useState('');
@@ -323,6 +326,8 @@ export default function SettingsView({
     }
   };
 
+  const uniqueUsersInLogs = Array.from(new Set(auditLogs.map(log => log.username))).filter(Boolean);
+
   const filteredLogs = auditLogs.filter(log => {
     const matchesSearch = 
       log.username.toLowerCase().includes(auditSearch.toLowerCase()) ||
@@ -331,8 +336,14 @@ export default function SettingsView({
     
     const matchesAction = auditActionFilter === 'all' || log.action === auditActionFilter;
     const matchesEntity = auditEntityFilter === 'all' || log.entityType === auditEntityFilter;
+    const matchesUser = auditUserFilter === 'all' || log.username === auditUserFilter;
     
-    return matchesSearch && matchesAction && matchesEntity;
+    // Check Date boundary safely
+    const logTime = new Date(log.date).getTime();
+    const matchesStartDate = !auditStartDate || logTime >= new Date(auditStartDate + 'T00:00:00').getTime();
+    const matchesEndDate = !auditEndDate || logTime <= new Date(auditEndDate + 'T23:59:59').getTime();
+    
+    return matchesSearch && matchesAction && matchesEntity && matchesUser && matchesStartDate && matchesEndDate;
   });
 
   return (
@@ -1039,56 +1050,118 @@ export default function SettingsView({
           </div>
 
           {/* Search and Filters */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 bg-slate-50/50 p-4 rounded-2xl border border-slate-100">
-            {/* Search */}
-            <div className="relative">
-              <label className="block text-[10px] font-bold text-slate-500 mb-1">بحث في السجل</label>
+          <div className="space-y-3 bg-slate-50/50 p-4 rounded-2xl border border-slate-100">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3.5">
+              {/* Search */}
               <div className="relative">
-                <input
-                  type="text"
-                  placeholder="ابحث باسم الموظف أو التفاصيل..."
-                  value={auditSearch}
-                  onChange={(e) => setAuditSearch(e.target.value)}
-                  className="w-full bg-white border border-slate-200 text-xs pl-3 pr-8 py-2 rounded-xl text-right outline-hidden"
-                />
-                <Search size={14} className="absolute right-3 top-3 text-slate-400" />
+                <label className="block text-[10px] font-bold text-slate-500 mb-1">بحث في السجل</label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="ابحث باسم الموظف أو التفاصيل..."
+                    value={auditSearch}
+                    onChange={(e) => setAuditSearch(e.target.value)}
+                    className="w-full bg-white border border-slate-200 text-xs pl-3 pr-8 py-2 rounded-xl text-right outline-hidden"
+                  />
+                  <Search size={14} className="absolute right-3 top-3 text-slate-400" />
+                </div>
+              </div>
+
+              {/* Specific Username Filter */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 mb-1">الموظف (اسم المستخدم)</label>
+                <select
+                  value={auditUserFilter}
+                  onChange={(e) => setAuditUserFilter(e.target.value)}
+                  className="w-full bg-white border border-slate-200 text-xs px-3 py-2 rounded-xl text-right cursor-pointer font-bold"
+                >
+                  <option value="all">الكل (جميع المستخدمين)</option>
+                  {uniqueUsersInLogs.map(user => (
+                    <option key={user} value={user}>{user}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Action Filter */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 mb-1">نوع العملية</label>
+                <select
+                  value={auditActionFilter}
+                  onChange={(e) => setAuditActionFilter(e.target.value)}
+                  className="w-full bg-white border border-slate-200 text-xs px-3 py-2 rounded-xl text-right cursor-pointer font-bold"
+                >
+                  <option value="all">الكل (جميع العمليات)</option>
+                  <option value="add">إضافة (+)</option>
+                  <option value="edit">تعديل (📝)</option>
+                  <option value="delete">حذف (🗑️)</option>
+                  <option value="sync">مزامنة سحابية (🔄)</option>
+                  <option value="import">استيراد بيانات (📥)</option>
+                  <option value="other">أخرى</option>
+                </select>
+              </div>
+
+              {/* Entity Filter */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 mb-1">القسم المستهدف</label>
+                <select
+                  value={auditEntityFilter}
+                  onChange={(e) => setAuditEntityFilter(e.target.value)}
+                  className="w-full bg-white border border-slate-200 text-xs px-3 py-2 rounded-xl text-right cursor-pointer font-bold"
+                >
+                  <option value="all">الكل (جميع الأقسام)</option>
+                  <option value="items">الأصناف</option>
+                  <option value="movements">الحركات</option>
+                  <option value="suppliers">الموردين</option>
+                  <option value="warehouses">المستودعات</option>
+                  <option value="transfers">التحويلات</option>
+                  <option value="system">النظام</option>
+                </select>
               </div>
             </div>
 
-            {/* Action Filter */}
-            <div>
-              <label className="block text-[10px] font-bold text-slate-500 mb-1">نوع العملية</label>
-              <select
-                value={auditActionFilter}
-                onChange={(e) => setAuditActionFilter(e.target.value)}
-                className="w-full bg-white border border-slate-200 text-xs px-3 py-2 rounded-xl text-right cursor-pointer font-bold"
-              >
-                <option value="all">الكل (جميع العمليات)</option>
-                <option value="add">إضافة (+)</option>
-                <option value="edit">تعديل (📝)</option>
-                <option value="delete">حذف (🗑️)</option>
-                <option value="sync">مزامنة سحابية (🔄)</option>
-                <option value="import">استيراد بيانات (📥)</option>
-                <option value="other">أخرى</option>
-              </select>
-            </div>
+            {/* Date Filtering row & Clear Filters */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 pt-1 border-t border-slate-100/60 items-end">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 mb-1">من تاريخ (البدء)</label>
+                <input
+                  type="date"
+                  value={auditStartDate}
+                  onChange={(e) => setAuditStartDate(e.target.value)}
+                  className="w-full bg-white border border-slate-200 text-xs px-3 py-1.5 rounded-xl text-right outline-hidden"
+                />
+              </div>
 
-            {/* Entity Filter */}
-            <div>
-              <label className="block text-[10px] font-bold text-slate-500 mb-1">القسم المستهدف</label>
-              <select
-                value={auditEntityFilter}
-                onChange={(e) => setAuditEntityFilter(e.target.value)}
-                className="w-full bg-white border border-slate-200 text-xs px-3 py-2 rounded-xl text-right cursor-pointer font-bold"
-              >
-                <option value="all">الكل (جميع الأقسام)</option>
-                <option value="items">الأصناف</option>
-                <option value="movements">الحركات</option>
-                <option value="suppliers">الموردين</option>
-                <option value="warehouses">المستودعات</option>
-                <option value="transfers">التحويلات</option>
-                <option value="system">النظام</option>
-              </select>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 mb-1">إلى تاريخ (الانتهاء)</label>
+                <input
+                  type="date"
+                  value={auditEndDate}
+                  onChange={(e) => setAuditEndDate(e.target.value)}
+                  className="w-full bg-white border border-slate-200 text-xs px-3 py-1.5 rounded-xl text-right outline-hidden"
+                />
+              </div>
+
+              {/* Clear filters action button */}
+              {(auditSearch || auditActionFilter !== 'all' || auditEntityFilter !== 'all' || auditUserFilter !== 'all' || auditStartDate || auditEndDate) ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuditSearch('');
+                    setAuditActionFilter('all');
+                    setAuditEntityFilter('all');
+                    setAuditUserFilter('all');
+                    setAuditStartDate('');
+                    setAuditEndDate('');
+                  }}
+                  className="w-full bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-600 font-black text-[10px] py-2 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <span>مسح وتصفير فلاتر البحث 🔄</span>
+                </button>
+              ) : (
+                <div className="hidden sm:block text-[9px] text-slate-400 font-bold text-left py-2.5">
+                  تصفية متقدمة نشطة لسهولة مراقبة الأمان والعمليات
+                </div>
+              )}
             </div>
           </div>
 

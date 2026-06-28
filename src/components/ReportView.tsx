@@ -45,6 +45,38 @@ export default function ReportView({ items, movements, suppliers, warehouses = [
     return matchesGroup && matchesItem;
   });
 
+  // Calculate Top Moving Items (الأصناف الأكثر حركة) over selected date range
+  const topMovingItems = React.useMemo(() => {
+    const itemMap: { [key: string]: { item: Item; totalQty: number; inQty: number; outQty: number; count: number } } = {};
+    
+    filteredMovementsByDate.forEach((m) => {
+      const item = items.find((i) => i.id === m.itemId);
+      if (!item) return;
+      
+      if (!itemMap[m.itemId]) {
+        itemMap[m.itemId] = {
+          item,
+          totalQty: 0,
+          inQty: 0,
+          outQty: 0,
+          count: 0
+        };
+      }
+      
+      itemMap[m.itemId].totalQty += m.quantity;
+      if (m.type === 'in') {
+        itemMap[m.itemId].inQty += m.quantity;
+      } else if (m.type === 'out') {
+        itemMap[m.itemId].outQty += m.quantity;
+      }
+      itemMap[m.itemId].count += 1;
+    });
+
+    return Object.values(itemMap)
+      .sort((a, b) => b.totalQty - a.totalQty)
+      .slice(0, 10); // Show top 10 moving items
+  }, [items, filteredMovementsByDate]);
+
   // Overall sums
   const totalInward = filteredMovementsByDate
     .filter((m) => m.type === 'in')
@@ -415,36 +447,47 @@ export default function ReportView({ items, movements, suppliers, warehouses = [
         </div>
       </div>
 
-      {/* Filter Tabs (شهري, الأصناف, الموردون) */}
-      <div className="bg-slate-100 p-1 rounded-2xl flex w-full">
+      {/* Filter Tabs (شهري, الأكثر حركة, الأصناف, الموردون) */}
+      <div className="bg-slate-100 p-1 rounded-2xl flex flex-wrap sm:flex-nowrap w-full gap-1">
         <button
           onClick={() => setActiveFilter('monthly')}
-          className={`flex-1 py-3 px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+          className={`flex-1 min-w-[100px] py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
             activeFilter === 'monthly'
               ? 'bg-blue-600 text-white shadow-xs'
-              : 'text-slate-500 hover:text-slate-700'
+              : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'
           }`}
         >
           <Calendar size={15} />
           <span>التقرير الشهري</span>
         </button>
         <button
+          onClick={() => setActiveFilter('top-moving')}
+          className={`flex-1 min-w-[100px] py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+            activeFilter === 'top-moving'
+              ? 'bg-blue-600 text-white shadow-xs'
+              : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'
+          }`}
+        >
+          <TrendingUp size={15} className={activeFilter === 'top-moving' ? 'text-white' : 'text-blue-600'} />
+          <span className="flex items-center gap-1">الأكثر حركة <span className="text-[10px]">🔥</span></span>
+        </button>
+        <button
           onClick={() => setActiveFilter('items')}
-          className={`flex-1 py-3 px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+          className={`flex-1 min-w-[100px] py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
             activeFilter === 'items'
               ? 'bg-blue-600 text-white shadow-xs'
-              : 'text-slate-500 hover:text-slate-700'
+              : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'
           }`}
         >
           <Box size={15} />
-          <span>الأصناف</span>
+          <span>تحليل الأصناف</span>
         </button>
         <button
           onClick={() => setActiveFilter('suppliers')}
-          className={`flex-1 py-3 px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+          className={`flex-1 min-w-[100px] py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
             activeFilter === 'suppliers'
               ? 'bg-blue-600 text-white shadow-xs'
-              : 'text-slate-500 hover:text-slate-700'
+              : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'
           }`}
         >
           <Users size={15} />
@@ -515,6 +558,122 @@ export default function ReportView({ items, movements, suppliers, warehouses = [
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* Report Block - TOP MOVING ITEMS */}
+        {activeFilter === 'top-moving' && (
+          <div className="space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-50 pb-4 gap-2">
+              <div>
+                <h4 className="font-extrabold text-slate-800 text-base sm:text-lg">الأصناف الأكثر حركة والنشاط الإجمالي 🔥</h4>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  مرتبة تنازلياً حسب مجموع كميات التوريد والصرف خلال الفترة الزمنية المحددة
+                </p>
+              </div>
+              <div className="bg-slate-100 text-slate-600 px-3 py-1.5 rounded-xl text-[10px] font-bold text-center self-start font-mono">
+                الفترة: {startDate} 🗓️ {endDate}
+              </div>
+            </div>
+
+            {topMovingItems.length === 0 ? (
+              <div className="text-center py-12 text-slate-400 space-y-2">
+                <Box className="mx-auto text-slate-300" size={32} />
+                <p className="text-xs font-bold">لا توجد حركات مقيدة خلال هذه الفترة الزمنية!</p>
+                <p className="text-[10px] text-slate-400">يرجى تعديل النطاق الزمني أو اختيار مستودع آخر في الفلاتر العلوية.</p>
+              </div>
+            ) : (
+              <div className="space-y-5">
+                {/* Visual Horizontal Chart Cards */}
+                <div className="space-y-4">
+                  {topMovingItems.map((item, idx) => {
+                    const maxQty = Math.max(...topMovingItems.map(x => x.totalQty)) || 1;
+                    const percent = Math.min(100, Math.round((item.totalQty / maxQty) * 100));
+                    
+                    return (
+                      <div key={item.item.id} className="bg-slate-50/50 hover:bg-slate-50 border border-slate-100 p-4 rounded-2xl transition-all space-y-3">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div className="flex items-start gap-2.5 min-w-0">
+                            <span className="flex items-center justify-center bg-blue-600/10 text-blue-600 text-[10px] font-black w-6 h-6 rounded-lg shrink-0">
+                              #{idx + 1}
+                            </span>
+                            <div className="min-w-0">
+                              <span className="text-slate-800 text-xs sm:text-sm font-black block truncate">{item.item.name}</span>
+                              <div className="flex items-center gap-1.5 mt-1">
+                                <span className="text-[9px] bg-slate-200/60 text-slate-500 px-1.5 py-0.5 rounded-md font-mono font-bold">
+                                  {item.item.id}
+                                </span>
+                                <span className="text-[9px] text-slate-400 font-bold">
+                                  {item.item.category}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Stat value summary */}
+                          <div className="flex items-center gap-3 shrink-0">
+                            <div className="text-right">
+                              <span className="text-[9px] text-slate-400 font-bold block">مجموع الكمية المتحركة</span>
+                              <span className="text-sm font-black text-slate-800 font-mono flex items-center justify-end gap-1">
+                                {item.totalQty}
+                                <span className="text-[9px] text-slate-400 font-sans font-bold">{item.item.unit}</span>
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Bar Graph Graphic */}
+                        <div className="space-y-1">
+                          {/* Outer Track */}
+                          <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden flex" title={`الوارد: ${item.inQty}، الصرف: ${item.outQty}`}>
+                            {/* Inward Segment */}
+                            {item.inQty > 0 && (
+                              <div 
+                                style={{ width: `${(item.inQty / item.totalQty) * percent}%` }}
+                                className="bg-emerald-500 h-full transition-all duration-500"
+                              />
+                            )}
+                            {/* Outward Segment */}
+                            {item.outQty > 0 && (
+                              <div 
+                                style={{ width: `${(item.outQty / item.totalQty) * percent}%` }}
+                                className="bg-orange-500 h-full transition-all duration-500"
+                              />
+                            )}
+                          </div>
+
+                          {/* Legend / Info under the bar */}
+                          <div className="flex items-center justify-between text-[9px] text-slate-400 font-bold font-mono">
+                            <div className="flex items-center gap-1.5 text-emerald-600">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 block"></span>
+                              <span>الوارد: {item.inQty}</span>
+                            </div>
+                            <div className="text-slate-400 font-sans">
+                              {item.count} حركات مقيدة 📝
+                            </div>
+                            <div className="flex items-center gap-1.5 text-orange-600">
+                              <span>الصرف: {item.outQty}</span>
+                              <span className="w-1.5 h-1.5 rounded-full bg-orange-500 block"></span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Additional Summary Stats Card */}
+                <div className="bg-blue-50/40 border border-blue-100/60 rounded-2xl p-4 flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-2">
+                    <TrendingUp className="text-blue-600" size={18} />
+                    <span className="text-xs text-blue-900 font-bold">تحليلات النشاط الإجمالي للمخزن:</span>
+                  </div>
+                  <span className="text-[10px] text-blue-800 font-bold bg-white px-2.5 py-1 rounded-lg border border-blue-100 shadow-3xs">
+                    معدل حركة دوران الأصناف ممتاز 📈
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

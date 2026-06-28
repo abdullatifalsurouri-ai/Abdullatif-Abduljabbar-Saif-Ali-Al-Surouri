@@ -965,49 +965,73 @@ export default function App() {
             </span>
             
             {/* About App Info Button */}
-            <button
-              onClick={() => setShowAboutModal(true)}
-              className={`p-2 rounded-xl transition-all cursor-pointer flex items-center justify-center ${
-                isDarkMode ? 'bg-slate-800 text-blue-400 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-              title={currentLanguage === 'ar' ? 'حول التطبيق ومميزاته' : 'About App & Features'}
-            >
-              <Info size={18} className="stroke-[2.5]" />
-            </button>
+            <div className="group relative">
+              <button
+                onClick={() => setShowAboutModal(true)}
+                className={`p-2 rounded-xl transition-all cursor-pointer flex items-center justify-center ${
+                  isDarkMode ? 'bg-slate-800 text-blue-400 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+                title={currentLanguage === 'ar' ? 'حول التطبيق ومميزاته' : 'About App & Features'}
+              >
+                <Info size={18} className="stroke-[2.5]" />
+              </button>
+              {/* Tooltip */}
+              <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 hidden group-hover:block bg-slate-950 dark:bg-slate-850 text-white text-[10px] font-bold px-2.5 py-1.5 rounded-lg shadow-xl whitespace-nowrap z-50 pointer-events-none border border-white/10">
+                {currentLanguage === 'ar' ? 'معلومات حول التطبيق ومميزاته ℹ️' : 'About App & Features ℹ️'}
+              </div>
+            </div>
 
             {/* Language Toggle Button */}
-            <button
-              onClick={() => setCurrentLanguage(prev => prev === 'ar' ? 'en' : 'ar')}
-              className={`p-2 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 text-xs font-bold ${
-                isDarkMode ? 'bg-slate-800 text-blue-400 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-              title={currentLanguage === 'ar' ? 'Switch language to English' : 'تغيير اللغة إلى العربية'}
-            >
-              <Globe size={16} className="stroke-[2.5]" />
-              <span className="text-[10px] uppercase">{currentLanguage === 'ar' ? 'EN' : 'عربي'}</span>
-            </button>
+            <div className="group relative">
+              <button
+                onClick={() => setCurrentLanguage(prev => prev === 'ar' ? 'en' : 'ar')}
+                className={`p-2 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 text-xs font-bold ${
+                  isDarkMode ? 'bg-slate-800 text-blue-400 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+                title={currentLanguage === 'ar' ? 'Switch language to English' : 'تغيير اللغة إلى العربية'}
+              >
+                <Globe size={16} className="stroke-[2.5]" />
+                <span className="text-[10px] uppercase">{currentLanguage === 'ar' ? 'EN' : 'عربي'}</span>
+              </button>
+              {/* Tooltip */}
+              <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 hidden group-hover:block bg-slate-950 dark:bg-slate-850 text-white text-[10px] font-bold px-2.5 py-1.5 rounded-lg shadow-xl whitespace-nowrap z-50 pointer-events-none border border-white/10">
+                {currentLanguage === 'ar' ? 'تغيير واجهة النظام إلى الإنجليزية 🌐' : 'Switch interface to Arabic 🌐'}
+              </div>
+            </div>
 
             {/* Fullscreen Toggle Button */}
-            <button
-              onClick={toggleFullscreen}
-              className={`p-2 rounded-xl transition-all cursor-pointer flex items-center justify-center ${
-                isDarkMode ? 'bg-slate-800 text-teal-400 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-              title={isFullscreen ? (currentLanguage === 'ar' ? 'الخروج من ملء الشاشة' : 'Exit Fullscreen') : (currentLanguage === 'ar' ? 'وضع ملء الشاشة' : 'Fullscreen Mode')}
-            >
-              {isFullscreen ? <Minimize size={18} className="stroke-[2.5]" /> : <Maximize size={18} className="stroke-[2.5]" />}
-            </button>
+            <div className="group relative">
+              <button
+                onClick={toggleFullscreen}
+                className={`p-2 rounded-xl transition-all cursor-pointer flex items-center justify-center ${
+                  isDarkMode ? 'bg-slate-800 text-teal-400 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+                title={isFullscreen ? (currentLanguage === 'ar' ? 'الخروج من ملء الشاشة' : 'Exit Fullscreen') : (currentLanguage === 'ar' ? 'وضع ملء الشاشة' : 'Fullscreen Mode')}
+              >
+                {isFullscreen ? <Minimize size={18} className="stroke-[2.5]" /> : <Maximize size={18} className="stroke-[2.5]" />}
+              </button>
+              {/* Tooltip */}
+              <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 hidden group-hover:block bg-slate-950 dark:bg-slate-850 text-white text-[10px] font-bold px-2.5 py-1.5 rounded-lg shadow-xl whitespace-nowrap z-50 pointer-events-none border border-white/10">
+                {isFullscreen ? (currentLanguage === 'ar' ? 'إلغاء وضع ملء الشاشة 🖥️' : 'Exit Fullscreen 🖥️') : (currentLanguage === 'ar' ? 'تفعيل وضع ملء الشاشة 🖥️' : 'Enter Fullscreen 🖥️')}
+              </div>
+            </div>
 
             {/* Dark Mode Toggle Button */}
-            <button
-              onClick={() => setIsDarkMode(prev => !prev)}
-              className={`p-2 rounded-xl transition-all cursor-pointer flex items-center justify-center ${
-                isDarkMode ? 'bg-slate-800 text-amber-400 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-              title={isDarkMode ? 'الوضع النهاري' : 'الوضع الليلي'}
-            >
-              {isDarkMode ? <Sun size={18} className="stroke-[2.5]" /> : <Moon size={18} className="stroke-[2.5]" />}
-            </button>
+            <div className="group relative">
+              <button
+                onClick={() => setIsDarkMode(prev => !prev)}
+                className={`p-2 rounded-xl transition-all cursor-pointer flex items-center justify-center ${
+                  isDarkMode ? 'bg-slate-800 text-amber-400 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+                title={isDarkMode ? 'الوضع النهاري' : 'الوضع الليلي'}
+              >
+                {isDarkMode ? <Sun size={18} className="stroke-[2.5]" /> : <Moon size={18} className="stroke-[2.5]" />}
+              </button>
+              {/* Tooltip */}
+              <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 hidden group-hover:block bg-slate-950 dark:bg-slate-850 text-white text-[10px] font-bold px-2.5 py-1.5 rounded-lg shadow-xl whitespace-nowrap z-50 pointer-events-none border border-white/10">
+                {isDarkMode ? (currentLanguage === 'ar' ? 'التحويل للمظهر النهاري ☀️' : 'Switch to Light Mode ☀️') : (currentLanguage === 'ar' ? 'التحويل للمظهر الليلي 🌙' : 'Switch to Dark Mode 🌙')}
+              </div>
+            </div>
           </div>
         </div>
       </header>
@@ -1156,12 +1180,16 @@ export default function App() {
               setActiveTab('home');
               setIsMoreMenuOpen(false);
             }}
-            className={`flex flex-col items-center gap-1 transition-all cursor-pointer ${
+            className={`flex flex-col items-center gap-1 transition-all cursor-pointer group relative ${
               activeTab === 'home' ? 'text-blue-600 scale-105' : 'text-slate-400 hover:text-slate-500'
             }`}
           >
             <Home size={20} className={activeTab === 'home' ? 'stroke-[2.5]' : 'stroke-[2]'} />
             <span className="text-[10px] font-black">{t.navHome}</span>
+            {/* Tooltip */}
+            <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 hidden group-hover:block bg-slate-950 text-white text-[9px] font-black px-2.5 py-1 rounded-md shadow-lg whitespace-nowrap z-50 pointer-events-none border border-white/10 text-center">
+              {currentLanguage === 'ar' ? 'لوحة التحكم الإحصائية العامة للعمليات 📊' : 'Operations Dashboard 📊'}
+            </div>
           </button>
  
           {/* Tab: الأصناف */}
@@ -1171,12 +1199,16 @@ export default function App() {
                 setActiveTab('items');
                 setIsMoreMenuOpen(false);
               }}
-              className={`flex flex-col items-center gap-1 transition-all cursor-pointer ${
+              className={`flex flex-col items-center gap-1 transition-all cursor-pointer group relative ${
                 activeTab === 'items' ? 'text-blue-600 scale-105' : 'text-slate-400 hover:text-slate-500'
               }`}
             >
               <BoxIcon size={20} className={activeTab === 'items' ? 'stroke-[2.5]' : 'stroke-[2]'} />
               <span className="text-[10px] font-black">{t.navItems}</span>
+              {/* Tooltip */}
+              <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 hidden group-hover:block bg-slate-950 text-white text-[9px] font-black px-2.5 py-1 rounded-md shadow-lg whitespace-nowrap z-50 pointer-events-none border border-white/10 text-center">
+                {currentLanguage === 'ar' ? 'إدارة وإدخال وتعديل قائمة الأصناف 📦' : 'Items & Catalog Management 📦'}
+              </div>
             </button>
           )}
  
@@ -1187,12 +1219,16 @@ export default function App() {
                 setActiveTab('movements');
                 setIsMoreMenuOpen(false);
               }}
-              className={`flex flex-col items-center gap-1 transition-all cursor-pointer ${
+              className={`flex flex-col items-center gap-1 transition-all cursor-pointer group relative ${
                 activeTab === 'movements' ? 'text-blue-600 scale-105' : 'text-slate-400 hover:text-slate-500'
               }`}
             >
               <ArrowLeftRight size={20} className={activeTab === 'movements' ? 'stroke-[2.5]' : 'stroke-[2]'} />
               <span className="text-[10px] font-black">{t.navMovements}</span>
+              {/* Tooltip */}
+              <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 hidden group-hover:block bg-slate-950 text-white text-[9px] font-black px-2.5 py-1 rounded-md shadow-lg whitespace-nowrap z-50 pointer-events-none border border-white/10 text-center">
+                {currentLanguage === 'ar' ? 'تقييد ومراقبة عمليات التوريد والصرف 🔄' : 'Inward & Outward Movements 🔄'}
+              </div>
             </button>
           )}
  
@@ -1203,19 +1239,23 @@ export default function App() {
                 setActiveTab('inventory');
                 setIsMoreMenuOpen(false);
               }}
-              className={`flex flex-col items-center gap-1 transition-all cursor-pointer ${
+              className={`flex flex-col items-center gap-1 transition-all cursor-pointer group relative ${
                 activeTab === 'inventory' ? 'text-blue-600 scale-105' : 'text-slate-400 hover:text-slate-500'
               }`}
             >
               <BarChart2 size={20} className={activeTab === 'inventory' ? 'stroke-[2.5]' : 'stroke-[2]'} />
               <span className="text-[10px] font-black">{t.navInventory}</span>
+              {/* Tooltip */}
+              <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 hidden group-hover:block bg-slate-950 text-white text-[9px] font-black px-2.5 py-1 rounded-md shadow-lg whitespace-nowrap z-50 pointer-events-none border border-white/10 text-center">
+                {currentLanguage === 'ar' ? 'كشوفات جرد المخزون، النواقص والكميات 📋' : 'Inventory Audits & Reports 📋'}
+              </div>
             </button>
           )}
 
           {/* Tab: المزيد */}
           <button
             onClick={() => setIsMoreMenuOpen(prev => !prev)}
-            className={`flex flex-col items-center gap-1 transition-all cursor-pointer relative ${
+            className={`flex flex-col items-center gap-1 transition-all cursor-pointer relative group ${
               ['report', 'print', 'warehouses', 'transfers', 'settings'].includes(activeTab) || isMoreMenuOpen
                 ? 'text-blue-600 scale-105' 
                 : 'text-slate-400 hover:text-slate-500'
@@ -1228,6 +1268,10 @@ export default function App() {
             )}
             <MoreHorizontal size={20} className={['report', 'print', 'warehouses', 'transfers', 'settings'].includes(activeTab) || isMoreMenuOpen ? 'stroke-[2.5]' : 'stroke-[2]'} />
             <span className="text-[10px] font-black">{currentLanguage === 'ar' ? 'المزيد ☰' : 'More ☰'}</span>
+            {/* Tooltip */}
+            <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 hidden group-hover:block bg-slate-950 text-white text-[9px] font-black px-2.5 py-1 rounded-md shadow-lg whitespace-nowrap z-50 pointer-events-none border border-white/10 text-center">
+              {currentLanguage === 'ar' ? 'القائمة الإضافية: المستودعات، الإعدادات والسندات ⚙️' : 'More: Warehouses, Settings & Vouchers ⚙️'}
+            </div>
           </button>
  
         </div>

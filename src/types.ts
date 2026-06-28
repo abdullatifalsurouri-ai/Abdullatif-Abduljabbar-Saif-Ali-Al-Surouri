@@ -88,7 +88,7 @@ export interface SyncPayload {
   groups?: any[]; // optional groups array
 }
 
-export type ReportFilterType = 'monthly' | 'items' | 'suppliers';
+export type ReportFilterType = 'monthly' | 'top-moving' | 'items' | 'suppliers';
 
 // Initial data corresponding exactly to the provided screenshots
 export const INITIAL_ITEMS: Item[] = [
