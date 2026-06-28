@@ -5,9 +5,10 @@ interface AboutModalProps {
   isOpen: boolean;
   onClose: () => void;
   currentLanguage: 'ar' | 'en';
+  isDarkMode?: boolean;
 }
 
-export const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose, currentLanguage }) => {
+export const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose, currentLanguage, isDarkMode = false }) => {
   if (!isOpen) return null;
 
   const isRtl = currentLanguage === 'ar';
@@ -69,16 +70,18 @@ export const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose, current
 
   return (
     <div 
-      className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-[999] p-4 animate-fade-in"
+      className={`fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-[999] p-4 animate-fade-in ${isDarkMode ? 'dark' : ''}`}
       dir={isRtl ? 'rtl' : 'ltr'}
       onClick={onClose}
     >
       <div 
-        className="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-800 text-right overflow-hidden flex flex-col max-h-[90vh] animate-scale-up"
+        className={`w-full max-w-2xl rounded-3xl shadow-2xl text-right overflow-hidden flex flex-col max-h-[90vh] animate-scale-up border ${
+          isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-800'
+        }`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Header */}
-        <div className="bg-slate-900 text-white px-6 py-5 flex items-center justify-between border-b border-slate-800">
+        <div className="bg-slate-900 text-white px-6 py-5 flex items-center justify-between border-b border-slate-850">
           <div className="flex items-center gap-3">
             <div className="bg-blue-600/20 text-blue-400 p-2.5 rounded-2xl border border-blue-500/10">
               <Info size={22} className="stroke-[2.5]" />
@@ -97,10 +100,14 @@ export const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose, current
         </div>
 
         {/* Modal Content */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6 no-scrollbar text-slate-800 dark:text-slate-100">
+        <div className={`flex-1 overflow-y-auto p-6 space-y-6 no-scrollbar ${isDarkMode ? 'text-slate-100' : 'text-slate-800'}`}>
           
           {/* Logo & Intro Section */}
-          <div className="bg-gradient-to-br from-blue-50/50 to-indigo-50/20 dark:from-slate-850 dark:to-slate-900/50 p-5 rounded-3xl border border-blue-100/50 dark:border-slate-800 flex flex-col md:flex-row items-center gap-5 text-right">
+          <div className={`p-5 rounded-3xl border flex flex-col md:flex-row items-center gap-5 text-right ${
+            isDarkMode 
+              ? 'bg-gradient-to-br from-slate-850 to-slate-900/50 border-slate-800' 
+              : 'bg-gradient-to-br from-blue-50/50 to-indigo-50/20 border-blue-100/50'
+          }`}>
             <div className="bg-gradient-to-tr from-blue-600 to-indigo-600 text-white p-5 rounded-3xl shadow-lg relative flex-shrink-0">
               <Award size={40} className="stroke-[1.5]" />
               <div className="absolute -top-1.5 -right-1.5 bg-amber-400 text-slate-950 p-1 rounded-full animate-pulse">
@@ -110,14 +117,16 @@ export const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose, current
             
             <div className="space-y-2 flex-1 w-full text-center md:text-right">
               <div className="flex flex-col md:flex-row md:items-center gap-2 justify-center md:justify-start">
-                <h4 className="font-black text-lg text-slate-900 dark:text-white">
+                <h4 className={`font-black text-lg ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                   {isRtl ? 'مستودع المدى الذكي المتكامل' : 'Al-Mada Smart WMS'}
                 </h4>
-                <span className="inline-block bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 text-[10px] font-black px-2.5 py-1 rounded-full self-center">
+                <span className={`inline-block text-[10px] font-black px-2.5 py-1 rounded-full self-center ${
+                  isDarkMode ? 'bg-blue-900/40 text-blue-400' : 'bg-blue-100 text-blue-600'
+                }`}>
                   {t.versionValue}
                 </span>
               </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400 font-bold leading-relaxed">
+              <p className={`text-xs font-bold leading-relaxed ${isDarkMode ? 'text-slate-300' : 'text-slate-500'}`}>
                 {isRtl 
                   ? 'منصة برمجية رائدة لإدارة وتتبع حركات القطع والمواد المخزنية، تم تصميمها وهندستها لتوفير السرعة الفائقة والتوثيق التام للأمان والموثوقية.'
                   : 'A pioneering software platform for tracking and managing warehouse items, designed to provide ultra-speed and full visual documentation.'}
@@ -127,21 +136,29 @@ export const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose, current
 
           {/* Core System Features */}
           <div className="space-y-3.5">
-            <h4 className="font-black text-xs text-blue-600 dark:text-blue-400 tracking-wide uppercase flex items-center gap-1.5 justify-start">
+            <h4 className={`font-black text-xs tracking-wide uppercase flex items-center gap-1.5 justify-start ${
+              isDarkMode ? 'text-blue-400' : 'text-blue-600'
+            }`}>
               <span>{t.featuresTitle}</span>
             </h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {t.features.map((feat, idx) => (
                 <div 
                   key={idx}
-                  className="bg-slate-50/50 dark:bg-slate-850 p-4 rounded-2xl border border-slate-100 dark:border-slate-800/80 hover:border-blue-200 dark:hover:border-slate-700 hover:bg-white dark:hover:bg-slate-800 transition-all flex items-start gap-3 text-right"
+                  className={`p-4 rounded-2xl border transition-all flex items-start gap-3 text-right ${
+                    isDarkMode 
+                      ? 'bg-slate-850 border-slate-800/85 hover:border-slate-700 hover:bg-slate-800 text-white' 
+                      : 'bg-slate-50/50 border-slate-100 hover:border-blue-200 hover:bg-white text-slate-850'
+                  }`}
                 >
-                  <div className="p-2 rounded-xl bg-white dark:bg-slate-900 shadow-3xs flex-shrink-0 mt-0.5 border border-slate-100 dark:border-slate-800">
+                  <div className={`shadow-3xs flex-shrink-0 mt-0.5 border p-2 rounded-xl ${
+                    isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'
+                  }`}>
                     {feat.icon}
                   </div>
                   <div className="space-y-1">
-                    <h5 className="font-extrabold text-xs text-slate-800 dark:text-slate-200">{feat.title}</h5>
-                    <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium leading-relaxed">{feat.desc}</p>
+                    <h5 className={`font-extrabold text-xs ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{feat.title}</h5>
+                    <p className={`text-[10px] font-medium leading-relaxed ${isDarkMode ? 'text-slate-300' : 'text-slate-500'}`}>{feat.desc}</p>
                   </div>
                 </div>
               ))}
@@ -150,32 +167,36 @@ export const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose, current
 
           {/* Technical Data Card */}
           <div className="space-y-3">
-            <h4 className="font-black text-xs text-blue-600 dark:text-blue-400 tracking-wide uppercase flex items-center gap-1.5 justify-start">
+            <h4 className={`font-black text-xs tracking-wide uppercase flex items-center gap-1.5 justify-start ${
+              isDarkMode ? 'text-blue-400' : 'text-blue-600'
+            }`}>
               <span>{t.basicDataTitle}</span>
             </h4>
-            <div className="bg-slate-50 dark:bg-slate-850 border border-slate-100 dark:border-slate-800/80 rounded-2xl p-4 divide-y divide-slate-150 dark:divide-slate-800">
+            <div className={`border rounded-2xl p-4 divide-y transition-all ${
+              isDarkMode ? 'bg-slate-850 border-slate-800/80 divide-slate-800 text-white' : 'bg-slate-50 border-slate-100 divide-slate-150 text-slate-800'
+            }`}>
               {/* Row 1: Developer */}
               <div className="py-2.5 flex items-center justify-between text-xs font-bold">
-                <span className="text-slate-500 dark:text-slate-400">{t.developerLabel}</span>
+                <span className={isDarkMode ? 'text-slate-300' : 'text-slate-500'}>{t.developerLabel}</span>
                 <div className="flex flex-col items-end gap-0.5">
-                  <span className="text-slate-900 dark:text-white font-black text-xs">{t.developerName}</span>
-                  <span className="text-[10px] text-blue-600 dark:text-blue-400 font-black" dir="ltr">
+                  <span className={`font-black text-xs ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{t.developerName}</span>
+                  <span className={`text-[10px] font-black ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`} dir="ltr">
                     {isRtl ? 'للتواصل: 775104368' : 'Contact: 775104368'}
                   </span>
                 </div>
               </div>
               {/* Row 2: Tech stack */}
               <div className="py-2.5 flex items-center justify-between text-xs font-bold">
-                <span className="text-slate-500 dark:text-slate-400">{t.techLabel}</span>
-                <span className="text-slate-900 dark:text-white text-xs">{t.techValue}</span>
+                <span className={isDarkMode ? 'text-slate-300' : 'text-slate-500'}>{t.techLabel}</span>
+                <span className={`text-xs ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{t.techValue}</span>
               </div>
               {/* Row 3: Device compatibility */}
               <div className="py-2.5 flex flex-col gap-1.5 text-xs font-bold">
-                <span className="text-slate-500 dark:text-slate-400">{t.platformLabel}</span>
-                <div className="flex items-center gap-2 text-slate-900 dark:text-white text-[10px]">
-                  <Laptop size={14} className="text-slate-400" />
-                  <Tablet size={14} className="text-slate-400" />
-                  <Smartphone size={14} className="text-slate-400" />
+                <span className={isDarkMode ? 'text-slate-300' : 'text-slate-500'}>{t.platformLabel}</span>
+                <div className={`flex items-center gap-2 text-[10px] ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                  <Laptop size={14} className={isDarkMode ? 'text-slate-400' : 'text-slate-500'} />
+                  <Tablet size={14} className={isDarkMode ? 'text-slate-400' : 'text-slate-500'} />
+                  <Smartphone size={14} className={isDarkMode ? 'text-slate-400' : 'text-slate-500'} />
                   <span>{t.platformValue}</span>
                 </div>
               </div>
@@ -183,7 +204,9 @@ export const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose, current
           </div>
 
           {/* Guarantee stamp */}
-          <div className="bg-emerald-500/5 dark:bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-3.5 flex items-center gap-3 justify-center text-emerald-600 dark:text-emerald-400">
+          <div className={`border rounded-2xl p-3.5 flex items-center gap-3 justify-center ${
+            isDarkMode ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-emerald-500/5 border-emerald-500/15 text-emerald-600'
+          }`}>
             <CheckCircle size={18} className="flex-shrink-0" />
             <span className="text-[10px] font-black leading-relaxed text-center">
               {isRtl 

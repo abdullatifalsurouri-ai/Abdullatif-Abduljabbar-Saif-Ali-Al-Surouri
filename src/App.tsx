@@ -750,6 +750,8 @@ export default function App() {
         onLoginSuccess={handleLoginSuccess} 
         currentLanguage={currentLanguage} 
         onLanguageChange={setCurrentLanguage} 
+        isDarkMode={isDarkMode}
+        onToggleDarkMode={() => setIsDarkMode(prev => !prev)}
       />
     );
   }
@@ -1299,6 +1301,7 @@ export default function App() {
         isOpen={showAboutModal}
         onClose={() => setShowAboutModal(false)}
         currentLanguage={currentLanguage}
+        isDarkMode={isDarkMode}
       />
 
     </div>
