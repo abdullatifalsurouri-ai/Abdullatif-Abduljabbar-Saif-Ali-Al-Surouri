@@ -41,6 +41,7 @@ export default function MovementsView({
     date: new Date().toISOString().split('T')[0],
     photo: '',
     warehouseId: currentUser.warehouseId || (warehouses[0]?.id || ''),
+    expirationDate: '',
   });
 
   // Filter movements by selected type and search
@@ -80,6 +81,7 @@ export default function MovementsView({
       date: formData.date,
       photo: formData.photo || undefined,
       warehouseId: formData.warehouseId,
+      expirationDate: formData.type === 'in' && formData.expirationDate ? formData.expirationDate : undefined,
     });
 
     setIsFormOpen(false);
@@ -113,6 +115,7 @@ export default function MovementsView({
                 date: new Date().toISOString().split('T')[0],
                 photo: '',
                 warehouseId: currentUser.warehouseId || (warehouses[0]?.id || ''),
+                expirationDate: '',
               });
               setIsFormOpen(true);
             }}
@@ -419,6 +422,23 @@ export default function MovementsView({
                   <Calendar size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400" />
                 </div>
               </div>
+
+              {/* Expiration Date - Inward only */}
+              {formData.type === 'in' && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-1.5">تاريخ انتهاء الصلاحية (اختياري)</label>
+                  <div className="relative">
+                    <input
+                      type="date"
+                      value={formData.expirationDate}
+                      onChange={(e) => setFormData({ ...formData, expirationDate: e.target.value })}
+                      className="w-full bg-white border border-slate-200 focus:border-blue-500 text-sm px-4 py-2.5 pr-11 rounded-xl outline-hidden text-slate-700 font-mono"
+                    />
+                    <Calendar size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1">يُستخدم لتحديث تاريخ انتهاء صلاحية الصنف وتتبعه في لوحة التحكم.</p>
+                </div>
+              )}
 
               {/* Photo Capture */}
               <div>

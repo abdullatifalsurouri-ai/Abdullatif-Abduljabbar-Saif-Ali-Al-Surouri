@@ -103,6 +103,7 @@ export default function HomeView({
       downloadAnchor.click();
       downloadAnchor.remove();
 
+      localStorage.setItem('wms_last_backup_date', new Date().toISOString());
       setToast({ message: 'تم تصدير نسخة احتياطية من البيانات بنجاح! 📥', type: 'success' });
     } catch (error) {
       console.error(error);

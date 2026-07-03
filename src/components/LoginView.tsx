@@ -143,7 +143,8 @@ export default function LoginView({ onLoginSuccess, currentLanguage, onLanguageC
     setIsLoading(true);
 
     const trimmedUser = username.trim();
-    if (!trimmedUser || !password) {
+    const trimmedPassword = password.trim();
+    if (!trimmedUser || !trimmedPassword) {
       setError(t.emptyError);
       setIsLoading(false);
       return;
@@ -154,7 +155,7 @@ export default function LoginView({ onLoginSuccess, currentLanguage, onLanguageC
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: trimmedUser, password, deviceId: getDeviceId() }),
+        body: JSON.stringify({ username: trimmedUser, password: trimmedPassword, deviceId: getDeviceId() }),
       });
 
       const data = await response.json();
@@ -174,7 +175,7 @@ export default function LoginView({ onLoginSuccess, currentLanguage, onLanguageC
         try {
           const cachedUsers = JSON.parse(cachedUsersStr);
           const matchedUser = cachedUsers.find(
-            (u: any) => u.username.toLowerCase() === trimmedUser.toLowerCase() && u.password === password
+            (u: any) => u.username.toLowerCase() === trimmedUser.toLowerCase() && u.password.trim() === trimmedPassword
           );
 
           if (matchedUser) {
@@ -316,6 +317,10 @@ export default function LoginView({ onLoginSuccess, currentLanguage, onLanguageC
                 <input
                   type="text"
                   required
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck="false"
+                  autoComplete="username"
                   placeholder={t.userPlaceholder}
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
@@ -338,6 +343,10 @@ export default function LoginView({ onLoginSuccess, currentLanguage, onLanguageC
                 <input
                   type="password"
                   required
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck="false"
+                  autoComplete="current-password"
                   placeholder={t.passPlaceholder}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}

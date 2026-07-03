@@ -548,6 +548,12 @@ export default function App() {
   const handleAddMovement = (movement: Movement) => {
     if (movementsLocked) return;
     setMovements((prev) => [...prev, movement]);
+    
+    // Update the item expiration date if the movement is an inward one and has an expirationDate
+    if (movement.type === 'in' && movement.expirationDate) {
+      setItems((prev) => prev.map((it) => it.id === movement.itemId ? { ...it, expirationDate: movement.expirationDate } : it));
+    }
+
     const item = items.find((i) => i.id === movement.itemId);
     const typeStr = movement.type === 'in' ? 'وارد' : 'صرف';
     logAction(

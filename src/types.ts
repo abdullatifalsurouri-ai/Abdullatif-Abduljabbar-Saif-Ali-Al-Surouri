@@ -19,6 +19,7 @@ export interface Movement {
   date: string; // YYYY-MM-DD
   photo?: string; // Base64 data URI of captured camera photo
   warehouseId?: string; // Associate movement with a warehouse
+  expirationDate?: string; // تاريخ انتهاء الصلاحية للحركة (خاص بالوارد)
 }
 
 export interface Supplier {

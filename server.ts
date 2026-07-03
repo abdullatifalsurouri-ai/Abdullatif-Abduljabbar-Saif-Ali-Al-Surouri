@@ -290,7 +290,7 @@ app.post("/api/auth/login", (req, res) => {
 
   const db = readDB();
   const user = db.users.find(
-    (u: any) => u.username.toLowerCase() === username.trim().toLowerCase() && u.password === password
+    (u: any) => u.username.toLowerCase() === username.trim().toLowerCase() && u.password.trim() === password.trim()
   );
 
   if (!user) {
@@ -339,7 +339,7 @@ app.post("/api/auth/verify-reset", (req, res) => {
 
   const db = readDB();
   const user = db.users.find(
-    (u: any) => u.username.toLowerCase() === username.trim().toLowerCase() && u.password === password
+    (u: any) => u.username.toLowerCase() === username.trim().toLowerCase() && u.password.trim() === password.trim()
   );
 
   if (!user) {

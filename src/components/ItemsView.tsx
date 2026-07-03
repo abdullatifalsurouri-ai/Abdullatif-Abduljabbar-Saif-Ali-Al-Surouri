@@ -956,17 +956,6 @@ export default function ItemsView({
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-500 mb-1.5">تاريخ انتهاء الصلاحية (اختياري)</label>
-                <input
-                  type="date"
-                  value={formData.expirationDate}
-                  onChange={(e) => setFormData({ ...formData, expirationDate: e.target.value })}
-                  className="w-full bg-white border border-slate-200 focus:border-blue-500 text-sm px-4 py-2.5 rounded-xl outline-hidden text-slate-700 text-right"
-                />
-                <p className="text-[10px] text-slate-400 mt-1">يُستخدم لتتبع وتنبيه انتهاء صلاحية الصنف في لوحة التحكم.</p>
-              </div>
-
               <div className="flex gap-3 pt-4 border-t border-slate-100">
                 <button
                   type="submit"

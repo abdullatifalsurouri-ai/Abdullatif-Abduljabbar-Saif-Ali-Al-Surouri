@@ -79,6 +79,10 @@ export default function SettingsView({
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'success' | 'error'>('idle');
 
+  const [lastBackupDate, setLastBackupDate] = useState<string | null>(() => {
+    return localStorage.getItem('wms_last_backup_date');
+  });
+
   const handleDownloadFullBackup = () => {
     try {
       const backupData = {
@@ -105,6 +109,10 @@ export default function SettingsView({
       downloadAnchor.click();
       downloadAnchor.remove();
       
+      const now = new Date().toISOString();
+      localStorage.setItem('wms_last_backup_date', now);
+      setLastBackupDate(now);
+
       alert('تم تحميل النسخة الاحتياطية الكاملة للمستودع بنجاح! 💾');
     } catch (error) {
       console.error(error);
@@ -750,6 +758,38 @@ export default function SettingsView({
                   <Download size={14} />
                   <span>تحميل النسخة الاحتياطية الشاملة (JSON)</span>
                 </button>
+
+                {/* تاريخ آخر نسخة احتياطية والتحذير البصري */}
+                <div className="pt-3 border-t border-slate-100 space-y-2">
+                  <div className="flex justify-between items-center bg-slate-50 border border-slate-100 p-3 rounded-2xl text-[11px] font-bold text-slate-700">
+                    <span>تاريخ آخر نسخة احتياطية محلية:</span>
+                    <span className="text-emerald-700 font-extrabold">
+                      {lastBackupDate 
+                        ? new Date(lastBackupDate).toLocaleDateString('ar-EG', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                        : 'لا يوجد حتى الآن'}
+                    </span>
+                  </div>
+
+                  {(() => {
+                    const needsWarning = !lastBackupDate || (() => {
+                      const lastBackupTime = new Date(lastBackupDate).getTime();
+                      const diffDays = (Date.now() - lastBackupTime) / (1000 * 60 * 60 * 24);
+                      return diffDays > 7;
+                    })();
+
+                    if (needsWarning) {
+                      return (
+                        <div className="bg-amber-50/70 border border-amber-200/60 p-3 rounded-2xl text-[10px] text-amber-800 font-bold flex items-center gap-2 animate-pulse-subtle">
+                          <span className="text-sm">⚠️</span>
+                          <p className="leading-relaxed">
+                            تنبيه: لقد مرّ أكثر من 7 أيام (أو لم يتم بعد) دون حفظ نسخة احتياطية محلية على هذا الجهاز. يُنصح بتحميل نسخة احتياطية الآن للحفاظ على سلامة بياناتك!
+                          </p>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
+                </div>
               </div>
             </div>
 
