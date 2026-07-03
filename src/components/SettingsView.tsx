@@ -24,9 +24,11 @@ import {
   Activity,
   FileSpreadsheet,
   UploadCloud,
-  Download
+  Download,
+  Bell,
+  Receipt
 } from 'lucide-react';
-import { User, RoleType, UserPermissions, Warehouse, AuditLogEntry, Item, Movement, Supplier, WarehouseTransfer } from '../types';
+import { User, RoleType, UserPermissions, Warehouse, AuditLogEntry, Item, Movement, Supplier, WarehouseTransfer, InvoiceSettings } from '../types';
 
 interface SettingsViewProps {
   currentUser: User;
@@ -53,6 +55,10 @@ interface SettingsViewProps {
     showLowStock: boolean;
   };
   onChangeDashboardStatsConfig: (config: any) => void;
+  invoiceSettings?: InvoiceSettings;
+  onUpdateInvoiceSettings?: (settings: InvoiceSettings) => void;
+  expirationAlertMonths?: number;
+  onUpdateExpirationAlertMonths?: (months: number) => void;
 }
 
 export default function SettingsView({
@@ -72,6 +78,10 @@ export default function SettingsView({
   transfers = [],
   dashboardStatsConfig,
   onChangeDashboardStatsConfig,
+  invoiceSettings,
+  onUpdateInvoiceSettings,
+  expirationAlertMonths = 1,
+  onUpdateExpirationAlertMonths,
 }: SettingsViewProps) {
   const [settingsTab, setSettingsTab] = useState<'general' | 'audit'>('general');
   const [usersList, setUsersList] = useState<any[]>([]);
@@ -82,6 +92,59 @@ export default function SettingsView({
   const [lastBackupDate, setLastBackupDate] = useState<string | null>(() => {
     return localStorage.getItem('wms_last_backup_date');
   });
+
+  // Invoice settings local states
+  const [compName, setCompName] = useState(invoiceSettings?.name || '');
+  const [compAddress, setCompAddress] = useState(invoiceSettings?.address || '');
+  const [compPhone, setCompPhone] = useState(invoiceSettings?.phone || '');
+  const [compEmail, setCompEmail] = useState(invoiceSettings?.email || '');
+  const [compFooter, setCompFooter] = useState(invoiceSettings?.footerNote || '');
+  const [compLogo, setCompLogo] = useState(invoiceSettings?.logo || '');
+
+  useEffect(() => {
+    if (invoiceSettings) {
+      setCompName(invoiceSettings.name);
+      setCompAddress(invoiceSettings.address);
+      setCompPhone(invoiceSettings.phone);
+      setCompEmail(invoiceSettings.email || '');
+      setCompFooter(invoiceSettings.footerNote || '');
+      setCompLogo(invoiceSettings.logo || '');
+    }
+  }, [invoiceSettings]);
+
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 150000) {
+        alert('حجم الصورة كبير جداً! الرجاء اختيار صورة أقل من 150 كيلوبايت لضمان سرعة التزامن السحابي.');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setCompLogo(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleSaveInvoiceSettings = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!compName || !compAddress || !compPhone) {
+      alert('الرجاء تعبئة اسم الجهة/الشركة والعنوان والهاتف كحد أدنى.');
+      return;
+    }
+    if (onUpdateInvoiceSettings) {
+      onUpdateInvoiceSettings({
+        name: compName,
+        address: compAddress,
+        phone: compPhone,
+        email: compEmail,
+        footerNote: compFooter,
+        logo: compLogo
+      });
+      alert('تم حفظ وتحديث إعدادات الفاتورة والترويسة بنجاح وسيتم مزامنتها مع السحابة!');
+    }
+  };
 
   const handleDownloadFullBackup = () => {
     try {
@@ -146,7 +209,8 @@ export default function SettingsView({
     canApproveTransfer: true,
     canEditPrices: false,
     canImportExportCSV: true,
-    canResetSystem: false
+    canResetSystem: false,
+    canEditInvoiceSettings: false
   });
   const [newMaxDevices, setNewMaxDevices] = useState<number>(1);
 
@@ -171,7 +235,8 @@ export default function SettingsView({
     canApproveTransfer: false,
     canEditPrices: false,
     canImportExportCSV: false,
-    canResetSystem: false
+    canResetSystem: false,
+    canEditInvoiceSettings: false
   });
   const [editMaxDevices, setEditMaxDevices] = useState<number>(1);
 
@@ -226,7 +291,8 @@ export default function SettingsView({
       canApproveTransfer: false,
       canEditPrices: false,
       canImportExportCSV: false,
-      canResetSystem: false
+      canResetSystem: false,
+      canEditInvoiceSettings: false
     };
 
     if (role === 'Owner') {
@@ -243,7 +309,8 @@ export default function SettingsView({
         canApproveTransfer: true,
         canEditPrices: true,
         canImportExportCSV: true,
-        canResetSystem: true
+        canResetSystem: true,
+        canEditInvoiceSettings: true
       };
     } else if (role === 'Admin') {
       defaultPerms = {
@@ -259,7 +326,8 @@ export default function SettingsView({
         canApproveTransfer: true,
         canEditPrices: true,
         canImportExportCSV: true,
-        canResetSystem: false
+        canResetSystem: false,
+        canEditInvoiceSettings: true
       };
     } else if (role === 'Storekeeper') {
       defaultPerms = {
@@ -275,7 +343,8 @@ export default function SettingsView({
         canApproveTransfer: true,
         canEditPrices: false,
         canImportExportCSV: true,
-        canResetSystem: false
+        canResetSystem: false,
+        canEditInvoiceSettings: false
       };
     } else if (role === 'Viewer') {
       defaultPerms = {
@@ -291,7 +360,8 @@ export default function SettingsView({
         canApproveTransfer: false,
         canEditPrices: false,
         canImportExportCSV: false,
-        canResetSystem: false
+        canResetSystem: false,
+        canEditInvoiceSettings: false
       };
     }
 
@@ -687,6 +757,145 @@ export default function SettingsView({
                   </button>
                 </div>
               </div>
+            </div>
+
+            {/* Invoice Header/Footer Settings Card */}
+            <div className="bg-white border border-slate-100 p-5 rounded-3xl shadow-xs space-y-4 col-span-1 md:col-span-2">
+              <div className="flex items-center justify-between border-b border-slate-50 pb-3">
+                <div className="flex items-center gap-2">
+                  <Receipt size={18} className="text-blue-600 shrink-0" />
+                  <span className="text-xs font-black text-slate-800">إعدادات ترويسة وتذييل الفواتير والتقارير المطبوعة</span>
+                </div>
+                {!(currentUser.role === 'Owner' || currentUser.role === 'Admin' || currentUser.permissions.canEditInvoiceSettings === true) && (
+                  <span className="bg-amber-50 text-amber-700 text-[9px] font-black px-2.5 py-1 rounded-full flex items-center gap-1 border border-amber-100">
+                    🔒 عرض فقط (لا تملك الصلاحية)
+                  </span>
+                )}
+              </div>
+
+              <form onSubmit={handleSaveInvoiceSettings} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* Left Column: Logo Selector & Preview */}
+                  <div className="bg-slate-50/50 p-4 rounded-2xl border border-slate-100 flex flex-col items-center justify-center gap-3">
+                    <span className="text-[10px] text-slate-400 font-extrabold block text-center w-full">شعار المؤسسة / الشركة</span>
+                    
+                    <div className="w-24 h-24 rounded-2xl bg-white border border-slate-200 flex items-center justify-center overflow-hidden shadow-3xs relative">
+                      {compLogo ? (
+                        <img src={compLogo} alt="Logo" className="w-full h-full object-contain p-1" referrerPolicy="no-referrer" />
+                      ) : (
+                        <div className="text-center p-2">
+                          <Receipt size={24} className="text-slate-300 mx-auto mb-1" />
+                          <span className="text-[8px] text-slate-400 font-bold block">لا يوجد شعار</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {(currentUser.role === 'Owner' || currentUser.role === 'Admin' || currentUser.permissions.canEditInvoiceSettings === true) && (
+                      <div className="w-full">
+                        <label className="block text-center bg-blue-50 text-blue-700 hover:bg-blue-100 text-[10px] font-black py-2 rounded-xl cursor-pointer transition-all border border-blue-200">
+                          <span>اختر صورة الشعار</span>
+                          <input 
+                            type="file" 
+                            accept="image/*" 
+                            onChange={handleLogoUpload} 
+                            className="hidden" 
+                          />
+                        </label>
+                        {compLogo && (
+                          <button
+                            type="button"
+                            onClick={() => setCompLogo('')}
+                            className="w-full mt-1.5 text-center text-[9px] text-rose-500 hover:text-rose-600 font-bold block"
+                          >
+                            إزالة الشعار الحالي
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Center & Right Column: Details Fields */}
+                  <div className="md:col-span-2 space-y-3">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-slate-400 font-extrabold">اسم الجهة / المؤسسة <span className="text-rose-500">*</span></label>
+                        <input
+                          type="text"
+                          value={compName}
+                          onChange={(e) => setCompName(e.target.value)}
+                          disabled={!(currentUser.role === 'Owner' || currentUser.role === 'Admin' || currentUser.permissions.canEditInvoiceSettings === true)}
+                          className="w-full bg-slate-50 text-xs font-bold p-2.5 rounded-xl border border-slate-200/80 focus:border-blue-500 outline-hidden disabled:bg-slate-100/50"
+                          placeholder="مثال: مؤسسة المدى الذكي للتجارة"
+                          required
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-slate-400 font-extrabold">رقم الهاتف والتواصل <span className="text-rose-500">*</span></label>
+                        <input
+                          type="text"
+                          value={compPhone}
+                          onChange={(e) => setCompPhone(e.target.value)}
+                          disabled={!(currentUser.role === 'Owner' || currentUser.role === 'Admin' || currentUser.permissions.canEditInvoiceSettings === true)}
+                          className="w-full bg-slate-50 text-xs font-bold p-2.5 rounded-xl border border-slate-200/80 focus:border-blue-500 outline-hidden disabled:bg-slate-100/50"
+                          placeholder="مثال: +967775104368"
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-slate-400 font-extrabold">العنوان والموقع <span className="text-rose-500">*</span></label>
+                        <input
+                          type="text"
+                          value={compAddress}
+                          onChange={(e) => setCompAddress(e.target.value)}
+                          disabled={!(currentUser.role === 'Owner' || currentUser.role === 'Admin' || currentUser.permissions.canEditInvoiceSettings === true)}
+                          className="w-full bg-slate-50 text-xs font-bold p-2.5 rounded-xl border border-slate-200/80 focus:border-blue-500 outline-hidden disabled:bg-slate-100/50"
+                          placeholder="مثال: صنعاء - شارع الستين"
+                          required
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-slate-400 font-extrabold">البريد الإلكتروني (اختياري)</label>
+                        <input
+                          type="email"
+                          value={compEmail}
+                          onChange={(e) => setCompEmail(e.target.value)}
+                          disabled={!(currentUser.role === 'Owner' || currentUser.role === 'Admin' || currentUser.permissions.canEditInvoiceSettings === true)}
+                          className="w-full bg-slate-50 text-xs font-bold p-2.5 rounded-xl border border-slate-200/80 focus:border-blue-500 outline-hidden disabled:bg-slate-100/50"
+                          placeholder="مثال: info@company.com"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-slate-400 font-extrabold">الملاحظة التذييلية للفاتورة / التقرير (Footer Note)</label>
+                      <textarea
+                        value={compFooter}
+                        onChange={(e) => setCompFooter(e.target.value)}
+                        disabled={!(currentUser.role === 'Owner' || currentUser.role === 'Admin' || currentUser.permissions.canEditInvoiceSettings === true)}
+                        rows={2}
+                        className="w-full bg-slate-50 text-xs font-bold p-2.5 rounded-xl border border-slate-200/80 focus:border-blue-500 outline-hidden disabled:bg-slate-100/50 resize-none"
+                        placeholder="أدخل نص التذييل الذي يظهر أسفل الفواتير والتقارير المطبوعة"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {(currentUser.role === 'Owner' || currentUser.role === 'Admin' || currentUser.permissions.canEditInvoiceSettings === true) && (
+                  <div className="flex justify-end pt-2 border-t border-slate-50">
+                    <button
+                      type="submit"
+                      className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-black py-2.5 px-6 rounded-xl transition-all shadow-md shadow-blue-600/10 cursor-pointer"
+                    >
+                      حفظ إعدادات الفاتورة والترويسة
+                    </button>
+                  </div>
+                )}
+              </form>
             </div>
 
             {/* Dashboard Customization Card */}
@@ -1096,6 +1305,20 @@ export default function SettingsView({
                               <option value="false">تعطيل</option>
                             </select>
                           </div>
+
+                          {/* canEditInvoiceSettings */}
+                          <div className="bg-white p-2.5 rounded-xl border border-slate-200 space-y-1.5">
+                            <span className="font-extrabold text-blue-700 block text-center">إعدادات الفواتير</span>
+                            <select
+                              value={editPermissions.canEditInvoiceSettings ? "true" : "false"}
+                              onChange={(e) => setEditPermissions({ ...editPermissions, canEditInvoiceSettings: e.target.value === "true" })}
+                              disabled={editingUser.username.toLowerCase() === 'owner'}
+                              className="w-full bg-slate-50 text-[10px] p-1 rounded-md text-right border border-slate-200 cursor-pointer font-bold text-slate-700"
+                            >
+                              <option value="true">مسموح</option>
+                              <option value="false">تعطيل</option>
+                            </select>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -1134,6 +1357,16 @@ export default function SettingsView({
                                 <span className="text-[9px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md font-mono">
                                   {userObj.role}
                                 </span>
+                                {userObj.activeDevicesCount > 0 ? (
+                                  <span className="text-[9px] bg-emerald-50 text-emerald-700 px-2.5 py-0.5 rounded-full font-black animate-pulse flex items-center gap-1">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
+                                    متصل حالياً ({userObj.activeDevicesCount})
+                                  </span>
+                                ) : (
+                                  <span className="text-[9px] bg-slate-100 text-slate-400 px-2 py-0.5 rounded-full font-bold">
+                                    غير متصل
+                                  </span>
+                                )}
                               </div>
                               {/* Permission chips summaries */}
                               <div className="flex flex-wrap gap-1 text-[8px] text-slate-400 font-bold">

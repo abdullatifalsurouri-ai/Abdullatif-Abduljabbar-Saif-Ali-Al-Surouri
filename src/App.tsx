@@ -21,7 +21,9 @@ import {
   ChevronUp,
   ChevronDown,
   Layers,
-  Info
+  Info,
+  AlertTriangle,
+  X
 } from 'lucide-react';
 import { AboutModal } from './components/AboutModal';
 import { 
@@ -38,7 +40,9 @@ import {
   INITIAL_MOVEMENTS,
   INITIAL_WAREHOUSES,
   INITIAL_TRANSFERS,
-  INITIAL_AUDIT_LOGS
+  INITIAL_AUDIT_LOGS,
+  InvoiceSettings,
+  DEFAULT_INVOICE_SETTINGS
 } from './types';
 
 // Import our modular subviews
@@ -92,6 +96,9 @@ export default function App() {
   });
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showAboutModal, setShowAboutModal] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [showInstallBtn, setShowInstallBtn] = useState(false);
+  const [showExitModal, setShowExitModal] = useState(false);
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -150,6 +157,11 @@ export default function App() {
 
   const [isDataLocked, setIsDataLocked] = useState<boolean>(() => {
     return localStorage.getItem('wms_is_data_locked') === 'true';
+  });
+
+  const [invoiceSettings, setInvoiceSettings] = useState<InvoiceSettings>(() => {
+    const saved = localStorage.getItem('wms_invoice_settings');
+    return saved ? JSON.parse(saved) : DEFAULT_INVOICE_SETTINGS;
   });
 
   const [dashboardStatsConfig, setDashboardStatsConfig] = useState(() => {
@@ -218,6 +230,287 @@ export default function App() {
     };
   }, [currentLanguage]);
 
+  // Auto-lock idle session tracker (10 minutes of idle time)
+  const [isIdleLocked, setIsIdleLocked] = useState(false);
+  const [idleCountdown, setIdleCountdown] = useState(30);
+
+  // Expiration alert months configuration (e.g. alert if expires within N months)
+  const [expirationAlertMonths, setExpirationAlertMonths] = useState<number>(() => {
+    const saved = localStorage.getItem('wms_expiration_alert_months');
+    return saved ? Number(saved) : 1; // Default to 1 month
+  });
+
+  useEffect(() => {
+    localStorage.setItem('wms_expiration_alert_months', expirationAlertMonths.toString());
+  }, [expirationAlertMonths]);
+
+  useEffect(() => {
+    if (!currentUser) {
+      setIsIdleLocked(false);
+      return;
+    }
+
+    let idleTimer: NodeJS.Timeout;
+
+    const resetIdleTimer = () => {
+      if (isIdleLocked) return; // Don't reset if already locked
+      clearTimeout(idleTimer);
+      // 10 minutes = 10 * 60 * 1000 = 600,000 ms
+      idleTimer = setTimeout(() => {
+        setIsIdleLocked(true);
+        setIdleCountdown(30);
+      }, 600000); 
+    };
+
+    // Activity event listeners
+    const events = ['mousemove', 'keydown', 'mousedown', 'touchstart', 'scroll'];
+    events.forEach(event => window.addEventListener(event, resetIdleTimer));
+
+    // Initialize timer
+    resetIdleTimer();
+
+    return () => {
+      clearTimeout(idleTimer);
+      events.forEach(event => window.removeEventListener(event, resetIdleTimer));
+    };
+  }, [currentUser, isIdleLocked]);
+
+  // Handle countdown when idle locked
+  useEffect(() => {
+    let countdownInterval: NodeJS.Timeout;
+    if (isIdleLocked) {
+      countdownInterval = setInterval(() => {
+        setIdleCountdown((prev) => {
+          if (prev <= 1) {
+            clearInterval(countdownInterval);
+            setIsIdleLocked(false);
+            handleLogout(); // Auto logout when countdown reaches 0
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => clearInterval(countdownInterval);
+  }, [isIdleLocked]);
+
+  // PWA Install and Update Check Hook
+  useEffect(() => {
+    // 1. Capture PWA beforeinstallprompt
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setShowInstallBtn(true);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    // 2. Listen to App Installed event
+    const handleAppInstalled = () => {
+      setDeferredPrompt(null);
+      setShowInstallBtn(false);
+      addToast(
+        currentLanguage === 'ar' ? '🎉 تم تثبيت تطبيق Inventra WMS بنجاح على جهازك!' : '🎉 Inventra WMS installed successfully!',
+        'success'
+      );
+    };
+    window.addEventListener('appinstalled', handleAppInstalled);
+
+    // 3. Monitor and Auto-Update Service Worker
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistration().then((reg) => {
+        if (!reg) return;
+
+        // Trigger update check on load
+        reg.update();
+
+        // Listen for new service worker being installed
+        reg.onupdatefound = () => {
+          const installingWorker = reg.installing;
+          if (!installingWorker) return;
+
+          installingWorker.onstatechange = () => {
+            if (installingWorker.state === 'installed') {
+              if (navigator.serviceWorker.controller) {
+                // There is an active controller, this means a new version is ready
+                // 🚨 CRITICAL USER MANDATE: Logout automatically and reload
+                addToast(
+                  currentLanguage === 'ar'
+                    ? '🔄 تم كشف تحديث جديد! جاري تسجيل الخروج والتثبيت التلقائي للأمان...'
+                    : '🔄 New update detected! Logging out and installing for security...',
+                  'info'
+                );
+
+                // Clear session
+                localStorage.removeItem('wms_current_user');
+                setCurrentUser(null);
+
+                // Wait 2.5 seconds to show toast, then reload
+                setTimeout(() => {
+                  window.location.reload();
+                }, 2500);
+              }
+            }
+          };
+        };
+      });
+
+      // Periodically poll the server for service worker updates (every 20 seconds)
+      const interval = setInterval(() => {
+        navigator.serviceWorker.getRegistration().then((reg) => {
+          if (reg) {
+            reg.update().catch((e) => console.log('SW update check ignored', e));
+          }
+        });
+      }, 20000);
+
+      return () => {
+        clearInterval(interval);
+        window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+        window.removeEventListener('appinstalled', handleAppInstalled);
+      };
+    }
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('appinstalled', handleAppInstalled);
+    };
+  }, [currentLanguage]);
+
+  // Install trigger action
+  const handleInstallApp = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    console.log(`User response to the install prompt: ${outcome}`);
+    setDeferredPrompt(null);
+    setShowInstallBtn(false);
+  };
+
+  // Intercept browser back button for mobile/tab back navigation and exit modal
+  useEffect(() => {
+    if (!currentUser) return;
+    window.history.pushState({ tab: activeTab }, '');
+  }, [activeTab, currentUser]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const handlePopState = (event: PopStateEvent) => {
+      // Re-push state to trap next back action
+      window.history.pushState({ tab: activeTab }, '');
+
+      if (activeTab !== 'home') {
+        // Go back to the main/home view
+        setActiveTab('home');
+      } else {
+        // Already on home view, trigger the Exit confirmation warning
+        setShowExitModal(true);
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [activeTab, currentUser]);
+
+  // Smart Alerts for Low Stock & Near Expiration
+  const [hasShownInitialAlerts, setHasShownInitialAlerts] = useState(false);
+
+  useEffect(() => {
+    if (items.length === 0) return;
+
+    // 1. Calculate Stocks
+    const itemStocks = items.map(item => {
+      const inward = movements
+        .filter(m => m.itemId === item.id && m.type === 'in')
+        .reduce((sum, m) => sum + m.quantity, 0);
+      const outward = movements
+        .filter(m => m.itemId === item.id && m.type === 'out')
+        .reduce((sum, m) => sum + m.quantity, 0);
+      return {
+        ...item,
+        balance: inward - outward
+      };
+    });
+
+    // 2. Low Stock Items
+    const lowStockItems = itemStocks.filter(item => item.balance < item.safetyLimit);
+
+    // 3. Expiration Check
+    const alertDays = expirationAlertMonths * 30;
+    const today = new Date();
+    const expiryAlertLimit = new Date();
+    expiryAlertLimit.setDate(today.getDate() + alertDays);
+
+    const expiredItems: string[] = [];
+    const nearExpiryItems: string[] = [];
+
+    // Check items
+    items.forEach(item => {
+      if (item.expirationDate) {
+        const expDate = new Date(item.expirationDate);
+        if (expDate <= today) {
+          expiredItems.push(item.name);
+        } else if (expDate <= expiryAlertLimit) {
+          nearExpiryItems.push(item.name);
+        }
+      }
+    });
+
+    // Check inward movements with expiration dates
+    movements.forEach(m => {
+      if (m.type === 'in' && m.expirationDate) {
+        const item = items.find(i => i.id === m.itemId);
+        const name = item ? item.name : `الصنف ${m.itemId}`;
+        const expDate = new Date(m.expirationDate);
+        if (expDate <= today) {
+          if (!expiredItems.includes(name)) expiredItems.push(name);
+        } else if (expDate <= expiryAlertLimit) {
+          if (!nearExpiryItems.includes(name)) nearExpiryItems.push(name);
+        }
+      }
+    });
+
+    // 4. Trigger Toasts
+    if (!hasShownInitialAlerts) {
+      const timer = setTimeout(() => {
+        if (lowStockItems.length > 0) {
+          const names = lowStockItems.slice(0, 3).map(i => i.name).join('، ');
+          const label = currentLanguage === 'ar'
+            ? `⚠️ تنبيه مخزون منخفض: يوجد ${lowStockItems.length} أصناف تحت حد الأمان (${names}${lowStockItems.length > 3 ? '...' : ''})`
+            : `⚠️ Stock alert: ${lowStockItems.length} items below safety limit (${names})`;
+          addToast(label, 'warning');
+        }
+
+        if (expiredItems.length > 0) {
+          const names = expiredItems.slice(0, 3).join('، ');
+          const label = currentLanguage === 'ar'
+            ? `🚨 انتهاء صلاحية: يوجد ${expiredItems.length} أصناف منتهية الصلاحية! (${names})`
+            : `🚨 Expired: ${expiredItems.length} items have expired! (${names})`;
+          addToast(label, 'error');
+        }
+
+        if (nearExpiryItems.length > 0) {
+          const names = nearExpiryItems.slice(0, 3).join('، ');
+          const label = currentLanguage === 'ar'
+            ? `⏳ اقتراب انتهاء صلاحية: يوجد ${nearExpiryItems.length} أصناف تنتهي خلال 30 يوماً! (${names})`
+            : `⏳ Near Expiry: ${nearExpiryItems.length} items expiring within 30 days! (${names})`;
+          addToast(label, 'info');
+        }
+
+        setHasShownInitialAlerts(true);
+      }, 1500);
+
+      return () => clearTimeout(timer);
+    }
+  }, [items, movements, hasShownInitialAlerts, currentLanguage]);
+
+  useEffect(() => {
+    setHasShownInitialAlerts(false);
+  }, [items.length, movements.length]);
+
   // Pull data from Express server database
   const pullDataFromServer = async (showToast = false) => {
     if (!isOnline) {
@@ -258,6 +551,10 @@ export default function App() {
         if (data.auditLogs) {
           setAuditLogs(data.auditLogs);
           localStorage.setItem('wms_audit_logs', JSON.stringify(data.auditLogs));
+        }
+        if (data.invoiceSettings) {
+          setInvoiceSettings(data.invoiceSettings);
+          localStorage.setItem('wms_invoice_settings', JSON.stringify(data.invoiceSettings));
         }
         
         const syncTime = new Date().toLocaleString('ar-SA', { hour12: true });
@@ -318,7 +615,8 @@ export default function App() {
           movements: currentMovements,
           warehouses: currentWarehouses,
           transfers: currentTransfers,
-          auditLogs: currentAuditLogs
+          auditLogs: currentAuditLogs,
+          invoiceSettings: invoiceSettings
         })
       });
       if (response.ok) {
@@ -896,10 +1194,10 @@ export default function App() {
         return <InventoryView items={items} movements={movements} warehouses={warehouses} />;
       case 'report':
         if (currentUser.permissions.reports === 'none') return <div className="text-center py-12 text-slate-400 font-bold">🔒 عذراً، التقارير غير متاحة لحسابك الحالي.</div>;
-        return <ReportView items={items} movements={movements} suppliers={suppliers} warehouses={warehouses} />;
+        return <ReportView items={items} movements={movements} suppliers={suppliers} warehouses={warehouses} invoiceSettings={invoiceSettings} currentUser={currentUser} />;
       case 'print':
         if (currentUser.permissions.reports === 'none') return <div className="text-center py-12 text-slate-400 font-bold">🔒 عذراً، السندات غير متاحة لحسابك الحالي.</div>;
-        return <PrintView movements={movements} items={items} warehouses={warehouses} />;
+        return <PrintView movements={movements} items={items} warehouses={warehouses} invoiceSettings={invoiceSettings} currentUser={currentUser} />;
       case 'settings':
         return (
           <SettingsView
@@ -925,6 +1223,13 @@ export default function App() {
             transfers={transfers}
             dashboardStatsConfig={dashboardStatsConfig}
             onChangeDashboardStatsConfig={setDashboardStatsConfig}
+            invoiceSettings={invoiceSettings}
+            onUpdateInvoiceSettings={(newSettings) => {
+              setInvoiceSettings(newSettings);
+              localStorage.setItem('wms_invoice_settings', JSON.stringify(newSettings));
+              // Save it local, and also immediately trigger background push to sync
+              pushDataToServer(items, suppliers, movements, warehouses, transfers, auditLogs, false);
+            }}
           />
         );
       default:
@@ -983,13 +1288,22 @@ export default function App() {
       <header className={`border-b ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-800'} py-4 px-6 sticky top-0 z-40 print:hidden shadow-xs`}>
         <div className="max-w-xl md:max-w-3xl lg:max-w-5xl xl:max-w-7xl w-full mx-auto flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="bg-blue-600 text-white p-2 rounded-2xl shadow-xs">
-              <Receipt size={20} className="stroke-[2.5]" />
-            </div>
+            {invoiceSettings?.logo ? (
+              <img src={invoiceSettings.logo} alt="Company Logo" className="w-9 h-9 object-contain rounded-xl shrink-0" referrerPolicy="no-referrer" />
+            ) : (
+              <div className="bg-blue-600 text-white p-2 rounded-2xl shadow-xs">
+                <Receipt size={20} className="stroke-[2.5]" />
+              </div>
+            )}
             <div className="flex flex-col text-right">
-              <span className="font-extrabold text-xs sm:text-sm tracking-tight">
-                {t.title}
+              <span className="font-extrabold text-xs sm:text-sm tracking-tight text-slate-800 dark:text-white">
+                {invoiceSettings?.name || t.title}
               </span>
+              {invoiceSettings?.name && (
+                <span className="text-[9px] text-slate-400 font-bold leading-none">
+                  {t.title}
+                </span>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -1335,12 +1649,128 @@ export default function App() {
         onDeleteSupplier={handleDeleteSupplier}
       />
 
+      {/* PWA Floating Install Notification Card */}
+      {showInstallBtn && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[9999] max-w-sm w-full px-4">
+          <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-4 rounded-3xl shadow-2xl border border-blue-500/30 flex items-center justify-between gap-3 relative overflow-hidden" dir="rtl">
+            <div className="flex items-center gap-2.5">
+              <span className="text-xl">📲</span>
+              <div className="text-right">
+                <h4 className="font-extrabold text-xs">تثبيت تطبيق Inventra WMS</h4>
+                <p className="text-[10px] text-blue-100 font-medium mt-0.5">ثبّت التطبيق على شاشتك الرئيسية للوصول السريع بضغطة واحدة.</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={handleInstallApp}
+                className="bg-white hover:bg-blue-50 text-blue-600 text-[10px] font-black px-3 py-2 rounded-xl transition-all hover:scale-105 active:scale-95 cursor-pointer whitespace-nowrap"
+              >
+                تثبيت الآن
+              </button>
+              <button
+                onClick={() => setShowInstallBtn(false)}
+                className="text-white/70 hover:text-white p-1 hover:bg-white/10 rounded-lg cursor-pointer text-xs font-bold"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Visual Toast Notification Component */}
       <Toast 
         toasts={toasts} 
         onClose={removeToast} 
         currentLanguage={currentLanguage} 
       />
+
+      {/* Auto-Lock Idle Time Modal */}
+      {isIdleLocked && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in" dir="rtl">
+          <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl border border-slate-100 space-y-6 text-center animate-scale-up">
+            <div className="mx-auto bg-amber-50 text-amber-600 w-14 h-14 rounded-2xl flex items-center justify-center">
+              <Lock size={28} className="stroke-[2.5]" />
+            </div>
+            
+            <div className="space-y-2">
+              <h3 className="text-base font-black text-slate-800">🔒 تم قفل الجلسة مؤقتاً لخمول التطبيق</h3>
+              <p className="text-xs text-slate-500 font-bold leading-relaxed">
+                لم نكتشف أي حركة منك منذ أكثر من 10 دقائق. لتأمين بيانات مستودعاتك وحمايتها، تم قفل الشاشة مؤقتاً.
+              </p>
+              <div className="bg-amber-50 text-amber-800 p-2.5 rounded-xl border border-amber-100 font-black text-[10px] inline-block">
+                متبقي {idleCountdown} ثانية قبل تسجيل الخروج التلقائي
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => {
+                  setIsIdleLocked(false);
+                  setIdleCountdown(30);
+                  addToast(
+                    currentLanguage === 'ar' ? '✓ تم تجديد الجلسة بنجاح' : '✓ Session renewed successfully',
+                    'success'
+                  );
+                }}
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-black py-3.5 rounded-2xl shadow-lg transition-all cursor-pointer"
+              >
+                العودة ومواصلة العمل
+              </button>
+              <button
+                onClick={() => {
+                  setIsIdleLocked(false);
+                  handleLogout();
+                }}
+                className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-black py-3 rounded-2xl transition-all cursor-pointer"
+              >
+                تسجيل الخروج الآن
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Exit App Confirmation Modal */}
+      {showExitModal && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in" dir="rtl">
+          <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl border border-slate-100 space-y-6 text-center animate-scale-up">
+            <div className="mx-auto bg-rose-50 text-rose-600 w-14 h-14 rounded-2xl flex items-center justify-center">
+              <AlertTriangle size={28} className="stroke-[2.5]" />
+            </div>
+            
+            <div className="space-y-2">
+              <h3 className="text-lg font-black text-slate-800">هل تريد الخروج من التطبيق فعلاً؟ ⚠️</h3>
+              <p className="text-xs text-slate-500 font-bold leading-relaxed">
+                سيؤدي ذلك إلى قفل الجلسة وتأمين المستودع، وستحتاج إلى إعادة تسجيل الدخول عند فتح التطبيق مجدداً.
+              </p>
+            </div>
+
+            <div className="flex gap-2.5">
+              <button
+                onClick={() => {
+                  localStorage.removeItem('wms_current_user');
+                  setCurrentUser(null);
+                  setShowExitModal(false);
+                  addToast(
+                    currentLanguage === 'ar' ? '🔒 تم تسجيل خروجك وتأمين المستودع بنجاح' : '🔒 Logged out and secured successfully',
+                    'success'
+                  );
+                }}
+                className="flex-1 bg-rose-600 hover:bg-rose-700 text-white text-xs font-black py-3.5 rounded-2xl shadow-lg transition-all hover:scale-105 active:scale-95 cursor-pointer"
+              >
+                نعم، خروج
+              </button>
+              <button
+                onClick={() => setShowExitModal(false)}
+                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-black py-3.5 rounded-2xl transition-all hover:scale-105 active:scale-95 cursor-pointer"
+              >
+                إلغاء
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <AboutModal
         isOpen={showAboutModal}

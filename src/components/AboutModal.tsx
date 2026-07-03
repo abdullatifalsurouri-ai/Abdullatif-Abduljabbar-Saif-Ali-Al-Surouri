@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Info, ShieldCheck, Cpu, Layers, HardDrive, Smartphone, Award, Sparkles, Receipt, Laptop, Tablet, CheckCircle, TrendingUp, Search, DollarSign, FileSpreadsheet } from 'lucide-react';
+import { X, Info, ShieldCheck, Cpu, Layers, HardDrive, Smartphone, Award, Sparkles, Receipt, Laptop, Tablet, CheckCircle, TrendingUp, Search, DollarSign, FileSpreadsheet, Phone, MessageCircle } from 'lucide-react';
 
 interface AboutModalProps {
   isOpen: boolean;
@@ -200,9 +200,27 @@ export const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose, current
                 <span className={isDarkMode ? 'text-slate-300' : 'text-slate-500'}>{t.developerLabel}</span>
                 <div className="flex flex-col items-end gap-0.5">
                   <span className={`font-black text-xs ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{t.developerName}</span>
-                  <span className={`text-[10px] font-black ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`} dir="ltr">
-                    {isRtl ? 'للتواصل: 775104368' : 'Contact: 775104368'}
-                  </span>
+                  <div className="flex items-center gap-2 mt-1">
+                    <a
+                      href="tel:+967775104368"
+                      className="flex items-center gap-1 text-[10px] font-black text-blue-500 hover:text-blue-600 transition-all hover:underline"
+                      title={isRtl ? 'اتصال مباشر' : 'Call direct'}
+                    >
+                      <Phone size={11} className="stroke-[2.5]" />
+                      <span dir="ltr">+967775104368</span>
+                    </a>
+                    <span className="text-slate-300 dark:text-slate-700">|</span>
+                    <a
+                      href="https://wa.me/967775104368"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1 text-[10px] font-black text-emerald-500 hover:text-emerald-600 transition-all hover:underline"
+                      title={isRtl ? 'مراسلة واتساب' : 'Chat on WhatsApp'}
+                    >
+                      <MessageCircle size={11} className="stroke-[2.5]" />
+                      <span>{isRtl ? 'واتساب' : 'WhatsApp'}</span>
+                    </a>
+                  </div>
                 </div>
               </div>
               {/* Row 2: Tech stack */}

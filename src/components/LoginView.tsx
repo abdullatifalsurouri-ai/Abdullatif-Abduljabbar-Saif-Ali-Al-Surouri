@@ -377,46 +377,6 @@ export default function LoginView({ onLoginSuccess, currentLanguage, onLanguageC
               )}
             </button>
           </form>
-
-          {/* Quick entry / public testing selector */}
-          {availableUsers.filter(u => u.username.toLowerCase() !== 'owner').length > 0 && (
-            <div className={`border-t pt-5 space-y-3 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
-              <div className={`flex items-center gap-2 ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>
-                <Users size={14} className="stroke-[2.5]" />
-                <span className={`text-[11px] font-black uppercase tracking-wider ${isDarkMode ? 'text-blue-400' : 'text-blue-700'}`}>{t.publicAccessTitle}</span>
-              </div>
-              <p className={`text-[10px] font-bold leading-relaxed ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{t.publicAccessSub}</p>
-              
-              <div className="grid grid-cols-2 gap-2">
-                {availableUsers.filter(u => u.username.toLowerCase() !== 'owner').map((user) => (
-                  <button
-                    key={user.username}
-                    type="button"
-                    onClick={() => selectPublicUser(user)}
-                    className={`p-2.5 rounded-xl border transition-all text-right cursor-pointer flex flex-col justify-between ${
-                      username === user.username
-                        ? isDarkMode 
-                          ? 'bg-blue-600/15 border-blue-500/50 text-blue-300' 
-                          : 'bg-blue-50 border-blue-500/40 text-blue-700'
-                        : isDarkMode 
-                          ? 'bg-slate-950 hover:bg-slate-900 border-slate-800/80 hover:border-slate-700 text-slate-400 hover:text-slate-200' 
-                          : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-600 hover:text-slate-800'
-                    }`}
-                  >
-                    <span className="text-[11px] font-black">{user.username}</span>
-                    <span className={`text-[9px] font-bold mt-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-                      {currentLanguage === 'ar' ? 'صلاحية:' : 'Role:'} {user.role}
-                    </span>
-                    {user.maxDevices && (
-                      <span className={`text-[8px] font-medium mt-0.5 ${isDarkMode ? 'text-slate-650' : 'text-slate-450'}`}>
-                        {currentLanguage === 'ar' ? `الأجهزة: ${user.maxDevices}` : `Devices: ${user.maxDevices}`}
-                      </span>
-                    )}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
 
         {/* PWA Install Guide Card */}

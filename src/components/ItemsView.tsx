@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, Plus, Trash2, Edit2, X, Check, Box, Tag, Filter, Lock, ChevronDown, ChevronUp, Calendar, User, Info, Camera, Sparkles, UploadCloud, AlertTriangle } from 'lucide-react';
+import { Search, Plus, Trash2, Edit2, X, Check, Box, Tag, Filter, Lock, ChevronDown, ChevronUp, Calendar, User, Info, Camera, Sparkles, UploadCloud, AlertTriangle, Download, Mic, MicOff } from 'lucide-react';
 import { Item, Movement } from '../types';
 import BarcodeScannerModal from './BarcodeScannerModal';
 import VirtualList from './VirtualList';
@@ -13,6 +13,8 @@ interface ItemsViewProps {
   onEditItem: (item: Item) => void;
   onDeleteItem: (id: string) => void;
   onImportItems?: (newItems: Item[]) => void;
+  expirationAlertMonths?: number;
+  onUpdateExpirationAlertMonths?: (months: number) => void;
 }
 
 export default function ItemsView({
@@ -24,6 +26,8 @@ export default function ItemsView({
   onEditItem,
   onDeleteItem,
   onImportItems,
+  expirationAlertMonths = 1,
+  onUpdateExpirationAlertMonths,
 }: ItemsViewProps) {
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [search, setSearch] = useState('');
@@ -34,6 +38,46 @@ export default function ItemsView({
   const [editingItem, setEditingItem] = useState<Item | null>(null);
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
   const [previewPhoto, setPreviewPhoto] = useState<string | null>(null);
+
+  // Microphone Voice Search State & Implementation
+  const [isListening, setIsListening] = useState(false);
+
+  const startVoiceSearch = () => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert('عذراً، متصفحك الحالي لا يدعم ميزة البحث الصوتي. يرجى استخدام متصفح Google Chrome.');
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'ar-SA';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = () => {
+      setIsListening(true);
+    };
+
+    recognition.onerror = (e: any) => {
+      console.error(e);
+      setIsListening(false);
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+    };
+
+    recognition.onresult = (event: any) => {
+      const speechToText = event.results[0][0].transcript;
+      if (speechToText) {
+        // Remove trailing dot if speech recognition adds it
+        const cleanedText = speechToText.endsWith('.') ? speechToText.slice(0, -1) : speechToText;
+        setSearch(cleanedText.trim());
+      }
+    };
+
+    recognition.start();
+  };
 
   // Group / Category Management State
   interface ItemGroup {
@@ -159,6 +203,16 @@ export default function ItemsView({
     return matchesSearch && matchesCategory && matchesMinPrice && matchesMaxPrice && matchesLowStock;
   });
 
+  // Calculate total inventory value for all items (balance * unit price)
+  const grandTotalInventoryValue = items.reduce((total, item) => {
+    const balance = movements
+      ? movements
+          .filter(m => m.itemId === item.id)
+          .reduce((sum, m) => sum + (m.type === 'in' ? m.quantity : -m.quantity), 0)
+      : 0;
+    return total + (balance * item.price);
+  }, 0);
+
   const handleCSVImport = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -273,6 +327,36 @@ export default function ItemsView({
     reader.readAsText(file);
   };
 
+  const handleCSVExport = () => {
+    const headers = ['الرمز', 'الاسم', 'حد الأمان', 'الوحدة', 'السعر', 'العملة', 'التصنيف', 'الوصف', 'تاريخ انتهاء الصلاحية'];
+    const rows = filteredItems.map(item => [
+      item.id,
+      item.name,
+      item.safetyLimit,
+      item.unit,
+      item.price,
+      item.currency || 'ر.س',
+      item.category || '',
+      item.description || '',
+      item.expirationDate || ''
+    ]);
+
+    // UTF-8 BOM so Arabic displays correctly in Excel
+    const csvContent = "\uFEFF" + [
+      headers.join(','),
+      ...rows.map(row => row.map(val => `"${String(val).replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `inventra_items_export_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const handleOpenAdd = () => {
     // Generate a default code like PROD-004
     const nextNum = items.length > 0 
@@ -368,25 +452,36 @@ export default function ItemsView({
             <>
               {/* Import CSV Trigger */}
               {currentUser?.permissions?.canImportExportCSV !== false && (
-                <div className="relative">
-                  <input
-                    type="file"
-                    ref={fileInputRef}
-                    id="csv-file-import"
-                    accept=".csv, .txt"
-                    onChange={handleCSVImport}
-                    className="hidden"
-                  />
+                <>
+                  <div className="relative">
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      id="csv-file-import"
+                      accept=".csv, .txt"
+                      onChange={handleCSVImport}
+                      className="hidden"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/50 px-4 py-3 rounded-2xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer shadow-2xs hover:scale-105 active:scale-95 whitespace-nowrap"
+                      title="استيراد قائمة أصناف كاملة من ملف CSV"
+                    >
+                      <UploadCloud size={15} className="stroke-[2.5]" />
+                      <span>استيراد (CSV) 📥</span>
+                    </button>
+                  </div>
                   <button
                     type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/50 px-4 py-3 rounded-2xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer shadow-2xs hover:scale-105 active:scale-95 whitespace-nowrap"
-                    title="استيراد قائمة أصناف كاملة من ملف CSV"
+                    onClick={handleCSVExport}
+                    className="bg-teal-50 hover:bg-teal-100 text-teal-700 border border-teal-200/50 px-4 py-3 rounded-2xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer shadow-2xs hover:scale-105 active:scale-95 whitespace-nowrap"
+                    title="تصدير قائمة أصناف كاملة إلى ملف CSV"
                   >
-                    <UploadCloud size={15} className="stroke-[2.5]" />
-                    <span>استيراد الأصناف (CSV) 📥</span>
+                    <Download size={15} className="stroke-[2.5]" />
+                    <span>تصدير (CSV) 📤</span>
                   </button>
-                </div>
+                </>
               )}
 
               <button
@@ -398,6 +493,30 @@ export default function ItemsView({
               </button>
             </>
           )}
+        </div>
+      </div>
+
+      {/* Grand Total Inventory Value Banner */}
+      <div className="bg-gradient-to-l from-indigo-600 via-blue-600 to-indigo-700 text-white rounded-3xl p-5 shadow-xs relative overflow-hidden flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full blur-2xl -mr-5 -mt-5"></div>
+        <div className="text-right space-y-1 z-10">
+          <span className="text-[11px] font-bold text-blue-100 block">📊 إجمالي قيمة المخزون الكلية للأصناف</span>
+          <h3 className="text-2xl font-black font-mono tracking-tight">
+            {grandTotalInventoryValue.toLocaleString()} ر.س
+          </h3>
+        </div>
+        <div className="flex items-center gap-4 text-xs z-10 bg-white/10 p-3 rounded-2xl border border-white/10 font-bold">
+          <div>
+            <span className="opacity-80 block text-[10px] text-center">إجمالي الأصناف المعرّفة</span>
+            <span className="block text-center font-mono font-black mt-0.5">{items.length} صنف</span>
+          </div>
+          <span className="h-6 w-px bg-white/20" />
+          <div>
+            <span className="opacity-80 block text-[10px] text-center">متوسط سعر الوحدة</span>
+            <span className="block text-center font-mono font-black mt-0.5">
+              {(items.length > 0 ? (items.reduce((sum, i) => sum + i.price, 0) / items.length) : 0).toFixed(2)} ر.س
+            </span>
+          </div>
         </div>
       </div>
 
@@ -424,9 +543,23 @@ export default function ItemsView({
                 placeholder="البحث الذكي الفوري بالاسم أو الرمز (ID)... ⚡"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 focus:border-blue-500 focus:bg-white text-sm px-11 py-3.5 rounded-2xl outline-hidden transition-all text-slate-700 text-right font-bold placeholder:text-slate-400"
+                className="w-full bg-slate-50 border border-slate-200 focus:border-blue-500 focus:bg-white text-sm pl-12 pr-11 py-3.5 rounded-2xl outline-hidden transition-all text-slate-700 text-right font-bold placeholder:text-slate-400"
               />
               <Search size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 stroke-[2.5]" />
+              
+              {/* Voice search mic button */}
+              <button
+                type="button"
+                onClick={startVoiceSearch}
+                className={`absolute left-3 top-1/2 -translate-y-1/2 p-2 rounded-xl transition-all cursor-pointer ${
+                  isListening 
+                    ? 'bg-rose-100 text-rose-600 animate-pulse' 
+                    : 'text-slate-400 hover:text-blue-600 hover:bg-slate-100'
+                }`}
+                title="البحث الصوتي الذكي (تحدث الآن)"
+              >
+                {isListening ? <MicOff size={16} className="stroke-[2.5]" /> : <Mic size={16} className="stroke-[2.5]" />}
+              </button>
             </div>
 
             <button
@@ -492,6 +625,32 @@ export default function ItemsView({
                   className="rounded-lg text-blue-600 focus:ring-blue-500 w-4 h-4 ml-1"
                 />
               </label>
+            </div>
+
+            {/* Expiration Alert Configuration */}
+            <div className="space-y-1.5 col-span-1 md:col-span-3 border-t border-slate-200/50 pt-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <span className="text-xs font-extrabold text-slate-600">⚙️ ضبط تنبيهات الصلاحية (تنبيه ذكي للمستودع قبل كم شهر):</span>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  disabled={expirationAlertMonths <= 1}
+                  onClick={() => onUpdateExpirationAlertMonths?.(expirationAlertMonths - 1)}
+                  className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 w-8 h-8 rounded-lg flex items-center justify-center font-black text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-all cursor-pointer"
+                >
+                  -
+                </button>
+                <span className="bg-white border border-slate-200 text-slate-800 font-extrabold text-xs px-4 py-1.5 rounded-lg font-mono">
+                  {expirationAlertMonths} {expirationAlertMonths === 1 ? 'شهر واحد' : expirationAlertMonths === 2 ? 'شهرين' : `${expirationAlertMonths} أشهر`}
+                </span>
+                <button
+                  type="button"
+                  disabled={expirationAlertMonths >= 12}
+                  onClick={() => onUpdateExpirationAlertMonths?.(expirationAlertMonths + 1)}
+                  className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 w-8 h-8 rounded-lg flex items-center justify-center font-black text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-all cursor-pointer"
+                >
+                  +
+                </button>
+              </div>
             </div>
 
             {/* Reset Filters Option (if any filter is active) */}
@@ -623,13 +782,22 @@ export default function ItemsView({
                       
                       {/* Badges row */}
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="bg-emerald-50 text-emerald-600 text-xs font-bold px-3 py-1.5 rounded-xl">
-                          {item.price} {item.currency || 'ر.س'}
+                        <span className={`text-xs font-black px-3 py-1.5 rounded-xl border ${
+                          balance === 0 
+                            ? 'bg-rose-50 text-rose-600 border-rose-100' 
+                            : balance <= item.safetyLimit 
+                              ? 'bg-amber-50 text-amber-600 border-amber-100' 
+                              : 'bg-emerald-50 text-emerald-600 border-emerald-100'
+                        }`}>
+                          📦 الرصيد: {balance} {item.unit}
+                        </span>
+                        <span className="bg-blue-50 text-blue-700 border border-blue-100 text-xs font-black px-3 py-1.5 rounded-xl flex items-center gap-1">
+                          💰 القيمة: {(balance * item.price).toLocaleString()} {item.currency || 'ر.س'}
                         </span>
                         <span className="bg-slate-100 text-slate-600 text-xs font-bold px-3 py-1.5 rounded-xl">
-                          {item.unit}
+                          السعر: {item.price} {item.currency || 'ر.س'}
                         </span>
-                        <span className="bg-blue-50 text-blue-600 text-xs font-bold px-3 py-1.5 rounded-xl">
+                        <span className="bg-blue-50/50 text-blue-600 text-xs font-bold px-3 py-1.5 rounded-xl">
                           حد الأمان: {item.safetyLimit}
                         </span>
                         {item.category && (

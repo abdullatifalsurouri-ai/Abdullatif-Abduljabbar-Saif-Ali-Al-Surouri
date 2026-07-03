@@ -8,24 +8,26 @@ import {
   Check, 
   X, 
   Calendar, 
-  User, 
+  User as UserIcon, 
   Filter, 
   ClipboardList, 
   DollarSign, 
   Layers, 
   AlertTriangle 
 } from 'lucide-react';
-import { Item, Movement, Warehouse } from '../types';
+import { Item, Movement, Warehouse, InvoiceSettings, User } from '../types';
 
 interface PrintViewProps {
   movements: Movement[];
   items: Item[];
   warehouses?: Warehouse[];
+  invoiceSettings?: InvoiceSettings;
+  currentUser?: User;
 }
 
 type SubTabType = 'single' | 'filtered' | 'inventory';
 
-export default function PrintView({ movements, items, warehouses = [] }: PrintViewProps) {
+export default function PrintView({ movements, items, warehouses = [], invoiceSettings, currentUser }: PrintViewProps) {
   const [activeTab, setActiveTab] = useState<SubTabType>('single');
   const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>('all');
 
@@ -511,10 +513,16 @@ export default function PrintView({ movements, items, warehouses = [] }: PrintVi
           <div id="voucher-document" className="space-y-6 font-sans">
             {/* Document Header */}
             <div className="flex justify-between items-start gap-4 border-b-2 border-slate-800 pb-5">
-              <div className="space-y-1 text-right">
-                <h4 className="text-lg font-black text-slate-800">شركة المدى للتقنية والتجارة</h4>
-                <p className="text-xs text-slate-500 font-semibold">قسم إدارة المخازن والمستودعات</p>
-                <p className="text-[10px] text-slate-400 font-mono">الرياض، المملكة العربية السعودية</p>
+              <div className="flex items-start gap-3.5">
+                {invoiceSettings?.logo && (
+                  <img src={invoiceSettings.logo} alt="Company Logo" className="w-14 h-14 object-contain rounded-lg shrink-0" referrerPolicy="no-referrer" />
+                )}
+                <div className="space-y-1 text-right">
+                  <h4 className="text-base font-black text-slate-900">{invoiceSettings?.name || 'شركة المدى للتقنية والتجارة'}</h4>
+                  <p className="text-[10px] text-slate-500 font-extrabold">قسم إدارة المخازن والمستودعات</p>
+                  <p className="text-[9px] text-slate-400 font-mono leading-relaxed">{invoiceSettings?.address || 'الرياض، المملكة العربية السعودية'}</p>
+                  <p className="text-[9px] text-slate-400 font-mono">الهاتف: {invoiceSettings?.phone || '+967775104368'} {invoiceSettings?.email && ` | البريد: ${invoiceSettings.email}`}</p>
+                </div>
               </div>
               <div className="text-left space-y-1 bg-slate-50 p-3 rounded-2xl border border-slate-100 min-w-[150px]">
                 <h5 className="text-xs font-black text-blue-900 text-left">
@@ -522,6 +530,9 @@ export default function PrintView({ movements, items, warehouses = [] }: PrintVi
                 </h5>
                 <p className="text-[11px] font-bold text-slate-700 font-mono text-left">الرقم: #{queriedVoucher.id}</p>
                 <p className="text-[10px] text-slate-400 font-mono text-left">التاريخ: {queriedVoucher.date}</p>
+                {currentUser && (
+                  <p className="text-[9px] text-slate-500 font-bold text-left mt-1 border-t border-slate-100 pt-0.5">بواسطة: {currentUser.username}</p>
+                )}
                 {(() => {
                   const queriedWarehouse = warehouses.find(w => w.id === queriedVoucher.warehouseId);
                   return (
@@ -536,7 +547,7 @@ export default function PrintView({ movements, items, warehouses = [] }: PrintVi
             {/* General Info */}
             <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100 text-sm">
               <div className="flex items-center gap-2">
-                <User size={15} className="text-slate-400" />
+                <UserIcon size={15} className="text-slate-400" />
                 <span className="font-bold text-slate-500">
                   {voucherType === 'in' ? 'المورّد:' : 'العميل/المستلم:'}
                 </span>
@@ -599,6 +610,12 @@ export default function PrintView({ movements, items, warehouses = [] }: PrintVi
               </div>
             </div>
 
+            {invoiceSettings?.footerNote && (
+              <div className="border-t border-dashed border-slate-200 pt-4 text-center mt-6">
+                <p className="text-[10px] text-slate-500 font-bold leading-relaxed">{invoiceSettings.footerNote}</p>
+              </div>
+            )}
+
           </div>
         </div>
       )}
@@ -608,15 +625,24 @@ export default function PrintView({ movements, items, warehouses = [] }: PrintVi
         <div className="hidden print:block print-container font-sans space-y-6">
           {/* Header */}
           <div className="flex justify-between items-start gap-4 border-b-2 border-slate-800 pb-5">
-            <div className="space-y-1 text-right">
-              <h4 className="text-lg font-black text-slate-800">شركة المدى للتقنية والتجارة</h4>
-              <p className="text-xs text-slate-500 font-semibold">قسم إدارة المخازن والمستودعات</p>
-              <p className="text-[10px] text-slate-400 font-mono">الرياض، المملكة العربية السعودية</p>
+            <div className="flex items-start gap-3.5">
+              {invoiceSettings?.logo && (
+                <img src={invoiceSettings.logo} alt="Company Logo" className="w-14 h-14 object-contain rounded-lg shrink-0" referrerPolicy="no-referrer" />
+              )}
+              <div className="space-y-1 text-right">
+                <h4 className="text-base font-black text-slate-900">{invoiceSettings?.name || 'شركة المدى للتقنية والتجارة'}</h4>
+                <p className="text-[10px] text-slate-500 font-extrabold">قسم إدارة المخازن والمستودعات</p>
+                <p className="text-[9px] text-slate-400 font-mono leading-relaxed">{invoiceSettings?.address || 'الرياض، المملكة العربية السعودية'}</p>
+                <p className="text-[9px] text-slate-400 font-mono">الهاتف: {invoiceSettings?.phone || '+967775104368'} {invoiceSettings?.email && ` | البريد: ${invoiceSettings.email}`}</p>
+              </div>
             </div>
             <div className="text-left space-y-1 bg-slate-50 p-3 rounded-2xl border border-slate-100 min-w-[150px]">
               <h5 className="text-xs font-black text-blue-900 text-left">تقرير حركة المستودع</h5>
               <p className="text-[10px] text-slate-500 text-left font-semibold">من: <span className="font-mono">{startDate}</span></p>
               <p className="text-[10px] text-slate-500 text-left font-semibold">إلى: <span className="font-mono">{endDate}</span></p>
+              {currentUser && (
+                <p className="text-[9px] text-slate-500 font-bold text-left mt-1 border-t border-slate-100 pt-0.5">بواسطة: {currentUser.username}</p>
+              )}
             </div>
           </div>
 
@@ -693,15 +719,24 @@ export default function PrintView({ movements, items, warehouses = [] }: PrintVi
         <div className="hidden print:block print-container font-sans space-y-6">
           {/* Header */}
           <div className="flex justify-between items-start gap-4 border-b-2 border-slate-800 pb-5">
-            <div className="space-y-1 text-right">
-              <h4 className="text-lg font-black text-slate-800">شركة المدى للتقنية والتجارة</h4>
-              <p className="text-xs text-slate-500 font-semibold">قسم إدارة المخازن والمستودعات</p>
-              <p className="text-[10px] text-slate-400 font-mono">الرياض، المملكة العربية السعودية</p>
+            <div className="flex items-start gap-3.5">
+              {invoiceSettings?.logo && (
+                <img src={invoiceSettings.logo} alt="Company Logo" className="w-14 h-14 object-contain rounded-lg shrink-0" referrerPolicy="no-referrer" />
+              )}
+              <div className="space-y-1 text-right">
+                <h4 className="text-base font-black text-slate-900">{invoiceSettings?.name || 'شركة المدى للتقنية والتجارة'}</h4>
+                <p className="text-[10px] text-slate-500 font-extrabold">قسم إدارة المخازن والمستودعات</p>
+                <p className="text-[9px] text-slate-400 font-mono leading-relaxed">{invoiceSettings?.address || 'الرياض، المملكة العربية السعودية'}</p>
+                <p className="text-[9px] text-slate-400 font-mono">الهاتف: {invoiceSettings?.phone || '+967775104368'} {invoiceSettings?.email && ` | البريد: ${invoiceSettings.email}`}</p>
+              </div>
             </div>
             <div className="text-left space-y-1 bg-slate-50 p-3 rounded-2xl border border-slate-100 min-w-[150px]">
-              <h5 className="text-xs font-black text-blue-900 text-left">تقرير الجرد التفصيلي للمستودع</h5>
+              <h5 className="text-xs font-black text-blue-900 text-left">تقرير الجرد التفصيلي</h5>
               <p className="text-[10px] text-slate-400 text-left font-semibold">تاريخ الطباعة:</p>
               <p className="text-[10px] text-slate-700 text-left font-bold font-mono">{new Date().toISOString().split('T')[0]}</p>
+              {currentUser && (
+                <p className="text-[9px] text-slate-500 font-bold text-left mt-1 border-t border-slate-100 pt-0.5">بواسطة: {currentUser.username}</p>
+              )}
             </div>
           </div>
 
@@ -779,6 +814,12 @@ export default function PrintView({ movements, items, warehouses = [] }: PrintVi
               <p className="text-[10px] text-slate-400">الاسم والتوقيع</p>
             </div>
           </div>
+
+          {invoiceSettings?.footerNote && (
+            <div className="border-t border-dashed border-slate-200 pt-4 text-center mt-6">
+              <p className="text-[10px] text-slate-500 font-bold leading-relaxed">{invoiceSettings.footerNote}</p>
+            </div>
+          )}
         </div>
       )}
 

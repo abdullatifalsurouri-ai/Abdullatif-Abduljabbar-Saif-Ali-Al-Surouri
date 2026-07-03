@@ -174,7 +174,8 @@ function readDB() {
           details: 'تهيئة النظام وتثبيت الإعدادات الافتراضية للمستودع',
           date: '2026-06-27T10:00:00.000Z'
         }
-      ]
+      ],
+      invoiceSettings: null as any
     }
   };
 
@@ -209,6 +210,9 @@ function readDB() {
     }
     if (!db.warehouseData.auditLogs) {
       db.warehouseData.auditLogs = defaultDB.warehouseData.auditLogs;
+    }
+    if (db.warehouseData.invoiceSettings === undefined) {
+      db.warehouseData.invoiceSettings = null;
     }
 
     // Support admin account by default if not exists, for testing manager flow
@@ -487,7 +491,7 @@ app.get("/api/sync/pull", (req, res) => {
 
 // Data Push / Sync
 app.post("/api/sync/push", (req, res) => {
-  const { items, movements, suppliers, warehouses, transfers, auditLogs, groups } = req.body;
+  const { items, movements, suppliers, warehouses, transfers, auditLogs, groups, invoiceSettings } = req.body;
   if (!items || !movements || !suppliers) {
     return res.status(400).json({ success: false, error: "بيانات المزامنة غير مكتملة" });
   }
@@ -502,7 +506,8 @@ app.post("/api/sync/push", (req, res) => {
     warehouses: warehouses || db.warehouseData.warehouses || [],
     transfers: transfers || db.warehouseData.transfers || [],
     auditLogs: auditLogs || db.warehouseData.auditLogs || [],
-    groups: groups || db.warehouseData.groups || []
+    groups: groups || db.warehouseData.groups || [],
+    invoiceSettings: invoiceSettings || db.warehouseData.invoiceSettings || null
   };
 
   writeDB(db);

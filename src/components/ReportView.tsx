@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { TrendingUp, FileText, Calendar, Box, Users, BarChart3, ArrowUpRight, ArrowDownLeft, Printer, Filter, Download } from 'lucide-react';
-import { Item, Movement, Supplier, ReportFilterType, Warehouse } from '../types';
+import { Item, Movement, Supplier, ReportFilterType, Warehouse, InvoiceSettings, User } from '../types';
 import {
   ResponsiveContainer,
   AreaChart,
@@ -19,9 +19,11 @@ interface ReportViewProps {
   movements: Movement[];
   suppliers: Supplier[];
   warehouses?: Warehouse[];
+  invoiceSettings?: InvoiceSettings;
+  currentUser?: User;
 }
 
-export default function ReportView({ items, movements, suppliers, warehouses = [] }: ReportViewProps) {
+export default function ReportView({ items, movements, suppliers, warehouses = [], invoiceSettings, currentUser }: ReportViewProps) {
   const [activeFilter, setActiveFilter] = useState<ReportFilterType>('monthly');
   const [startDate, setStartDate] = useState('2026-05-26');
   const [endDate, setEndDate] = useState('2026-06-26');
@@ -77,6 +79,30 @@ export default function ReportView({ items, movements, suppliers, warehouses = [
     return Object.values(itemMap)
       .sort((a, b) => b.totalQty - a.totalQty)
       .slice(0, 10); // Show top 10 moving items
+  }, [items, filteredMovementsByDate]);
+
+  // Calculate top items with highest outward (صرف) quantities
+  const topDispatchedItems = React.useMemo(() => {
+    const itemMap: { [key: string]: { name: string; code: string; quantity: number } } = {};
+    
+    filteredMovementsByDate.forEach((m) => {
+      if (m.type !== 'out') return;
+      const item = items.find((i) => i.id === m.itemId);
+      if (!item) return;
+
+      if (!itemMap[m.itemId]) {
+        itemMap[m.itemId] = {
+          name: item.name,
+          code: item.id,
+          quantity: 0
+        };
+      }
+      itemMap[m.itemId].quantity += m.quantity;
+    });
+
+    return Object.values(itemMap)
+      .sort((a, b) => b.quantity - a.quantity)
+      .slice(0, 8); // Top 8 items
   }, [items, filteredMovementsByDate]);
 
   // Overall sums
@@ -384,15 +410,24 @@ export default function ReportView({ items, movements, suppliers, warehouses = [
       {/* Printable Report Header (Visible only when printing) */}
       <div className="hidden print:block space-y-4 border-b-2 border-slate-800 pb-5">
         <div className="flex justify-between items-start">
-          <div className="space-y-1 text-right">
-            <h4 className="text-lg font-black text-slate-800">شركة المدى للتقنية والتجارة</h4>
-            <p className="text-xs text-slate-500 font-semibold">نظام إدارة المستودعات الذكي</p>
-            <p className="text-[10px] text-slate-400 font-mono">الرياض، المملكة العربية السعودية</p>
+          <div className="flex items-start gap-3.5">
+            {invoiceSettings?.logo && (
+              <img src={invoiceSettings.logo} alt="Company Logo" className="w-14 h-14 object-contain rounded-lg shrink-0" referrerPolicy="no-referrer" />
+            )}
+            <div className="space-y-1 text-right">
+              <h4 className="text-base font-black text-slate-900">{invoiceSettings?.name || 'شركة المدى للتقنية والتجارة'}</h4>
+              <p className="text-[10px] text-slate-500 font-extrabold">قسم إدارة المخازن والمستودعات</p>
+              <p className="text-[9px] text-slate-400 font-mono leading-relaxed">{invoiceSettings?.address || 'الرياض، المملكة العربية السعودية'}</p>
+              <p className="text-[9px] text-slate-400 font-mono">الهاتف: {invoiceSettings?.phone || '+967775104368'} {invoiceSettings?.email && ` | البريد: ${invoiceSettings.email}`}</p>
+            </div>
           </div>
           <div className="text-left space-y-1 bg-slate-50 p-3 rounded-2xl border border-slate-100 min-w-[150px]">
             <h5 className="text-xs font-black text-blue-900 text-left">تقرير إحصائيات المستودع</h5>
             <p className="text-[10px] text-slate-500 text-left font-semibold">من تاريخ: <span className="font-mono">{startDate}</span></p>
             <p className="text-[10px] text-slate-500 text-left font-semibold">إلى تاريخ: <span className="font-mono">{endDate}</span></p>
+            {currentUser && (
+              <p className="text-[9px] text-slate-500 font-bold text-left mt-1 border-t border-slate-100 pt-0.5">بواسطة: {currentUser.username}</p>
+            )}
           </div>
         </div>
       </div>
@@ -605,6 +640,74 @@ export default function ReportView({ items, movements, suppliers, warehouses = [
             </AreaChart>
           </ResponsiveContainer>
         </div>
+      </div>
+
+      {/* Top Dispatched Items Chart using Recharts */}
+      <div className="bg-white border border-slate-100 rounded-3xl p-5 sm:p-6 space-y-4 shadow-2xs">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center gap-2">
+            <div className="bg-orange-50 text-orange-600 p-2 rounded-xl">
+              <TrendingUp size={18} className="stroke-[2.5]" />
+            </div>
+            <div>
+              <h3 className="font-extrabold text-sm text-slate-800">الأصناف الأكثر صرفاً وسحباً (خلال الفترة المحددة) 📈</h3>
+              <p className="text-[10px] text-slate-400 mt-0.5">تحليل باريبي للأصناف الأكثر سحباً وطلباً من المستودع لتحديد الأولويات ومعدلات الطلب</p>
+            </div>
+          </div>
+          <div className="text-[10px] sm:text-xs font-bold text-orange-600 bg-orange-50 px-3 py-1 rounded-full border border-orange-100">
+            إجمالي كمية الصرف
+          </div>
+        </div>
+
+        {topDispatchedItems.length === 0 ? (
+          <div className="h-48 flex items-center justify-center text-slate-400 text-xs font-bold bg-slate-50 rounded-2xl border border-slate-100">
+            لا توجد حركات صرف مسجلة خلال الفترة المحددة لتمثيلها بيانياً.
+          </div>
+        ) : (
+          <div className="h-64 sm:h-72 w-full text-xs font-bold" dir="ltr">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={topDispatchedItems}
+                margin={{ top: 15, right: 10, left: -25, bottom: 10 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis 
+                  dataKey="name" 
+                  tickLine={false}
+                  axisLine={false}
+                  stroke="#94a3b8"
+                  dy={10}
+                  tickFormatter={(value) => value.length > 12 ? `${value.substring(0, 10)}...` : value}
+                />
+                <YAxis 
+                  tickLine={false}
+                  axisLine={false}
+                  stroke="#94a3b8"
+                  dx={-5}
+                />
+                <Tooltip 
+                  content={({ active, payload }) => {
+                    if (active && payload && payload.length) {
+                      const data = payload[0].payload;
+                      return (
+                        <div className="bg-slate-900 text-white p-3 rounded-2xl shadow-xl border border-slate-800 text-right space-y-1 font-bold text-xs" style={{ direction: 'rtl' }}>
+                          <p className="text-[11px] text-blue-400 font-mono">الرمز: {data.code}</p>
+                          <p className="text-sm text-white">{data.name}</p>
+                          <p className="flex items-center justify-between gap-4 text-orange-400 mt-1">
+                            <span>الكمية المصروفة:</span>
+                            <span className="font-mono">{data.quantity}</span>
+                          </p>
+                        </div>
+                      );
+                    }
+                    return null;
+                  }}
+                />
+                <Bar dataKey="quantity" fill="#f97316" radius={[6, 6, 0, 0]} barSize={28} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </div>
 
       {/* Filter Tabs (شهري, الأكثر حركة, الأصناف, الموردون) */}

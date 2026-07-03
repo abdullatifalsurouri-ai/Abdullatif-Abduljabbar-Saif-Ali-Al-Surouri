@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { AlertCircle, CheckCircle, AlertTriangle, Bell, Info, Warehouse as WarehouseIcon } from 'lucide-react';
+import { AlertCircle, CheckCircle, AlertTriangle, Bell, Info, Search, Camera, Warehouse as WarehouseIcon } from 'lucide-react';
 import { Item, Movement, Warehouse } from '../types';
+import BarcodeScannerModal from './BarcodeScannerModal';
 
 interface InventoryViewProps {
   items: Item[];
@@ -10,6 +11,8 @@ interface InventoryViewProps {
 
 export default function InventoryView({ items, movements, warehouses = [] }: InventoryViewProps) {
   const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>('all');
+  const [search, setSearch] = useState('');
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
 
   // Filter movements by selected warehouse
   const filteredMovements = selectedWarehouseId === 'all'
@@ -42,6 +45,13 @@ export default function InventoryView({ items, movements, warehouses = [] }: Inv
       isBelowLimit,
       isExactlyAtLimit,
     };
+  });
+
+  // Filter items based on user search/barcode scanner input
+  const filteredItemStats = itemStockStats.filter((item) => {
+    const term = search.trim().toLowerCase();
+    if (!term) return true;
+    return item.name.toLowerCase().includes(term) || item.id.toLowerCase().includes(term);
   });
 
   // Count items by urgency status
@@ -159,92 +169,136 @@ export default function InventoryView({ items, movements, warehouses = [] }: Inv
         </div>
       )}
 
+      {/* Search and Scan Bar */}
+      <div className="bg-white border border-slate-100 p-4 rounded-3xl shadow-2xs">
+        <div className="flex gap-2">
+          <div className="relative flex-1 flex gap-2">
+            <div className="relative flex-1">
+              <input
+                type="text"
+                placeholder="البحث الفوري بالاسم أو الباركود للجرد السريع... 🔍"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 focus:border-blue-500 focus:bg-white text-sm px-11 py-3.5 rounded-2xl outline-hidden transition-all text-slate-700 text-right font-bold placeholder:text-slate-400"
+              />
+              <Search size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 stroke-[2.5]" />
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setIsScannerOpen(true)}
+              className="bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 px-4 rounded-2xl transition-all cursor-pointer flex items-center justify-center gap-1.5 hover:scale-105 active:scale-95 shrink-0"
+              title="مسح باركود الصنف للجرد السريع بالكاميرا"
+            >
+              <Camera size={16} className="stroke-[2.5]" />
+              <span className="text-xs font-black hidden sm:inline">مسح باركود للجرد</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* Item Stock Detail List */}
       <div className="space-y-4">
         <h3 className="text-xs font-black text-slate-400 tracking-wide pr-1">تفاصيل المخزون وحالة السلامة</h3>
         
-        {itemStockStats.map((item) => (
-          <div
-            key={item.id}
-            className={`bg-white border rounded-3xl p-5 hover:shadow-md transition-all relative overflow-hidden ${
-              item.isBelowLimit 
-                ? 'border-r-4 border-r-rose-500 border-slate-100' 
-                : item.isExactlyAtLimit
-                ? 'border-r-4 border-r-amber-500 border-slate-100'
-                : 'border-r-4 border-r-emerald-500 border-slate-100'
-            }`}
-          >
-            {/* Header: Code and Status Badge */}
-            <div className="flex items-center justify-between gap-4 mb-3">
-              <span className="text-[11px] font-bold text-slate-400 font-mono">
-                {item.id}
-              </span>
-              
-              {item.isBelowLimit ? (
-                <span className="bg-rose-50 text-rose-600 text-[10px] font-extrabold px-3 py-1 rounded-full border border-rose-100 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse"></span>
-                  نقص حرج: عاجل جداً
-                </span>
-              ) : item.isExactlyAtLimit ? (
-                <span className="bg-amber-50 text-amber-600 text-[10px] font-extrabold px-3 py-1 rounded-full border border-amber-100 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping"></span>
-                  وصل لحد الطلب الأدنى
-                </span>
-              ) : (
-                <span className="bg-emerald-50 text-emerald-600 text-[10px] font-extrabold px-3 py-1 rounded-full border border-emerald-100 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                  آمن ومتوفر
-                </span>
-              )}
-            </div>
-
-            {/* Item Name */}
-            <h3 className="font-bold text-slate-800 text-base mb-5 pr-1">
-              {item.name}
-            </h3>
-
-            {/* Grid of values (4 columns with separators) */}
-            <div className="grid grid-cols-4 gap-2 border-t border-slate-50 pt-4 text-center">
-              
-              {/* الرصيد */}
-              <div className="space-y-1">
-                <span className={`text-xl sm:text-2xl font-black block font-mono ${
-                  item.isBelowLimit ? 'text-rose-600' : item.isExactlyAtLimit ? 'text-amber-600' : 'text-slate-800'
-                }`}>
-                  {item.balance}
-                </span>
-                <span className="text-[11px] font-bold text-slate-400 block">الرصيد الحالي</span>
-              </div>
-
-              {/* Line separator */}
-              <div className="border-r border-slate-100 space-y-1">
-                <span className="text-xl sm:text-2xl font-black text-slate-800 block font-mono">
-                  {item.inward}
-                </span>
-                <span className="text-[11px] font-bold text-slate-400 block">الوارد</span>
-              </div>
-
-              {/* Line separator */}
-              <div className="border-r border-slate-100 space-y-1">
-                <span className="text-xl sm:text-2xl font-black text-slate-800 block font-mono">
-                  {item.outward}
-                </span>
-                <span className="text-[11px] font-bold text-slate-400 block">الصرف</span>
-              </div>
-
-              {/* Line separator */}
-              <div className="border-r border-slate-100 space-y-1">
-                <span className="text-xl sm:text-2xl font-black text-slate-800 block font-mono">
-                  {item.safetyLimit}
-                </span>
-                <span className="text-[11px] font-bold text-slate-400 block">حد الأمان</span>
-              </div>
-
-            </div>
-
+        {filteredItemStats.length === 0 ? (
+          <div className="bg-white border border-slate-100 rounded-3xl p-10 text-center text-slate-400">
+            <p className="text-sm font-semibold">لا توجد أصناف مطابقة للبحث الحالي</p>
           </div>
-        ))}
+        ) : (
+          filteredItemStats.map((item) => (
+            <div
+              key={item.id}
+              className={`bg-white border rounded-3xl p-5 hover:shadow-md transition-all relative overflow-hidden ${
+                item.isBelowLimit 
+                  ? 'border-r-4 border-r-rose-500 border-slate-100' 
+                  : item.isExactlyAtLimit
+                  ? 'border-r-4 border-r-amber-500 border-slate-100'
+                  : 'border-r-4 border-r-emerald-500 border-slate-100'
+              }`}
+            >
+              {/* Header: Code and Status Badge */}
+              <div className="flex items-center justify-between gap-4 mb-3">
+                <span className="text-[11px] font-bold text-slate-400 font-mono">
+                  {item.id}
+                </span>
+                
+                {item.isBelowLimit ? (
+                  <span className="bg-rose-50 text-rose-600 text-[10px] font-extrabold px-3 py-1 rounded-full border border-rose-100 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse"></span>
+                    نقص حرج: عاجل جداً
+                  </span>
+                ) : item.isExactlyAtLimit ? (
+                  <span className="bg-amber-50 text-amber-600 text-[10px] font-extrabold px-3 py-1 rounded-full border border-amber-100 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping"></span>
+                    وصل لحد الطلب الأدنى
+                  </span>
+                ) : (
+                  <span className="bg-emerald-50 text-emerald-600 text-[10px] font-extrabold px-3 py-1 rounded-full border border-emerald-100 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                    آمن ومتوفر
+                  </span>
+                )}
+              </div>
+
+              {/* Item Name */}
+              <h3 className="font-bold text-slate-800 text-base mb-5 pr-1">
+                {item.name}
+              </h3>
+
+              {/* Grid of values (4 columns with separators) */}
+              <div className="grid grid-cols-4 gap-2 border-t border-slate-50 pt-4 text-center">
+                
+                {/* الرصيد */}
+                <div className="space-y-1">
+                  <span className={`text-xl sm:text-2xl font-black block font-mono ${
+                    item.isBelowLimit ? 'text-rose-600' : item.isExactlyAtLimit ? 'text-amber-600' : 'text-slate-800'
+                  }`}>
+                    {item.balance}
+                  </span>
+                  <span className="text-[11px] font-bold text-slate-400 block">الرصيد الحالي</span>
+                </div>
+
+                {/* Line separator */}
+                <div className="border-r border-slate-100 space-y-1">
+                  <span className="text-xl sm:text-2xl font-black text-slate-800 block font-mono">
+                    {item.inward}
+                  </span>
+                  <span className="text-[11px] font-bold text-slate-400 block">الوارد</span>
+                </div>
+
+                {/* Line separator */}
+                <div className="border-r border-slate-100 space-y-1">
+                  <span className="text-xl sm:text-2xl font-black text-slate-800 block font-mono">
+                    {item.outward}
+                  </span>
+                  <span className="text-[11px] font-bold text-slate-400 block">الصرف</span>
+                </div>
+
+                {/* Line separator */}
+                <div className="border-r border-slate-100 space-y-1">
+                  <span className="text-xl sm:text-2xl font-black text-slate-800 block font-mono">
+                    {item.safetyLimit}
+                  </span>
+                  <span className="text-[11px] font-bold text-slate-400 block">حد الأمان</span>
+                </div>
+
+              </div>
+
+            </div>
+          ))
+        )}
       </div>
+
+      {/* Barcode Scanner Modal for Inventory */}
+      <BarcodeScannerModal
+        isOpen={isScannerOpen}
+        onClose={() => setIsScannerOpen(false)}
+        items={items}
+        onScan={(scannedCode) => {
+          setSearch(scannedCode);
+        }}
+      />
 
     </div>
   );

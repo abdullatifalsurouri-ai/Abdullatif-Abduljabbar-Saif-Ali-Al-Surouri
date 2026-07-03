@@ -68,6 +68,7 @@ export interface UserPermissions {
   canEditPrices?: boolean;
   canImportExportCSV?: boolean;
   canResetSystem?: boolean;
+  canEditInvoiceSettings?: boolean;
 }
 
 export interface User {
@@ -77,6 +78,9 @@ export interface User {
   warehouseId?: string; // Link user with managed warehouse
   maxDevices?: number; // كم عدد الأجهزة المسموح بها لفتح نفس الحساب في نفس الوقت
 }
+
+// Ensure User is also exported as a value to avoid runtime ESM/bundler import issues
+export const User = {} as any;
 
 export interface AuditLogEntry {
   id: string;
@@ -237,3 +241,21 @@ export const INITIAL_AUDIT_LOGS: AuditLogEntry[] = [
     date: '2026-06-27T10:00:00.000Z'
   }
 ];
+
+export interface InvoiceSettings {
+  logo?: string; // base64 logo
+  name: string;
+  address: string;
+  phone: string;
+  email?: string;
+  footerNote?: string;
+}
+
+export const DEFAULT_INVOICE_SETTINGS: InvoiceSettings = {
+  logo: '',
+  name: 'مؤسسة المدى للتجارة والتوريدات',
+  address: 'الجمهورية اليمنية - صنعاء - شارع الستين',
+  phone: '+967775104368',
+  email: 'info@almadatrading.com',
+  footerNote: 'نشكركم على حسن تعاملكم معنا. البضاعة المباعة لا ترد ولا تستبدل بعد مرور 3 أيام من تاريخ الاستلام.'
+};
