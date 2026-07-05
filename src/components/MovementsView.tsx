@@ -42,6 +42,7 @@ export default function MovementsView({
     photo: '',
     warehouseId: currentUser.warehouseId || (warehouses[0]?.id || ''),
     expirationDate: '',
+    alertBeforeMonths: '',
   });
 
   // Filter movements by selected type and search
@@ -82,6 +83,7 @@ export default function MovementsView({
       photo: formData.photo || undefined,
       warehouseId: formData.warehouseId,
       expirationDate: formData.type === 'in' && formData.expirationDate ? formData.expirationDate : undefined,
+      alertBeforeMonths: formData.type === 'in' && formData.alertBeforeMonths ? Number(formData.alertBeforeMonths) : undefined,
     });
 
     setIsFormOpen(false);
@@ -116,6 +118,7 @@ export default function MovementsView({
                 photo: '',
                 warehouseId: currentUser.warehouseId || (warehouses[0]?.id || ''),
                 expirationDate: '',
+                alertBeforeMonths: '',
               });
               setIsFormOpen(true);
             }}
@@ -425,19 +428,41 @@ export default function MovementsView({
 
               {/* Expiration Date - Inward only */}
               {formData.type === 'in' && (
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 mb-1.5">تاريخ انتهاء الصلاحية (اختياري)</label>
-                  <div className="relative">
-                    <input
-                      type="date"
-                      value={formData.expirationDate}
-                      onChange={(e) => setFormData({ ...formData, expirationDate: e.target.value })}
-                      className="w-full bg-white border border-slate-200 focus:border-blue-500 text-sm px-4 py-2.5 pr-11 rounded-xl outline-hidden text-slate-700 font-mono"
-                    />
-                    <Calendar size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                <>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-1.5">تاريخ انتهاء الصلاحية (اختياري)</label>
+                    <div className="relative">
+                      <input
+                        type="date"
+                        value={formData.expirationDate}
+                        onChange={(e) => setFormData({ ...formData, expirationDate: e.target.value })}
+                        className="w-full bg-white border border-slate-200 focus:border-blue-500 text-sm px-4 py-2.5 pr-11 rounded-xl outline-hidden text-slate-700 font-mono"
+                      />
+                      <Calendar size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-1">يُستخدم لتحديث تاريخ انتهاء صلاحية الصنف وتتبعه في لوحة التحكم.</p>
                   </div>
-                  <p className="text-[10px] text-slate-400 mt-1">يُستخدم لتحديث تاريخ انتهاء صلاحية الصنف وتتبعه في لوحة التحكم.</p>
-                </div>
+
+                  {/* Alert Before Months */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-1.5">التنبيه قبل (أشهر) *</label>
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      placeholder="أدخل عدد الأشهر كأرقام فقط... مثال: 3"
+                      value={formData.alertBeforeMonths}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === '' || /^\d+$/.test(val)) {
+                          setFormData({ ...formData, alertBeforeMonths: val });
+                        }
+                      }}
+                      className="w-full bg-white border border-slate-200 focus:border-blue-500 text-sm px-4 py-2.5 rounded-xl outline-hidden text-slate-700 font-mono"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-1">يتم التنبيه باقتراب تاريخ الانتهاء قبل عدد الأشهر المحددة هنا.</p>
+                  </div>
+                </>
               )}
 
               {/* Photo Capture */}

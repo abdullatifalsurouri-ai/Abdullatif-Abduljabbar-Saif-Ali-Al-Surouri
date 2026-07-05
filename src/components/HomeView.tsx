@@ -19,9 +19,10 @@ import {
   Lock,
   Unlock,
   DollarSign,
-  Calendar
+  Calendar,
+  TrendingUp
 } from 'lucide-react';
-import { Item, Movement, Supplier, User } from '../types';
+import { Item, Movement, Supplier, User, AuditLogEntry } from '../types';
 
 interface HomeViewProps {
   items: Item[];
@@ -34,6 +35,7 @@ interface HomeViewProps {
   onImportData: (items: Item[], suppliers: Supplier[], movements: Movement[]) => void;
   onResetData: () => void;
   currentUser: User;
+  auditLogs: AuditLogEntry[];
   dashboardStatsConfig: {
     showSuppliers: boolean;
     showItems: boolean;
@@ -56,6 +58,7 @@ export default function HomeView({
   onImportData,
   onResetData,
   currentUser,
+  auditLogs = [],
   dashboardStatsConfig,
 }: HomeViewProps) {
   // PWA installation state
@@ -227,7 +230,6 @@ export default function HomeView({
 
   // 3. Expiration Tracking (تاريخ انتهاء الصلاحية)
   const todayTime = new Date().setHours(0, 0, 0, 0);
-  const thirtyDaysFromNow = todayTime + (30 * 24 * 60 * 60 * 1000);
 
   const expiredItems = itemStockStats.filter((item) => {
     if (!item.expirationDate) return false;
@@ -238,7 +240,9 @@ export default function HomeView({
   const expiringSoonItems = itemStockStats.filter((item) => {
     if (!item.expirationDate) return false;
     const expTime = new Date(item.expirationDate).setHours(0, 0, 0, 0);
-    return expTime > todayTime && expTime <= thirtyDaysFromNow;
+    const monthsLimit = item.alertBeforeMonths || 1; // custom months defined at time of movement, or default to 1
+    const alertTimeLimit = todayTime + (monthsLimit * 30 * 24 * 60 * 60 * 1000);
+    return expTime > todayTime && expTime <= alertTimeLimit;
   });
 
   return (
@@ -494,6 +498,196 @@ export default function HomeView({
             <p className="text-2xl font-black text-rose-600 mt-1">{shortCount}</p>
           </div>
         )}
+
+      </div>
+
+      {/* Top Interactive Lists (Top Moving Items & Active Users Leaderboard) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        
+        {/* Top 5 Moving Items Card */}
+        <div className="bg-white border border-slate-100 rounded-3xl p-5 hover:shadow-md transition-all space-y-4">
+          <div className="flex items-center justify-between pb-2 border-b border-slate-50">
+            <div className="flex items-center gap-2.5">
+              <div className="bg-blue-50 text-blue-600 p-2 rounded-xl">
+                <TrendingUp size={18} className="stroke-[2.5]" />
+              </div>
+              <div className="text-right">
+                <h3 className="font-extrabold text-slate-800 text-sm sm:text-base">أعلى 5 أصناف حركة</h3>
+                <p className="text-[11px] text-slate-400 font-semibold">الأكثر نشاطاً من حيث حركات الوارد والصرف</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-3.5">
+            {(() => {
+              const topMovingItems = items.map((item) => {
+                const itemMovements = movements.filter((m) => m.itemId === item.id);
+                const inward = itemMovements.filter(m => m.type === 'in').reduce((sum, m) => sum + m.quantity, 0);
+                const outward = itemMovements.filter(m => m.type === 'out').reduce((sum, m) => sum + m.quantity, 0);
+                const totalActivity = inward + outward;
+                const movementCount = itemMovements.length;
+
+                // Build trend data of the last 5 movements
+                const lastMovements = itemMovements
+                  .sort((a, b) => a.date.localeCompare(b.date))
+                  .slice(-5)
+                  .map(m => m.quantity);
+
+                return {
+                  ...item,
+                  inward,
+                  outward,
+                  totalActivity,
+                  movementCount,
+                  trend: lastMovements.length > 0 ? lastMovements : [0]
+                };
+              })
+              .filter(item => item.totalActivity > 0)
+              .sort((a, b) => b.totalActivity - a.totalActivity)
+              .slice(0, 5);
+
+              if (topMovingItems.length === 0) {
+                return <p className="text-xs text-slate-400 text-center py-4">لا توجد حركات مسجلة لعرض الأصناف النشطة.</p>;
+              }
+
+              return topMovingItems.map((item, index) => {
+                // Inline SVG Sparkline renderer
+                const trendData = item.trend;
+                const maxVal = Math.max(...trendData, 1);
+                const minVal = Math.min(...trendData, 0);
+                const valRange = maxVal - minVal === 0 ? 1 : maxVal - minVal;
+                const sparkWidth = 60;
+                const sparkHeight = 20;
+                const points = trendData.map((val, i) => {
+                  const x = trendData.length > 1 ? (i / (trendData.length - 1)) * sparkWidth : sparkWidth / 2;
+                  const y = sparkHeight - ((val - minVal) / valRange) * sparkHeight;
+                  return `${x},${y}`;
+                }).join(' ');
+
+                return (
+                  <div key={item.id} className="flex items-center justify-between gap-3 bg-slate-50/50 p-3 rounded-2xl border border-slate-100 hover:bg-slate-50 transition-colors">
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <span className="w-6 h-6 rounded-full bg-blue-50 text-blue-600 font-black text-xs flex items-center justify-center shrink-0">
+                        {index + 1}
+                      </span>
+                      <div className="min-w-0">
+                        <span className="text-xs font-black text-slate-800 block truncate">{item.name}</span>
+                        <span className="text-[10px] text-slate-400 font-bold block mt-0.5">
+                          رمز: <span className="font-mono">{item.id}</span> | وارد: <strong className="text-emerald-600">{item.inward}</strong> | صرف: <strong className="text-orange-600">{item.outward}</strong>
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Interactive Sparkline */}
+                    <div className="flex items-center gap-3 shrink-0">
+                      {trendData.length > 1 ? (
+                        <div className="px-2" title="مخطط حركة الكميات المصغر">
+                          <svg width={sparkWidth} height={sparkHeight} className="overflow-visible">
+                            <polyline
+                              fill="none"
+                              stroke="#3b82f6"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              points={points}
+                            />
+                            {trendData.map((val, i) => {
+                              const x = (i / (trendData.length - 1)) * sparkWidth;
+                              const y = sparkHeight - ((val - minVal) / valRange) * sparkHeight;
+                              return (
+                                <circle 
+                                  key={i} 
+                                  cx={x} 
+                                  cy={y} 
+                                  r="2" 
+                                  fill="#2563eb" 
+                                />
+                              );
+                            })}
+                          </svg>
+                        </div>
+                      ) : (
+                        <span className="text-[10px] text-slate-400 font-semibold">حركة وحيدة</span>
+                      )}
+
+                      <div className="text-left">
+                        <span className="text-xs font-black text-slate-700 block">{item.totalActivity}</span>
+                        <span className="text-[9px] text-slate-400 font-bold block">إجمالي الحركة</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              });
+            })()}
+          </div>
+        </div>
+
+        {/* Most Active Users Card */}
+        <div className="bg-white border border-slate-100 rounded-3xl p-5 hover:shadow-md transition-all space-y-4">
+          <div className="flex items-center justify-between pb-2 border-b border-slate-50">
+            <div className="flex items-center gap-2.5">
+              <div className="bg-purple-50 text-purple-600 p-2 rounded-xl">
+                <Users size={18} className="stroke-[2.5]" />
+              </div>
+              <div className="text-right">
+                <h3 className="font-extrabold text-slate-800 text-sm sm:text-base">المستخدمون الأكثر نشاطاً</h3>
+                <p className="text-[11px] text-slate-400 font-semibold">أعلى المستخدمين تسجيلاً للعمليات خلال الـ 30 يوماً الأخيرة</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-3.5">
+            {(() => {
+              const thirtyDaysAgo = new Date();
+              thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+              const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().split('T')[0];
+
+              const recentLogs = auditLogs.filter((log) => log.date >= thirtyDaysAgoStr);
+              const userActivityCounts: { [username: string]: number } = {};
+              recentLogs.forEach((log) => {
+                const user = log.username || 'مجهول';
+                userActivityCounts[user] = (userActivityCounts[user] || 0) + 1;
+              });
+
+              const sortedUsers = Object.entries(userActivityCounts)
+                .map(([username, count]) => ({ username, count }))
+                .sort((a, b) => b.count - a.count)
+                .slice(0, 5);
+
+              if (sortedUsers.length === 0) {
+                return <p className="text-xs text-slate-400 text-center py-4">لا توجد عمليات مسجلة في سجل التدقيق لآخر 30 يوماً.</p>;
+              }
+
+              const maxCount = Math.max(...sortedUsers.map(u => u.count), 1);
+
+              return sortedUsers.map((user, index) => {
+                const percentage = (user.count / maxCount) * 100;
+                return (
+                  <div key={user.username} className="space-y-1.5 bg-slate-50/50 p-3 rounded-2xl border border-slate-100 hover:bg-slate-50 transition-colors">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="w-6 h-6 rounded-full bg-purple-50 text-purple-600 font-black text-xs flex items-center justify-center shrink-0">
+                          #{index + 1}
+                        </span>
+                        <span className="text-xs font-black text-slate-800 truncate">{user.username}</span>
+                      </div>
+                      <div className="text-left shrink-0">
+                        <span className="text-xs font-black text-purple-700">{user.count} عملية</span>
+                      </div>
+                    </div>
+                    {/* Visual Progress Bar of Activity */}
+                    <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                      <div 
+                        className="bg-purple-500 h-full rounded-full transition-all duration-500"
+                        style={{ width: `${percentage}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              });
+            })()}
+          </div>
+        </div>
 
       </div>
 

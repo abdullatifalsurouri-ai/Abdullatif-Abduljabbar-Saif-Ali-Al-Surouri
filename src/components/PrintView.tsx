@@ -622,7 +622,22 @@ export default function PrintView({ movements, items, warehouses = [], invoiceSe
 
       {/* PRINTABLE DOCUMENT 2: FILTERED MOVEMENTS REPORT */}
       {activeTab === 'filtered' && (
-        <div className="hidden print:block print-container font-sans space-y-6">
+        <div className="bg-white border-2 border-slate-200 rounded-3xl p-6 sm:p-8 space-y-6 shadow-md print-container print:p-0 print:border-none print:shadow-none mt-6">
+          
+          {/* Action button bar */}
+          <div className="flex items-center justify-between border-b border-slate-100 pb-4 print:hidden">
+            <span className="text-xs font-black text-slate-400">معاينة التقرير الرسمي للطباعة والتصدير</span>
+            <div className="flex gap-2">
+              <button
+                onClick={handlePrint}
+                className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <Printer size={15} />
+                <span>طباعة التقرير وتصدير PDF</span>
+              </button>
+            </div>
+          </div>
+
           {/* Header */}
           <div className="flex justify-between items-start gap-4 border-b-2 border-slate-800 pb-5">
             <div className="flex items-start gap-3.5">
@@ -716,7 +731,22 @@ export default function PrintView({ movements, items, warehouses = [], invoiceSe
 
       {/* PRINTABLE DOCUMENT 3: DETAILED INVENTORY REPORT */}
       {activeTab === 'inventory' && (
-        <div className="hidden print:block print-container font-sans space-y-6">
+        <div className="bg-white border-2 border-slate-200 rounded-3xl p-6 sm:p-8 space-y-6 shadow-md print-container print:p-0 print:border-none print:shadow-none mt-6">
+          
+          {/* Action button bar */}
+          <div className="flex items-center justify-between border-b border-slate-100 pb-4 print:hidden">
+            <span className="text-xs font-black text-slate-400">معاينة التقرير الرسمي للطباعة والتصدير</span>
+            <div className="flex gap-2">
+              <button
+                onClick={handlePrint}
+                className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <Printer size={15} />
+                <span>طباعة التقرير وتصدير PDF</span>
+              </button>
+            </div>
+          </div>
+
           {/* Header */}
           <div className="flex justify-between items-start gap-4 border-b-2 border-slate-800 pb-5">
             <div className="flex items-start gap-3.5">

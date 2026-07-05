@@ -93,6 +93,44 @@ export default function SettingsView({
     return localStorage.getItem('wms_last_backup_date');
   });
 
+  // Daily reminder time states
+  const [dailyReminderTime, setDailyReminderTime] = useState(() => {
+    return localStorage.getItem('wms_daily_reminder_time') || '18:00';
+  });
+  const [notifPermission, setNotifPermission] = useState(() => {
+    return typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'denied';
+  });
+
+  const handleRequestNotifPermission = async () => {
+    if ('Notification' in window) {
+      const permission = await Notification.requestPermission();
+      setNotifPermission(permission);
+      if (permission === 'granted') {
+        alert('تم تفعيل سماحية الإشعارات بنجاح! ستتلقى التنبيهات مخصصة.');
+      } else {
+        alert('تم رفض سماحية الإشعارات. يرجى تفعيلها من إعدادات المتصفح لموقعك.');
+      }
+    } else {
+      alert('المتصفح الحالي لا يدعم إشعارات سطح المكتب.');
+    }
+  };
+
+  const handleSaveReminderTime = (e: React.FormEvent) => {
+    e.preventDefault();
+    localStorage.setItem('wms_daily_reminder_time', dailyReminderTime);
+    alert(`تم حفظ وتحديث توقيت التنبيه اليومي بنجاح عند الساعة ${dailyReminderTime}!`);
+  };
+
+  const handleTestNotification = () => {
+    if ('Notification' in window && Notification.permission === 'granted') {
+      new Notification('تجربة تنبيه المستودع اليومي 📦', {
+        body: 'هذا إشعار تجريبي من نظام إدارة المستودعات الذكي. يعمل التنبيه تلقائياً إذا لم تسجل أي حركة اليوم.',
+      });
+    } else {
+      alert('يرجى تفعيل سماحية إشعارات المتصفح أولاً عبر الضغط على زر "طلب سماحية الإشعارات".');
+    }
+  };
+
   // Invoice settings local states
   const [compName, setCompName] = useState(invoiceSettings?.name || '');
   const [compAddress, setCompAddress] = useState(invoiceSettings?.address || '');
@@ -1002,6 +1040,80 @@ export default function SettingsView({
               </div>
             </div>
 
+            {/* Daily Reminder Settings Card */}
+            <div className="bg-white border border-slate-100 p-5 rounded-3xl shadow-xs space-y-4">
+              <div className="flex items-center gap-2 border-b border-slate-50 pb-3">
+                <Bell size={18} className="text-amber-500 shrink-0" />
+                <span className="text-xs font-black text-slate-800">توقيت التنبيه اليومي وإشعارات المتصفح 🔔</span>
+              </div>
+
+              <div className="space-y-4">
+                <p className="text-[11px] text-slate-400 font-semibold leading-relaxed">
+                  ضبط توقيت التنبيه اليومي لتلقي إشعار متصفح يذكرك بمراجعة حركة المستودع وجرد الصادر والوارد إذا لم يتم تسجيل أي حركة خلال ذلك اليوم.
+                </p>
+
+                {/* Notification Permission Status */}
+                <div className="bg-slate-50 border border-slate-100 p-3 rounded-2xl flex items-center justify-between">
+                  <span className="text-[11px] text-slate-400 font-bold">صلاحية إشعارات المتصفح:</span>
+                  <div className="flex items-center gap-2">
+                    <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full ${
+                      notifPermission === 'granted' 
+                        ? 'bg-emerald-50 text-emerald-700' 
+                        : notifPermission === 'denied' 
+                        ? 'bg-rose-50 text-rose-700' 
+                        : 'bg-amber-50 text-amber-700'
+                    }`}>
+                      {notifPermission === 'granted' ? 'مسموح ✓' : notifPermission === 'denied' ? 'مرفوض ✕' : 'بانتظار السماح'}
+                    </span>
+                    {notifPermission !== 'granted' && (
+                      <button
+                        type="button"
+                        onClick={handleRequestNotifPermission}
+                        className="bg-blue-600 hover:bg-blue-700 text-white text-[9px] font-black px-2 py-1 rounded-lg transition-all cursor-pointer"
+                      >
+                        طلب صلاحية الإشعارات
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <form onSubmit={handleSaveReminderTime} className="space-y-3">
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-400 font-extrabold block">تحديد ساعة التنبيه اليومي:</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="time"
+                        value={dailyReminderTime}
+                        onChange={(e) => setDailyReminderTime(e.target.value)}
+                        className="bg-slate-50 text-xs font-bold p-2.5 rounded-xl border border-slate-200/80 focus:border-blue-500 outline-hidden flex-1 text-center font-mono"
+                        required
+                      />
+                      <button
+                        type="submit"
+                        className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-black px-4 py-2.5 rounded-xl transition-all shadow-md shadow-blue-600/10 cursor-pointer"
+                      >
+                        حفظ الوقت
+                      </button>
+                    </div>
+                  </div>
+                </form>
+
+                <div className="border-t border-slate-50 pt-3 flex items-center justify-between gap-2">
+                  <div className="space-y-0.5">
+                    <span className="text-[10px] font-black text-slate-700 block">هل تود اختبار الإشعار الآن؟</span>
+                    <span className="text-[9px] text-slate-400 font-bold leading-normal block">تأكد من تفعيل صلاحية الإشعارات لتجربتها فوراً</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleTestNotification}
+                    className="bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-700 text-[10px] font-black px-3 py-2 rounded-xl transition-all cursor-pointer flex items-center gap-1 shrink-0"
+                  >
+                    <span>اختبار الإشعار 🚀</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
           </div>
 
           {/* Success/Error Alerts for settings forms */}
@@ -1358,12 +1470,12 @@ export default function SettingsView({
                                   {userObj.role}
                                 </span>
                                 {userObj.activeDevicesCount > 0 ? (
-                                  <span className="text-[9px] bg-emerald-50 text-emerald-700 px-2.5 py-0.5 rounded-full font-black animate-pulse flex items-center gap-1">
+                                  <span className="hidden sm:flex text-[9px] bg-emerald-50 text-emerald-700 px-2.5 py-0.5 rounded-full font-black animate-pulse items-center gap-1">
                                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
                                     متصل حالياً ({userObj.activeDevicesCount})
                                   </span>
                                 ) : (
-                                  <span className="text-[9px] bg-slate-100 text-slate-400 px-2 py-0.5 rounded-full font-bold">
+                                  <span className="hidden sm:inline-flex text-[9px] bg-slate-100 text-slate-400 px-2 py-0.5 rounded-full font-bold">
                                     غير متصل
                                   </span>
                                 )}
@@ -1826,30 +1938,6 @@ export default function SettingsView({
               </table>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* Cloud Master Reset Section (Owner Only) */}
-      {currentUser.role === 'Owner' && (
-        <div className="bg-rose-50/50 border border-rose-100 rounded-3xl p-5 space-y-3 text-right">
-          <div className="flex items-center gap-2 text-rose-700">
-            <Database size={18} className="stroke-[2]" />
-            <span className="text-xs font-black">تهيئة وإعادة تصفير المستودع (خاص بالمالك)</span>
-          </div>
-          <p className="text-[10px] text-slate-500 font-bold leading-relaxed">
-            تحذير: هذا الخيار سيقوم بمسح كافة الأصناف والحركات وسجلات الموردين والمجموعات وإعادتها لوضع المصنع التلقائي مع تصفير جميع العمليات على الخادم السحابي!
-          </p>
-          <button
-            type="button"
-            onClick={() => {
-              if (confirm('⚠️ هل أنت متأكد تماماً من تهيئة قاعدة البيانات بالكامل؟ هذا الإجراء لا يمكن التراجع عنه وسيمسح السجلات السحابية أيضاً!')) {
-                onResetAllData();
-              }
-            }}
-            className="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer"
-          >
-            مسح وتهيئة مستندات المستودع بالكامل 🗑️
-          </button>
         </div>
       )}
 

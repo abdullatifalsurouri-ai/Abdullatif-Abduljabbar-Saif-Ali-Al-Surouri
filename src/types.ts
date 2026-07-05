@@ -8,6 +8,7 @@ export interface Item {
   category?: string; // التصنيف
   description?: string; // وصف المنتج
   expirationDate?: string; // تاريخ انتهاء الصلاحية
+  alertBeforeMonths?: number; // التنبيه قبل بالشهور
 }
 
 export interface Movement {
@@ -20,6 +21,7 @@ export interface Movement {
   photo?: string; // Base64 data URI of captured camera photo
   warehouseId?: string; // Associate movement with a warehouse
   expirationDate?: string; // تاريخ انتهاء الصلاحية للحركة (خاص بالوارد)
+  alertBeforeMonths?: number; // التنبيه قبل بالشهور
 }
 
 export interface Supplier {

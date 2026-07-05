@@ -89,8 +89,27 @@ export default function App() {
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
   const [isSuppliersOpen, setIsSuppliersOpen] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
-    return localStorage.getItem('wms_theme') === 'dark';
+    const saved = localStorage.getItem('wms_theme');
+    if (saved) {
+      return saved === 'dark';
+    }
+    if (typeof window !== 'undefined' && window.matchMedia) {
+      return window.matchMedia('(prefers-color-scheme: dark)').matches;
+    }
+    return false;
   });
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleChange = (e: MediaQueryListEvent) => {
+      if (!localStorage.getItem('wms_theme')) {
+        setIsDarkMode(e.matches);
+      }
+    };
+    mediaQuery.addEventListener('change', handleChange);
+    return () => mediaQuery.removeEventListener('change', handleChange);
+  }, []);
   const [currentLanguage, setCurrentLanguage] = useState<'ar' | 'en'>(() => {
     return (localStorage.getItem('wms_lang') as 'ar' | 'en') || 'ar';
   });
@@ -243,6 +262,45 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('wms_expiration_alert_months', expirationAlertMonths.toString());
   }, [expirationAlertMonths]);
+
+  // Request browser Notification permission if not set
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  }, []);
+
+  // Check and trigger daily reminder browser notification
+  useEffect(() => {
+    const checkDailyReminder = () => {
+      const savedTime = localStorage.getItem('wms_daily_reminder_time') || '18:00';
+      const [remHour, remMin] = savedTime.split(':').map(Number);
+      
+      const now = new Date();
+      if (now.getHours() === remHour && now.getMinutes() === remMin) {
+        // Find if any movements were created today
+        const todayStr = new Date().toISOString().split('T')[0];
+        const movementsToday = movements.filter((m) => m.date === todayStr).length;
+
+        if (movementsToday === 0) {
+          const lastNotifiedDate = localStorage.getItem('wms_last_notified_date');
+          if (lastNotifiedDate !== todayStr) {
+            localStorage.setItem('wms_last_notified_date', todayStr);
+            if ('Notification' in window && Notification.permission === 'granted') {
+              new Notification('تنبيه المستودع اليومي 📦', {
+                body: 'تنبيه: لم يتم تسجيل أي حركة صادر أو وارد خلال هذا اليوم في المستودع حتى الآن. يرجى مراجعة المخزون والعمليات اليومية.',
+              });
+            }
+          }
+        }
+      }
+    };
+
+    const interval = setInterval(checkDailyReminder, 60000); // Check every minute
+    checkDailyReminder(); // Run check on load
+
+    return () => clearInterval(interval);
+  }, [movements]);
 
   useEffect(() => {
     if (!currentUser) {
@@ -849,7 +907,11 @@ export default function App() {
     
     // Update the item expiration date if the movement is an inward one and has an expirationDate
     if (movement.type === 'in' && movement.expirationDate) {
-      setItems((prev) => prev.map((it) => it.id === movement.itemId ? { ...it, expirationDate: movement.expirationDate } : it));
+      setItems((prev) => prev.map((it) => it.id === movement.itemId ? { 
+        ...it, 
+        expirationDate: movement.expirationDate,
+        alertBeforeMonths: movement.alertBeforeMonths 
+      } : it));
     }
 
     const item = items.find((i) => i.id === movement.itemId);
@@ -1130,6 +1192,7 @@ export default function App() {
               handleResetAllDataOnServer();
             }}
             currentUser={currentUser}
+            auditLogs={auditLogs}
             dashboardStatsConfig={dashboardStatsConfig}
           />
         );
@@ -1224,6 +1287,8 @@ export default function App() {
             dashboardStatsConfig={dashboardStatsConfig}
             onChangeDashboardStatsConfig={setDashboardStatsConfig}
             invoiceSettings={invoiceSettings}
+            expirationAlertMonths={expirationAlertMonths}
+            onUpdateExpirationAlertMonths={setExpirationAlertMonths}
             onUpdateInvoiceSettings={(newSettings) => {
               setInvoiceSettings(newSettings);
               localStorage.setItem('wms_invoice_settings', JSON.stringify(newSettings));
