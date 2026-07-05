@@ -123,9 +123,22 @@ export default function SettingsView({
 
   const handleTestNotification = () => {
     if ('Notification' in window && Notification.permission === 'granted') {
-      new Notification('تجربة تنبيه المستودع اليومي 📦', {
-        body: 'هذا إشعار تجريبي من نظام إدارة المستودعات الذكي. يعمل التنبيه تلقائياً إذا لم تسجل أي حركة اليوم.',
-      });
+      try {
+        new Notification('تجربة تنبيه المستودع اليومي 📦', {
+          body: 'هذا إشعار تجريبي من نظام إدارة المستودعات الذكي. يعمل التنبيه تلقائياً إذا لم تسجل أي حركة اليوم.',
+        });
+      } catch (e) {
+        console.warn('Notification constructor failed, trying service worker:', e);
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.ready.then((registration) => {
+            registration.showNotification('تجربة تنبيه المستودع اليومي 📦', {
+              body: 'هذا إشعار تجريبي من نظام إدارة المستودعات الذكي. يعمل التنبيه تلقائياً إذا لم تسجل أي حركة اليوم.',
+            });
+          }).catch((err) => {
+            console.error('Service worker notification failed:', err);
+          });
+        }
+      }
     } else {
       alert('يرجى تفعيل سماحية إشعارات المتصفح أولاً عبر الضغط على زر "طلب سماحية الإشعارات".');
     }

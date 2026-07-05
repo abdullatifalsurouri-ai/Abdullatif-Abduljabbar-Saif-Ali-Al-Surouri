@@ -287,9 +287,22 @@ export default function App() {
           if (lastNotifiedDate !== todayStr) {
             localStorage.setItem('wms_last_notified_date', todayStr);
             if ('Notification' in window && Notification.permission === 'granted') {
-              new Notification('تنبيه المستودع اليومي 📦', {
-                body: 'تنبيه: لم يتم تسجيل أي حركة صادر أو وارد خلال هذا اليوم في المستودع حتى الآن. يرجى مراجعة المخزون والعمليات اليومية.',
-              });
+              try {
+                new Notification('تنبيه المستودع اليومي 📦', {
+                  body: 'تنبيه: لم يتم تسجيل أي حركة صادر أو وارد خلال هذا اليوم في المستودع حتى الآن. يرجى مراجعة المخزون والعمليات اليومية.',
+                });
+              } catch (e) {
+                console.warn('Daily notification constructor failed, trying service worker:', e);
+                if ('serviceWorker' in navigator) {
+                  navigator.serviceWorker.ready.then((registration) => {
+                    registration.showNotification('تنبيه المستودع اليومي 📦', {
+                      body: 'تنبيه: لم يتم تسجيل أي حركة صادر أو وارد خلال هذا اليوم في المستودع حتى الآن. يرجى مراجعة المخزون والعمليات اليومية.',
+                    });
+                  }).catch((err) => {
+                    console.error('Service worker daily notification failed:', err);
+                  });
+                }
+              }
             }
           }
         }
