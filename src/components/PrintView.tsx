@@ -134,15 +134,32 @@ export default function PrintView({ movements, items, warehouses = [], invoiceSe
       {/* Dynamic Printing Style overrides to ensure A4 compliance */}
       <style dangerouslySetInnerHTML={{__html: `
         @media print {
+          @page {
+            size: A4;
+            margin: 15mm 15mm 15mm 15mm;
+          }
           body {
             background-color: white !important;
-            color: black !important;
-            font-size: 12px !important;
+            color: #000000 !important;
+            font-size: 11px !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            direction: rtl !important;
           }
-          header, nav, .print\\:hidden, button, input, select, .no-print {
+          header, nav, footer, 
+          .print\\:hidden, 
+          button, 
+          input, 
+          select, 
+          .no-print,
+          [role="banner"],
+          aside {
             display: none !important;
           }
-          .print-container {
+          .print-container, 
+          #voucher-document-container, 
+          #filtered-movements-container, 
+          #detailed-inventory-container {
             display: block !important;
             width: 100% !important;
             max-width: 100% !important;
@@ -150,9 +167,34 @@ export default function PrintView({ movements, items, warehouses = [], invoiceSe
             margin: 0 !important;
             border: none !important;
             box-shadow: none !important;
+            background-color: white !important;
+          }
+          table {
+            width: 100% !important;
+            border-collapse: collapse !important;
+            page-break-inside: auto !important;
+          }
+          tr {
+            page-break-inside: avoid !important;
+            page-break-after: auto !important;
+          }
+          thead {
+            display: table-header-group !important;
+          }
+          tfoot {
+            display: table-footer-group !important;
           }
           .page-break {
-            page-break-before: always;
+            page-break-before: always !important;
+          }
+          td, th {
+            border: 1px solid #e2e8f0 !important;
+            padding: 6px 8px !important;
+            color: #1e293b !important;
+          }
+          th {
+            background-color: #f1f5f9 !important;
+            font-weight: bold !important;
           }
         }
       `}} />

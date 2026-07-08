@@ -346,30 +346,32 @@ export default function ReportView({ items, movements, suppliers, warehouses = [
           <h2 className="text-2xl font-black text-slate-800 tracking-tight">التقرير والتحليلات</h2>
           <p className="text-slate-500 font-medium text-sm mt-0.5">تحليل شامل للتدفقات المخزنية والرسوم البيانية التفاعلية لحركات الوارد والصرف</p>
         </div>
-        <div className="flex items-center gap-2.5 self-start sm:self-center">
-          <button
-            onClick={handleExcelExport}
-            className="bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-black px-5 py-3 rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xs shrink-0 hover:scale-105 active:scale-95"
-            title="تصدير بيانات التقرير والحركات المصفاة إلى ملف Excel ذو أوراق عمل متعددة"
-          >
-            <Download size={16} className="stroke-[2.5]" />
-            <span>تصدير إلى Excel (XLSX) 📊</span>
-          </button>
-          <button
-            onClick={handleCSVExport}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black px-5 py-3 rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xs shrink-0 hover:scale-105 active:scale-95"
-            title="تصدير بيانات التقرير الحالي إلى ملف CSV مميز للإكسل"
-          >
-            <Download size={16} className="stroke-[2.5]" />
-            <span>تصدير إلى CSV</span>
-          </button>
+        <div className="flex flex-col items-end gap-2 shrink-0">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleExcelExport}
+              className="bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-black px-4 py-2.5 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs shrink-0 hover:scale-105 active:scale-95"
+              title="تصدير بيانات التقرير والحركات المصفاة إلى ملف Excel ذو أوراق عمل متعددة"
+            >
+              <Download size={14} className="stroke-[2.5]" />
+              <span>تصدير إلى Excel (XLSX) 📊</span>
+            </button>
+            <button
+              onClick={handleCSVExport}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black px-3 py-2.5 rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer shadow-xs shrink-0 hover:scale-105 active:scale-95"
+              title="تصدير بيانات التقرير الحالي إلى ملف CSV مميز للإكسل"
+            >
+              <Download size={14} className="stroke-[2.5]" />
+              <span>CSV</span>
+            </button>
+          </div>
           <button
             onClick={() => window.print()}
-            className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-black px-5 py-3 rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xs shrink-0 hover:scale-105 active:scale-95"
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-black py-2.5 px-4 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs shrink-0 hover:scale-105 active:scale-95"
             title="طباعة التقرير والتحليلات الفعال حالياً"
           >
-            <Printer size={16} className="stroke-[2.5]" />
-            <span>طباعة هذا التقرير</span>
+            <Printer size={14} className="stroke-[2.5]" />
+            <span>طباعة هذا التقرير 🖨️</span>
           </button>
         </div>
       </div>

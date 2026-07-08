@@ -24,7 +24,9 @@ import {
   Info,
   AlertTriangle,
   Calendar,
-  X
+  X,
+  CheckCircle,
+  Trash2
 } from 'lucide-react';
 import { AboutModal } from './components/AboutModal';
 import { 
@@ -120,6 +122,48 @@ export default function App() {
   const [showInstallBtn, setShowInstallBtn] = useState(false);
   const [showExitModal, setShowExitModal] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [notificationFilter, setNotificationFilter] = useState<'all' | 'alerts' | 'pending' | 'system'>('all');
+  const [notifications, setNotifications] = useState<{
+    id: string;
+    title: string;
+    body: string;
+    time: string;
+    type: 'info' | 'warning' | 'error' | 'success';
+    read: boolean;
+  }[]>(() => {
+    const saved = localStorage.getItem('wms_notifications');
+    if (saved) return JSON.parse(saved);
+    return [
+      {
+        id: '1',
+        title: 'أهلاً بك في نظام مستودع المدى الذكي 📊',
+        body: 'تم تشغيل تطبيق إدارة المستودعات بنجاح. يمكنك الآن تتبع المخزون والوارد والصرف والجرد الفوري.',
+        time: 'منذ قليل',
+        type: 'success',
+        read: false
+      },
+      {
+        id: '2',
+        title: 'تنبيه: حماية البيانات في وضع الأوفلاين 🛡️',
+        body: 'تطبيق المدى مهيأ للعمل بالكامل في وضع عدم الاتصال بالإنترنت (Offline Mode). سيتم تخزين الحركات محلياً ريثما يتوفر الاتصال.',
+        time: 'منذ دقيقة',
+        type: 'info',
+        read: false
+      },
+      {
+        id: '3',
+        title: 'تنبيه: مراقبة حد الأمان التلقائي ⚠️',
+        body: 'يقوم النظام بمراجعة مستمرة لمستويات المخزون وإشعارك بالسلع التي تقل عن الحد المطلوب تلقائياً.',
+        time: 'منذ ساعة',
+        type: 'warning',
+        read: false
+      }
+    ];
+  });
+
+  useEffect(() => {
+    localStorage.setItem('wms_notifications', JSON.stringify(notifications));
+  }, [notifications]);
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -209,6 +253,51 @@ export default function App() {
 
   // Internet connectivity state
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [offlineQueue, setOfflineQueue] = useState<{ id: string; type: 'add_movement'; data: Movement }[]>(() => {
+    const saved = localStorage.getItem('wms_offline_queue');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  useEffect(() => {
+    localStorage.setItem('wms_offline_queue', JSON.stringify(offlineQueue));
+  }, [offlineQueue]);
+
+  // Process the offline queue when internet is available
+  useEffect(() => {
+    if (isOnline && offlineQueue.length > 0 && currentUser) {
+      const syncOfflineQueue = async () => {
+        addToast(
+          currentLanguage === 'ar'
+            ? `جاري مزامنة ${offlineQueue.length} عمليات معلقة تم إجراؤها أوفلاين...`
+            : `Syncing ${offlineQueue.length} pending offline movements...`,
+          'info'
+        );
+
+        // Make a sync push with the latest local movements (which already have the offline movements appended)
+        const success = await pushDataToServer(items, suppliers, movements, warehouses, transfers, auditLogs, false);
+        if (success) {
+          addToast(
+            currentLanguage === 'ar'
+              ? '✓ تم مزامنة العمليات المعلقة بنجاح وتحديث السحابة!'
+              : '✓ Offline movements synchronized successfully!',
+            'success'
+          );
+          setOfflineQueue([]);
+        } else {
+          addToast(
+            currentLanguage === 'ar'
+              ? '⚠️ فشلت مزامنة العمليات المعلقة مؤقتاً، سيتم المحاولة لاحقاً.'
+              : '⚠️ Offline sync failed temporarily. Retrying later...',
+            'warning'
+          );
+        }
+      };
+
+      // Debounce slightly to ensure connection is fully established
+      const timer = setTimeout(syncOfflineQueue, 2500);
+      return () => clearTimeout(timer);
+    }
+  }, [isOnline, offlineQueue, currentUser]);
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(() => {
     return localStorage.getItem('wms_last_sync_time');
   });
@@ -930,6 +1019,10 @@ export default function App() {
       } : it));
     }
 
+    if (!isOnline) {
+      setOfflineQueue((prev) => [...prev, { id: `offline-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`, type: 'add_movement', data: movement }]);
+    }
+
     const item = items.find((i) => i.id === movement.itemId);
     const typeStr = movement.type === 'in' ? 'وارد' : 'صرف';
     logAction(
@@ -939,8 +1032,8 @@ export default function App() {
     );
     addToast(
       currentLanguage === 'ar' 
-        ? `تم تسجيل الحركة المخزنية بنجاح وجاري التزامن...` 
-        : `Registered movement successfully. Syncing...`, 
+        ? (isOnline ? `تم تسجيل الحركة المخزنية بنجاح وجاري التزامن...` : `تم تسجيل الحركة بنجاح محلياً (وضع الأوفلاين) وبانتظار التزامن المجدول...`)
+        : (isOnline ? `Registered movement successfully. Syncing...` : `Registered movement locally (Offline Mode). Awaiting auto-sync...`), 
       'success'
     );
   };
@@ -1404,7 +1497,102 @@ export default function App() {
     return exp > todayDate && exp <= expiryLimitDate;
   }).length;
 
-  const totalNotificationsBadgeCount = lowStockCount + expiredCount + nearExpiryCount + pendingIncomingTransfersCount;
+  // Sync system alerts into the main notifications array
+  useEffect(() => {
+    let changed = false;
+    let updated = [...notifications];
+
+    // Low stock
+    const lowStockId = 'sys-low-stock';
+    const hasLowStock = lowStockCount > 0;
+    const existingLow = updated.find(n => n.id === lowStockId);
+    if (hasLowStock) {
+      const bodyText = `تنبيه: هناك ${lowStockCount} أصناف مخزنية انخفضت كميتها الحالية عن حد الأمان المسجل.`;
+      if (!existingLow || existingLow.body !== bodyText) {
+        updated = updated.filter(n => n.id !== lowStockId);
+        updated.unshift({
+          id: lowStockId,
+          title: 'مخزون منخفض تحت حد الأمان ⚠️',
+          body: bodyText,
+          time: 'تحديث فوري',
+          type: 'warning',
+          read: false
+        });
+        changed = true;
+      }
+    } else if (existingLow) {
+      updated = updated.filter(n => n.id !== lowStockId);
+      changed = true;
+    }
+
+    // Expiry
+    const expiryId = 'sys-expiry-warning';
+    const hasExpiry = (expiredCount > 0 || nearExpiryCount > 0);
+    const existingExpiry = updated.find(n => n.id === expiryId);
+    if (hasExpiry) {
+      const bodyText = `تنبيه: وجدنا ${expiredCount} أصناف منتهية الصلاحية بالكامل، و ${nearExpiryCount} أصناف على وشك الانتهاء خلال ${expirationAlertMonths} أشهر.`;
+      if (!existingExpiry || existingExpiry.body !== bodyText) {
+        updated = updated.filter(n => n.id !== expiryId);
+        updated.unshift({
+          id: expiryId,
+          title: 'تنبيهات تاريخ الصلاحية 📅',
+          body: bodyText,
+          time: 'تحديث فوري',
+          type: 'error',
+          read: false
+        });
+        changed = true;
+      }
+    } else if (existingExpiry) {
+      updated = updated.filter(n => n.id !== expiryId);
+      changed = true;
+    }
+
+    // Transfers
+    const transferId = 'sys-transfer-warning';
+    const hasTransfer = pendingIncomingTransfersCount > 0;
+    const existingTransfer = updated.find(n => n.id === transferId);
+    if (hasTransfer) {
+      const bodyText = `لديك ${pendingIncomingTransfersCount} طلبات تحويل واردة إلى مستودعك بانتظار المراجعة والاعتماد.`;
+      if (!existingTransfer || existingTransfer.body !== bodyText) {
+        updated = updated.filter(n => n.id !== transferId);
+        updated.unshift({
+          id: transferId,
+          title: 'طلبات تحويل معلقة واردة 🚚',
+          body: bodyText,
+          time: 'تحديث فوري',
+          type: 'info',
+          read: false
+        });
+        changed = true;
+      }
+    } else if (existingTransfer) {
+      updated = updated.filter(n => n.id !== transferId);
+      changed = true;
+    }
+
+    if (changed) {
+      setNotifications(updated);
+    }
+  }, [lowStockCount, expiredCount, nearExpiryCount, pendingIncomingTransfersCount]);
+
+  const totalNotificationsBadgeCount = notifications.filter(n => !n.read).length;
+
+  const filteredNotifications = notifications.filter(notif => {
+    if (notificationFilter === 'all') return true;
+    if (notificationFilter === 'alerts') {
+      return notif.type === 'warning' || notif.type === 'error' || notif.id === 'sys-low-stock' || notif.id === 'sys-expiry-warning';
+    }
+    if (notificationFilter === 'pending') {
+      return notif.id === 'sys-transfer-warning' || notif.title.includes('تحويل') || notif.title.includes('مهمة') || notif.body.includes('طلب');
+    }
+    if (notificationFilter === 'system') {
+      const isPending = notif.id === 'sys-transfer-warning' || notif.title.includes('تحويل') || notif.title.includes('مهمة') || notif.body.includes('طلب');
+      const isAlert = notif.type === 'warning' || notif.type === 'error' || notif.id === 'sys-low-stock' || notif.id === 'sys-expiry-warning';
+      return !isPending && !isAlert;
+    }
+    return true;
+  });
 
   return (
     <div className={`min-h-screen ${isDarkMode ? 'bg-slate-950 text-slate-100 dark' : 'bg-slate-50 text-slate-800'} flex flex-col pb-24 font-sans select-none transition-colors duration-200`} dir={currentLanguage === 'ar' ? 'rtl' : 'ltr'}>
@@ -1432,6 +1620,16 @@ export default function App() {
             </div>
           </div>
           <div className="flex items-center gap-3">
+            {/* Offline Pending Sync Badge */}
+            {offlineQueue.length > 0 && (
+              <span className="animate-pulse bg-rose-500 text-white font-black text-[10px] sm:text-xs px-3.5 py-2 rounded-2xl flex items-center gap-1.5 shadow-md border border-rose-600 shrink-0">
+                <span className="w-2 h-2 rounded-full bg-white animate-ping shrink-0" />
+                {currentLanguage === 'ar' 
+                  ? `${offlineQueue.length} عمليات بانتظار المزامنة` 
+                  : `${offlineQueue.length} ops pending sync`}
+              </span>
+            )}
+
             {/* Active Employee/Staff Status Badge */}
             <span className={`text-[10px] sm:text-xs font-black px-3.5 py-2 rounded-2xl flex items-center gap-1.5 shadow-xs transition-all border ${
               isDarkMode 
@@ -1574,113 +1772,208 @@ export default function App() {
               </div>
             </div>
 
+            {/* Sub-header Actions */}
+            {notifications.length > 0 && (
+              <div className="px-5 py-2.5 bg-slate-50 dark:bg-slate-950/40 border-b border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs">
+                <button
+                  onClick={() => {
+                    setNotifications([]);
+                    addToast(currentLanguage === 'ar' ? '✓ تم مسح جميع التنبيهات' : '✓ Cleared all notifications', 'info');
+                  }}
+                  className="text-red-500 hover:text-red-600 font-extrabold cursor-pointer hover:underline"
+                >
+                  {currentLanguage === 'ar' ? 'مسح الكل' : 'Clear All'}
+                </button>
+                <button
+                  onClick={() => {
+                    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+                    addToast(currentLanguage === 'ar' ? '✓ تم تحديد الكل كمقروء' : '✓ Marked all as read', 'success');
+                  }}
+                  className="text-blue-600 dark:text-blue-400 hover:text-blue-700 font-extrabold cursor-pointer hover:underline"
+                >
+                  {currentLanguage === 'ar' ? 'تحديد الكل كمقروء' : 'Mark All as Read'}
+                </button>
+              </div>
+            )}
+
+            {/* Notification Type Filters */}
+            <div className="px-5 py-2.5 bg-slate-50/50 dark:bg-slate-950/20 border-b border-slate-100 dark:border-slate-800/80 flex gap-2 overflow-x-auto no-scrollbar shrink-0" dir={currentLanguage === 'ar' ? 'rtl' : 'ltr'}>
+              <button
+                onClick={() => setNotificationFilter('all')}
+                className={`px-3 py-1.5 rounded-xl text-[10px] sm:text-xs font-black whitespace-nowrap transition-all cursor-pointer ${
+                  notificationFilter === 'all'
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'bg-white dark:bg-slate-800/50 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+              >
+                {currentLanguage === 'ar' ? 'الكل' : 'All'} ({notifications.length})
+              </button>
+              <button
+                onClick={() => setNotificationFilter('alerts')}
+                className={`px-3 py-1.5 rounded-xl text-[10px] sm:text-xs font-black whitespace-nowrap transition-all cursor-pointer flex items-center gap-1 border ${
+                  notificationFilter === 'alerts'
+                    ? 'bg-amber-500 border-amber-500 text-white shadow-xs'
+                    : 'bg-white dark:bg-slate-800/50 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+              >
+                <AlertTriangle size={11} className="shrink-0" />
+                <span>{currentLanguage === 'ar' ? 'تنبيهات' : 'Alerts'}</span>
+                <span>({notifications.filter(n => n.type === 'warning' || n.type === 'error' || n.id === 'sys-low-stock' || n.id === 'sys-expiry-warning').length})</span>
+              </button>
+              <button
+                onClick={() => setNotificationFilter('pending')}
+                className={`px-3 py-1.5 rounded-xl text-[10px] sm:text-xs font-black whitespace-nowrap transition-all cursor-pointer flex items-center gap-1 border ${
+                  notificationFilter === 'pending'
+                    ? 'bg-purple-500 border-purple-500 text-white shadow-xs'
+                    : 'bg-white dark:bg-slate-800/50 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+              >
+                <ArrowLeftRight size={11} className="shrink-0" />
+                <span>{currentLanguage === 'ar' ? 'مهام معلقة' : 'Pending Tasks'}</span>
+                <span>({notifications.filter(n => n.id === 'sys-transfer-warning' || n.title.includes('تحويل') || n.title.includes('مهمة') || n.body.includes('طلب')).length})</span>
+              </button>
+              <button
+                onClick={() => setNotificationFilter('system')}
+                className={`px-3 py-1.5 rounded-xl text-[10px] sm:text-xs font-black whitespace-nowrap transition-all cursor-pointer flex items-center gap-1 border ${
+                  notificationFilter === 'system'
+                    ? 'bg-emerald-500 border-emerald-500 text-white shadow-xs'
+                    : 'bg-white dark:bg-slate-800/50 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+              >
+                <SettingsIcon size={11} className="shrink-0" />
+                <span>{currentLanguage === 'ar' ? 'تحديثات نظام' : 'System Updates'}</span>
+                <span>({notifications.filter(n => {
+                  const isPending = n.id === 'sys-transfer-warning' || n.title.includes('تحويل') || n.title.includes('مهمة') || n.body.includes('طلب');
+                  const isAlert = n.type === 'warning' || n.type === 'error' || n.id === 'sys-low-stock' || n.id === 'sys-expiry-warning';
+                  return !isPending && !isAlert;
+                }).length})</span>
+              </button>
+            </div>
+
             {/* Scrollable body */}
             <div className="flex-1 overflow-y-auto p-5 space-y-6 no-scrollbar">
               
-              {/* SECTION 1: SYSTEM ALERTS */}
+              {/* Browser notification activation card */}
+              {typeof window !== 'undefined' && 'Notification' in window && Notification.permission !== 'granted' && (
+                <div className="bg-blue-50/70 dark:bg-blue-950/20 border border-blue-100/50 dark:border-blue-900/30 p-4 rounded-2xl text-center space-y-2.5">
+                  <p className="text-xs font-black text-blue-900 dark:text-blue-300">هل تود تفعيل التنبيهات الفورية؟ 🔔</p>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold leading-relaxed">
+                    تلقّ إشعارات مباشرة على سطح المكتب عند انخفاض المخزون أو اقتراب انتهاء الصلاحية حتى لو كان التطبيق مغلقاً (Background Service Worker).
+                  </p>
+                  <button
+                    onClick={() => {
+                      Notification.requestPermission().then(permission => {
+                        if (permission === 'granted') {
+                          addToast('✓ تم تفعيل تنبيهات المتصفح بنجاح!', 'success');
+                          new Notification('نظام المدى الذكي WMS 🔔', {
+                            body: 'تم تفعيل التنبيهات الفورية وبث المخزون الخلفي بنجاح.',
+                            icon: '/icon.svg'
+                          });
+                        }
+                      });
+                    }}
+                    className="bg-blue-600 hover:bg-blue-700 text-white font-black text-[10px] py-2 px-4 rounded-xl shadow-xs cursor-pointer transition-all hover:scale-105 active:scale-95 inline-block"
+                  >
+                    السماح بالتنبيهات الآن
+                  </button>
+                </div>
+              )}
+
+              {/* SECTION 1: INTERACTIVE SYSTEM ALERTS */}
               <div className="space-y-3">
                 <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
-                  {currentLanguage === 'ar' ? 'التنبيهات النشطة والحرجة' : 'Active Critical Alerts'}
+                  {currentLanguage === 'ar' ? 'التنبيهات والفعاليات' : 'Active Critical Alerts'}
                 </h4>
 
-                {totalNotificationsBadgeCount === 0 ? (
-                  <div className="bg-slate-50 dark:bg-slate-950/30 p-4 rounded-2xl text-center text-slate-400 text-xs font-semibold">
-                    ✅ {currentLanguage === 'ar' ? 'كل شيء ممتاز! لا توجد تنبيهات نشطة.' : 'Perfect! No active alerts.'}
+                {filteredNotifications.length === 0 ? (
+                  <div className="bg-slate-50 dark:bg-slate-950/30 p-6 rounded-2xl text-center text-slate-400 text-xs font-semibold">
+                    {currentLanguage === 'ar' 
+                      ? (notifications.length === 0 ? '✅ كل شيء ممتاز! لا توجد تنبيهات نشطة حالياً.' : 'ℹ️ لا توجد تنبيهات نشطة حالياً تحت هذا التصنيف.')
+                      : (notifications.length === 0 ? '✅ Perfect! No active alerts currently.' : 'ℹ️ No active alerts under this category.')
+                    }
                   </div>
                 ) : (
                   <div className="space-y-2.5">
-                    {/* Low stock Alert */}
-                    {lowStockCount > 0 && (
-                      <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900/30 p-3.5 rounded-2xl flex items-start gap-3">
-                        <div className="bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 p-2 rounded-xl shrink-0 mt-0.5">
-                          <AlertTriangle size={15} />
+                    {filteredNotifications.map((notif) => (
+                      <div 
+                        key={notif.id}
+                        onClick={() => {
+                          // Mark as read
+                          setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, read: true } : n));
+                          // Route if applicable
+                          if (notif.id === 'sys-low-stock') {
+                            setActiveTab('home');
+                            setIsNotificationsOpen(false);
+                          } else if (notif.id === 'sys-expiry-warning') {
+                            setActiveTab('items');
+                            setIsNotificationsOpen(false);
+                          } else if (notif.id === 'sys-transfer-warning') {
+                            setActiveTab('transfers');
+                            setIsNotificationsOpen(false);
+                          }
+                        }}
+                        className={`p-3.5 rounded-2xl border transition-all relative group text-right flex items-start gap-3 cursor-pointer ${
+                          notif.read 
+                            ? 'bg-slate-50/50 dark:bg-slate-900/30 border-slate-100 dark:border-slate-800 opacity-75' 
+                            : 'bg-white dark:bg-slate-850 shadow-xs border-slate-200/60 dark:border-slate-800'
+                        }`}
+                      >
+                        {/* Type indicator icon */}
+                        <div className={`p-2 rounded-xl shrink-0 mt-0.5 ${
+                          notif.type === 'error' ? 'bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400' :
+                          notif.type === 'warning' ? 'bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400' :
+                          notif.type === 'success' ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400' :
+                          'bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400'
+                        }`}>
+                          {notif.type === 'error' ? <Calendar size={15} /> :
+                           notif.type === 'warning' ? <AlertTriangle size={15} /> :
+                           notif.type === 'success' ? <CheckCircle size={15} /> :
+                           <Info size={15} />}
                         </div>
-                        <div className="space-y-0.5 flex-1 text-right">
-                          <p className="text-xs font-black text-amber-900 dark:text-amber-300">
-                            {currentLanguage === 'ar' ? 'مخزون منخفض تحت حد الأمان' : 'Low Stock Alert'}
-                          </p>
-                          <p className="text-[11px] text-amber-700/85 dark:text-amber-400/80 font-bold leading-relaxed">
-                            {currentLanguage === 'ar' 
-                              ? `توجد ${lowStockCount} أصناف مخزنية انخفضت كميتها الحالية عن حد الأمان المسجل.` 
-                              : `There are ${lowStockCount} items currently below their registered safety limits.`}
-                          </p>
-                          <button
-                            onClick={() => {
-                              setActiveTab('home');
-                              setIsNotificationsOpen(false);
-                            }}
-                            className="text-[10px] text-amber-800 dark:text-amber-400 font-extrabold underline mt-1 cursor-pointer hover:text-amber-950 block text-left"
-                          >
-                            {currentLanguage === 'ar' ? 'عرض السلع المتأثرة &larr;' : 'View affected items &larr;'}
-                          </button>
-                        </div>
-                      </div>
-                    )}
 
-                    {/* Expiration Alerts */}
-                    {(expiredCount > 0 || nearExpiryCount > 0) && (
-                      <div className="bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/30 p-3.5 rounded-2xl flex items-start gap-3">
-                        <div className="bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400 p-2 rounded-xl shrink-0 mt-0.5">
-                          <Calendar size={15} />
-                        </div>
-                        <div className="space-y-0.5 flex-1 text-right">
-                          <p className="text-xs font-black text-red-900 dark:text-red-300">
-                            {currentLanguage === 'ar' ? 'تنبيهات تاريخ الصلاحية' : 'Expiry Date Warnings'}
+                        {/* Content */}
+                        <div className="space-y-1 flex-1 text-right">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[9px] font-bold text-slate-400 font-mono">{notif.time}</span>
+                            <p className="text-xs font-black text-slate-800 dark:text-slate-200">
+                              {notif.title}
+                            </p>
+                          </div>
+                          <p className="text-[11px] text-slate-600 dark:text-slate-400 font-medium leading-relaxed">
+                            {notif.body}
                           </p>
-                          <p className="text-[11px] text-red-700/85 dark:text-red-400/80 font-bold leading-relaxed">
-                            {currentLanguage === 'ar' 
-                              ? `وجدنا ${expiredCount} أصناف منتهية الصلاحية بالكامل، و ${nearExpiryCount} أصناف على وشك الانتهاء خلال ${expirationAlertMonths} أشهر.` 
-                              : `Found ${expiredCount} expired items and ${nearExpiryCount} items expiring within ${expirationAlertMonths} months.`}
-                          </p>
-                          <button
-                            onClick={() => {
-                              setActiveTab('items');
-                              setIsNotificationsOpen(false);
-                            }}
-                            className="text-[10px] text-red-800 dark:text-red-400 font-extrabold underline mt-1 cursor-pointer hover:text-red-950 block text-left"
-                          >
-                            {currentLanguage === 'ar' ? 'مراجعة تواريخ الصلاحية &larr;' : 'Inspect expiration dates &larr;'}
-                          </button>
                         </div>
-                      </div>
-                    )}
 
-                    {/* Warehouse Transfer Alert */}
-                    {pendingIncomingTransfersCount > 0 && (
-                      <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/30 p-3.5 rounded-2xl flex items-start gap-3">
-                        <div className="bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 p-2 rounded-xl shrink-0 mt-0.5">
-                          <ArrowLeftRight size={15} />
-                        </div>
-                        <div className="space-y-0.5 flex-1 text-right">
-                          <p className="text-xs font-black text-blue-900 dark:text-blue-300">
-                            {currentLanguage === 'ar' ? 'طلبات تحويل معلقة واردة' : 'Pending Incoming Transfers'}
-                          </p>
-                          <p className="text-[11px] text-blue-700/85 dark:text-blue-400/80 font-bold leading-relaxed">
-                            {currentLanguage === 'ar' 
-                              ? `لديك ${pendingIncomingTransfersCount} طلبات تحويل واردة إلى مستودعك بانتظار المراجعة والاعتماد.` 
-                              : `You have ${pendingIncomingTransfersCount} incoming transfer requests waiting for approval.`}
-                          </p>
-                          <button
-                            onClick={() => {
-                              setActiveTab('transfers');
-                              setIsNotificationsOpen(false);
-                            }}
-                            className="text-[10px] text-blue-800 dark:text-blue-400 font-extrabold underline mt-1 cursor-pointer hover:text-blue-950 block text-left"
-                          >
-                            {currentLanguage === 'ar' ? 'مراجعة واعتماد الطلبات &larr;' : 'Approve transfers &larr;'}
-                          </button>
-                        </div>
+                        {/* Unread dot */}
+                        {!notif.read && (
+                          <span className="absolute top-3 right-3 w-2 h-2 rounded-full bg-blue-600 shrink-0" />
+                        )}
+
+                        {/* Dismiss action button */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setNotifications(prev => prev.filter(n => n.id !== notif.id));
+                            addToast(currentLanguage === 'ar' ? '✓ تم حذف التنبيه' : '✓ Notification dismissed', 'info');
+                          }}
+                          className="absolute bottom-3 left-3 opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-red-500 cursor-pointer"
+                          title={currentLanguage === 'ar' ? 'حذف الإشعار' : 'Dismiss'}
+                        >
+                          <Trash2 size={12} />
+                        </button>
                       </div>
-                    )}
+                    ))}
                   </div>
                 )}
               </div>
 
               {/* SECTION 2: RECENT AUDIT LOGS / EVENTS */}
               <div className="space-y-3">
-                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
-                  {currentLanguage === 'ar' ? 'أحدث سجلات الفعاليات والعمليات' : 'Recent Event & Activity Logs'}
-                </h4>
+                <div className="flex items-center justify-between">
+                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                    {currentLanguage === 'ar' ? 'أحدث سجلات الفعاليات والعمليات' : 'Recent Event & Activity Logs'}
+                  </h4>
+                </div>
 
                 <div className="space-y-2.5">
                   {auditLogs.slice(0, 10).map((log) => (

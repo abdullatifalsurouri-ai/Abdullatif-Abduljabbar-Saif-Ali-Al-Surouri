@@ -3,6 +3,7 @@ import { Search, Plus, Trash2, Edit2, X, Check, Box, Tag, Filter, Lock, ChevronD
 import { Item, Movement } from '../types';
 import BarcodeScannerModal from './BarcodeScannerModal';
 import VirtualList from './VirtualList';
+import * as XLSX from 'xlsx';
 
 interface ItemsViewProps {
   items: Item[];
@@ -39,6 +40,8 @@ export default function ItemsView({
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
   const [previewPhoto, setPreviewPhoto] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
+  const [importProgress, setImportProgress] = useState<number | null>(null);
+  const [importStats, setImportStats] = useState({ total: 0, processed: 0, duplicates: 0, invalid: 0 });
 
   // Microphone Voice Search State & Implementation
   const [isListening, setIsListening] = useState(false);
@@ -220,112 +223,176 @@ export default function ItemsView({
 
     const reader = new FileReader();
     reader.onload = (e) => {
-      const text = e.target?.result as string;
-      if (!text) return;
+      const data = e.target?.result;
+      if (!data) return;
 
-      const lines = text.split(/\r?\n/);
-      if (lines.length < 2) {
-        alert('الملف فارغ أو لا يحتوي على بيانات كافية!');
-        return;
-      }
+      try {
+        let rows: any[][] = [];
+        const filename = file.name.toLowerCase();
 
-      // Detect separator: comma or semicolon
-      const firstLine = lines[0];
-      const separator = firstLine.includes(';') ? ';' : ',';
-
-      // Parse headers
-      const headers = firstLine.split(separator).map(h => h.trim().replace(/^["']|["']$/g, ''));
-
-      // Find matching indices based on common Arabic and English names
-      let idIdx = headers.findIndex(h => h.includes('الرمز') || h.toLowerCase() === 'id' || h.toLowerCase() === 'code' || h.includes('كود'));
-      let nameIdx = headers.findIndex(h => h.includes('الاسم') || h.toLowerCase() === 'name' || h.includes('اسم'));
-      let safetyIdx = headers.findIndex(h => h.includes('حد الأمان') || h.includes('حد_الأمان') || h.includes('حد الامان') || h.toLowerCase() === 'safetylimit' || h.toLowerCase() === 'safety');
-      let unitIdx = headers.findIndex(h => h.includes('الوحدة') || h.includes('الوحده') || h.toLowerCase() === 'unit');
-      let priceIdx = headers.findIndex(h => h.includes('السعر') || h.toLowerCase() === 'price');
-      let categoryIdx = headers.findIndex(h => h.includes('التصنيف') || h.includes('المجموعة') || h.includes('المجموعه') || h.toLowerCase() === 'category' || h.toLowerCase() === 'group');
-      let descIdx = headers.findIndex(h => h.includes('الوصف') || h.includes('تفاصيل') || h.toLowerCase() === 'description' || h.toLowerCase() === 'desc');
-      let currencyIdx = headers.findIndex(h => h.includes('العملة') || h.includes('العمله') || h.toLowerCase() === 'currency');
-
-      // Fallback indices if header names aren't detected
-      if (idIdx === -1) idIdx = 0;
-      if (nameIdx === -1) nameIdx = 1;
-      if (safetyIdx === -1) safetyIdx = 2;
-      if (unitIdx === -1) unitIdx = 3;
-      if (priceIdx === -1) priceIdx = 4;
-      if (categoryIdx === -1) categoryIdx = 5;
-      if (descIdx === -1) descIdx = 6;
-
-      const newItemsToImport: Item[] = [];
-      let duplicateCount = 0;
-      let invalidCount = 0;
-
-      // Temporary set of IDs in the file to avoid duplicate entries within the CSV itself
-      const fileIds = new Set<string>();
-
-      for (let i = 1; i < lines.length; i++) {
-        const line = lines[i].trim();
-        if (!line) continue;
-
-        // Smart split of values that handles escaped separators (basic implementation)
-        const values = line.split(separator).map(v => v.trim().replace(/^["']|["']$/g, ''));
-        if (values.length < 2) {
-          invalidCount++;
-          continue;
-        }
-
-        const id = (values[idIdx] || `PROD-IMP-${Date.now()}-${i}`).toUpperCase().trim();
-        const name = values[nameIdx]?.trim();
-
-        if (!name) {
-          invalidCount++;
-          continue;
-        }
-
-        // Check if ID already exists in the system or is duplicated inside the file
-        const alreadyExists = items.some(item => item.id.toUpperCase() === id);
-        if (alreadyExists || fileIds.has(id)) {
-          duplicateCount++;
-          continue;
-        }
-
-        fileIds.add(id);
-
-        const safetyLimit = Number(values[safetyIdx]) || 10;
-        const unit = values[unitIdx] || 'حبة';
-        const price = Number(values[priceIdx]) || 0;
-        const currency = currencyIdx !== -1 && values[currencyIdx] ? values[currencyIdx] : 'ر.س';
-        const category = values[categoryIdx] || '';
-        const description = values[descIdx] || '';
-
-        newItemsToImport.push({
-          id,
-          name,
-          safetyLimit,
-          unit,
-          price,
-          currency,
-          category,
-          description,
-        });
-      }
-
-      if (newItemsToImport.length > 0) {
-        if (onImportItems) {
-          onImportItems(newItemsToImport);
+        if (filename.endsWith('.xlsx') || filename.endsWith('.xls')) {
+          const workbook = XLSX.read(data, { type: 'binary' });
+          const firstSheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[firstSheetName];
+          rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
         } else {
-          // Fallback to individual additions
-          newItemsToImport.forEach(item => onAddItem(item));
-        }
-        alert(`🎉 تمت عملية الاستيراد بنجاح!\n• تم استيراد: ${newItemsToImport.length} صنف جديد.\n• تم تخطي المكرر: ${duplicateCount} صنف.\n• الصفوف غير الصالحة: ${invalidCount}.`);
-      } else {
-        alert(`⚠️ لم يتم استيراد أي أصناف!\n• الأصناف المكررة: ${duplicateCount}\n• الصفوف غير الصالحة: ${invalidCount}`);
-      }
+          // It's CSV / text
+          const text = typeof data === 'string' ? data : new TextDecoder().decode(data as ArrayBuffer);
+          const lines = text.split(/\r?\n/);
+          if (lines.length < 2) {
+            alert('الملف فارغ أو لا يحتوي على بيانات كافية!');
+            return;
+          }
 
-      // Clear the file input
-      event.target.value = '';
+          // Detect separator: comma or semicolon
+          const firstLine = lines[0];
+          const separator = firstLine.includes(';') ? ';' : ',';
+
+          rows = lines.map(line => {
+            if (!line.trim()) return [];
+            return line.split(separator).map(v => v.trim().replace(/^["']|["']$/g, ''));
+          }).filter(r => r.length > 0);
+        }
+
+        if (rows.length < 2) {
+          alert('الملف فارغ أو لا يحتوي على صفوف بيانات كافية!');
+          return;
+        }
+
+        const headers = rows[0].map((h: any) => String(h || '').trim().replace(/^["']|["']$/g, ''));
+
+        // Find matching indices
+        let idIdx = headers.findIndex(h => h.includes('الرمز') || h.toLowerCase() === 'id' || h.toLowerCase() === 'code' || h.includes('كود'));
+        let nameIdx = headers.findIndex(h => h.includes('الاسم') || h.toLowerCase() === 'name' || h.includes('اسم'));
+        let safetyIdx = headers.findIndex(h => h.includes('حد الأمان') || h.includes('حد_الأمان') || h.includes('حد الامان') || h.toLowerCase() === 'safetylimit' || h.toLowerCase() === 'safety');
+        let unitIdx = headers.findIndex(h => h.includes('الوحدة') || h.includes('الوحده') || h.toLowerCase() === 'unit');
+        let priceIdx = headers.findIndex(h => h.includes('السعر') || h.toLowerCase() === 'price');
+        let categoryIdx = headers.findIndex(h => h.includes('التصنيف') || h.includes('المجموعة') || h.includes('المجموعه') || h.toLowerCase() === 'category' || h.toLowerCase() === 'group');
+        let descIdx = headers.findIndex(h => h.includes('الوصف') || h.includes('تفاصيل') || h.toLowerCase() === 'description' || h.toLowerCase() === 'desc');
+        let currencyIdx = headers.findIndex(h => h.includes('العملة') || h.includes('العمله') || h.toLowerCase() === 'currency');
+
+        // Fallback indices
+        if (idIdx === -1) idIdx = 0;
+        if (nameIdx === -1) nameIdx = 1;
+        if (safetyIdx === -1) safetyIdx = 2;
+        if (unitIdx === -1) unitIdx = 3;
+        if (priceIdx === -1) priceIdx = 4;
+        if (categoryIdx === -1) categoryIdx = 5;
+        if (descIdx === -1) descIdx = 6;
+
+        const dataRows = rows.slice(1).filter(row => row && row.length > 0 && row.some(cell => cell !== null && cell !== ''));
+        const totalRows = dataRows.length;
+
+        if (totalRows === 0) {
+          alert('لا توجد صفوف بيانات صالحة للاستيراد!');
+          return;
+        }
+
+        // Initialize state for batch processing
+        setImportProgress(0);
+        setImportStats({ total: totalRows, processed: 0, duplicates: 0, invalid: 0 });
+
+        const batchSize = 15; // Process in small batches for smooth UI animation
+        let currentIndex = 0;
+        let localDuplicates = 0;
+        let localInvalid = 0;
+        const newItemsToImport: Item[] = [];
+        const fileIds = new Set<string>();
+
+        const processNextBatch = () => {
+          const limit = Math.min(currentIndex + batchSize, totalRows);
+          
+          for (let i = currentIndex; i < limit; i++) {
+            const values = dataRows[i];
+            if (!values || values.length < 2) {
+              localInvalid++;
+              continue;
+            }
+
+            const rawId = values[idIdx] !== undefined ? String(values[idIdx]) : '';
+            const id = (rawId || `PROD-IMP-${Date.now()}-${i}`).toUpperCase().trim();
+            const name = values[nameIdx] !== undefined ? String(values[nameIdx]).trim() : '';
+
+            if (!name) {
+              localInvalid++;
+              continue;
+            }
+
+            // Check if ID already exists in the system or is duplicated inside this file
+            const alreadyExists = items.some(item => item.id.toUpperCase() === id);
+            if (alreadyExists || fileIds.has(id)) {
+              localDuplicates++;
+              continue;
+            }
+
+            fileIds.add(id);
+
+            const safetyLimit = values[safetyIdx] !== undefined ? (Number(values[safetyIdx]) || 10) : 10;
+            const unit = values[unitIdx] !== undefined ? String(values[unitIdx]) : 'حبة';
+            const price = values[priceIdx] !== undefined ? (Number(values[priceIdx]) || 0) : 0;
+            const currency = currencyIdx !== -1 && values[currencyIdx] ? String(values[currencyIdx]) : 'ر.س';
+            const category = values[categoryIdx] !== undefined ? String(values[categoryIdx]) : '';
+            const description = values[descIdx] !== undefined ? String(values[descIdx]) : '';
+
+            newItemsToImport.push({
+              id,
+              name,
+              safetyLimit,
+              unit,
+              price,
+              currency,
+              category,
+              description,
+            });
+          }
+
+          currentIndex = limit;
+          const currentProgress = Math.round((currentIndex / totalRows) * 100);
+          setImportProgress(currentProgress);
+          setImportStats({
+            total: totalRows,
+            processed: newItemsToImport.length,
+            duplicates: localDuplicates,
+            invalid: localInvalid
+          });
+
+          if (currentIndex < totalRows) {
+            setTimeout(processNextBatch, 35); // Allow UI repaint
+          } else {
+            // Done processing all batches!
+            if (newItemsToImport.length > 0) {
+              if (onImportItems) {
+                onImportItems(newItemsToImport);
+              } else {
+                newItemsToImport.forEach(item => onAddItem(item));
+              }
+              alert(`🎉 تمت عملية استيراد البيانات بنجاح!\n• تم استيراد: ${newItemsToImport.length} صنف جديد.\n• تم تخطي المكرر: ${localDuplicates} صنف.\n• الصفوف غير الصالحة: ${localInvalid}.`);
+            } else {
+              alert(`⚠️ لم يتم استيراد أي أصناف!\n• الأصناف المكررة: ${localDuplicates}\n• الصفوف غير الصالحة: ${localInvalid}`);
+            }
+
+            // Reset progress and file input
+            setTimeout(() => {
+              setImportProgress(null);
+            }, 1000);
+            event.target.value = '';
+          }
+        };
+
+        // Start batch processing
+        processNextBatch();
+
+      } catch (err) {
+        console.error(err);
+        alert('حدث خطأ أثناء قراءة الملف. الرجاء التأكد من سلامة صياغته!');
+      }
     };
 
-    reader.readAsText(file);
+    if (file.name.toLowerCase().endsWith('.xlsx') || file.name.toLowerCase().endsWith('.xls')) {
+      reader.readAsBinaryString(file);
+    } else {
+      reader.readAsText(file);
+    }
   };
 
   const handleCSVExport = () => {
@@ -369,7 +436,7 @@ export default function ItemsView({
     const nextId = `PROD-${String(nextNum).padStart(3, '0')}`;
 
     setEditingItem(null);
-    setFormData({
+    let initialFormData = {
       id: nextId,
       name: '',
       safetyLimit: 10,
@@ -379,9 +446,32 @@ export default function ItemsView({
       category: '',
       description: '',
       expirationDate: '',
-    });
+    };
+
+    const savedDraft = sessionStorage.getItem('draft_add_item_form');
+    if (savedDraft) {
+      try {
+        const parsed = JSON.parse(savedDraft);
+        if (parsed) {
+          initialFormData = {
+            ...initialFormData,
+            ...parsed,
+            id: parsed.id || nextId
+          };
+        }
+      } catch (e) {}
+    }
+
+    setFormData(initialFormData);
     setIsFormOpen(true);
   };
+
+  // Autosave to SessionStorage
+  React.useEffect(() => {
+    if (isFormOpen && !editingItem) {
+      sessionStorage.setItem('draft_add_item_form', JSON.stringify(formData));
+    }
+  }, [formData, isFormOpen, editingItem]);
 
   const handleOpenEdit = (item: Item) => {
     setEditingItem(item);
@@ -424,6 +514,7 @@ export default function ItemsView({
         return;
       }
       onAddItem(savedItem);
+      sessionStorage.removeItem('draft_add_item_form');
     }
 
     setIsFormOpen(false);
@@ -438,64 +529,89 @@ export default function ItemsView({
           <h2 className="text-2xl font-black text-slate-800 tracking-tight">الأصناف</h2>
           <p className="text-slate-500 font-medium text-sm mt-0.5">تعريف وإدارة السلع والمنتجات المخزنة</p>
         </div>
-        <div className="flex items-center gap-2.5">
-          {/* Manage Groups Trigger Button */}
-          <button
-            onClick={() => setIsGroupModalOpen(true)}
-            className="bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200/50 px-4 py-3 rounded-2xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer shadow-2xs hover:scale-105 active:scale-95"
-            title="إدارة المجموعات وبياناتها وتعديلها"
-          >
-            <Tag size={15} className="stroke-[2.5]" />
-            <span>إدارة المجموعات 📁</span>
-          </button>
+        <div className="flex flex-col items-end gap-2 shrink-0">
+          <div className="flex items-center gap-2">
+            {/* Manage Groups Trigger Button */}
+            <button
+              onClick={() => setIsGroupModalOpen(true)}
+              className="bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200/50 px-3 py-1.5 rounded-xl text-[10px] font-black transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs hover:scale-105 active:scale-95"
+              title="إدارة المجموعات وبياناتها وتعديلها"
+            >
+              <Tag size={12} className="stroke-[2.5]" />
+              <span>المجموعات 📁</span>
+            </button>
 
-          {!isDataLocked && (
-            <>
-              {/* Import CSV Trigger */}
-              {currentUser?.permissions?.canImportExportCSV !== false && (
-                <>
-                  <div className="relative">
-                    <input
-                      type="file"
-                      ref={fileInputRef}
-                      id="csv-file-import"
-                      accept=".csv, .txt"
-                      onChange={handleCSVImport}
-                      className="hidden"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/50 px-4 py-3 rounded-2xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer shadow-2xs hover:scale-105 active:scale-95 whitespace-nowrap"
-                      title="استيراد قائمة أصناف كاملة من ملف CSV"
-                    >
-                      <UploadCloud size={12} className="stroke-[2.5]" />
-                      <span>استيراد (CSV) 📥</span>
-                    </button>
-                  </div>
+            {!isDataLocked && currentUser?.permissions?.canImportExportCSV !== false && (
+              <>
+                <div className="relative">
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    id="csv-file-import"
+                    accept=".csv, .txt, .xlsx, .xls"
+                    onChange={handleCSVImport}
+                    className="hidden"
+                  />
                   <button
                     type="button"
-                    onClick={handleCSVExport}
-                    className="bg-teal-50 hover:bg-teal-100 text-teal-700 border border-teal-200/50 px-4 py-3 rounded-2xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer shadow-2xs hover:scale-105 active:scale-95 whitespace-nowrap"
-                    title="تصدير قائمة أصناف كاملة إلى ملف CSV"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/50 px-2.5 py-1.5 rounded-xl text-[10px] font-black transition-all flex items-center gap-1 cursor-pointer shadow-2xs hover:scale-105 active:scale-95 whitespace-nowrap"
+                    title="استيراد قائمة أصناف كاملة من ملف CSV أو Excel"
                   >
-                    <Download size={12} className="stroke-[2.5]" />
-                    <span>تصدير (CSV) 📤</span>
+                    <UploadCloud size={10} className="stroke-[2.5]" />
+                    <span>استيراد 📥</span>
                   </button>
-                </>
-              )}
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCSVExport}
+                  className="bg-teal-50 hover:bg-teal-100 text-teal-700 border border-teal-200/50 px-2.5 py-1.5 rounded-xl text-[10px] font-black transition-all flex items-center gap-1 cursor-pointer shadow-2xs hover:scale-105 active:scale-95 whitespace-nowrap"
+                  title="تصدير قائمة أصناف كاملة إلى ملف CSV"
+                >
+                  <Download size={10} className="stroke-[2.5]" />
+                  <span>تصدير 📤</span>
+                </button>
+              </>
+            )}
+          </div>
 
-              <button
-                onClick={handleOpenAdd}
-                className="bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-full transition-all shadow-md flex items-center justify-center cursor-pointer hover:scale-105 active:scale-95 shrink-0"
-                title="إضافة صنف جديد"
-              >
-                <Plus size={22} className="stroke-[2.5]" />
-              </button>
-            </>
+          {!isDataLocked && (
+            <button
+              onClick={handleOpenAdd}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-xl transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer hover:scale-105 active:scale-95 font-black text-xs shrink-0"
+              title="إضافة صنف جديد"
+            >
+              <Plus size={15} className="stroke-[2.5]" />
+              <span>إضافة صنف جديد ➕</span>
+            </button>
           )}
         </div>
       </div>
+
+      {/* Import Progress Bar */}
+      {importProgress !== null && (
+        <div className="bg-blue-50 border border-blue-200 rounded-2xl p-5 shadow-sm space-y-3 animate-pulse text-right">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Sparkles size={16} className="text-blue-600 animate-spin" />
+              <span className="text-xs font-black text-blue-900">جاري معالجة واستيراد السجلات في الخلفية (دفعات)...</span>
+            </div>
+            <span className="text-xs font-mono font-black text-blue-700">{importProgress}%</span>
+          </div>
+          <div className="w-full bg-slate-200 h-2.5 rounded-full overflow-hidden">
+            <div 
+              className="bg-blue-600 h-full rounded-full transition-all duration-150" 
+              style={{ width: `${importProgress}%` }}
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-4 text-[10px] font-bold text-slate-500 pt-1 border-t border-blue-100">
+            <span>إجمالي الصفوف: <strong className="text-slate-800 font-mono">{importStats.total}</strong></span>
+            <span>تم استيرادها: <strong className="text-emerald-600 font-mono">{importStats.processed}</strong></span>
+            <span>تخطي المكرر: <strong className="text-amber-600 font-mono">{importStats.duplicates}</strong></span>
+            <span>صفوف غير صالحة: <strong className="text-rose-600 font-mono">{importStats.invalid}</strong></span>
+          </div>
+        </div>
+      )}
 
       {/* Grand Total Inventory Value Banner */}
       <div className="bg-gradient-to-l from-indigo-600 via-blue-600 to-indigo-700 text-white rounded-3xl p-5 shadow-xs relative overflow-hidden flex flex-col sm:flex-row items-center justify-between gap-4">
@@ -730,13 +846,13 @@ export default function ItemsView({
             <p className="text-xs mt-1">أضف أصنافًا جديدة أو عدّل خيارات البحث والتصفية</p>
           </div>
         ) : viewMode === 'table' ? (
-          <div className="border border-slate-200 rounded-3xl overflow-x-auto bg-white shadow-xs">
+          <div className="border border-slate-200 dark:border-slate-800 rounded-3xl overflow-x-auto bg-white dark:bg-slate-900 shadow-xs">
             <table className="w-full text-right border-collapse text-xs">
               <thead>
-                <tr className="bg-slate-100 border-b border-slate-200 font-black text-slate-700">
+                <tr className="bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 font-black text-slate-700 dark:text-slate-300">
                   {/* Sticky right columns for name/id */}
-                  <th className="p-4 text-right sticky right-0 bg-slate-100 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] min-w-[120px]">رمز الصنف</th>
-                  <th className="p-4 text-right sticky right-[120px] bg-slate-100 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] min-w-[150px]">اسم الصنف</th>
+                  <th className="p-4 text-right sticky right-0 bg-slate-100 dark:bg-slate-800 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] min-w-[120px]">رمز الصنف</th>
+                  <th className="p-4 text-right sticky right-[120px] bg-slate-100 dark:bg-slate-800 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] min-w-[150px]">اسم الصنف</th>
                   <th className="p-4 text-right min-w-[100px]">الفئة</th>
                   <th className="p-4 text-right min-w-[100px]">الرصيد الحالي</th>
                   <th className="p-4 text-right min-w-[100px]">سعر الوحدة</th>
@@ -746,7 +862,7 @@ export default function ItemsView({
                   <th className="p-4 text-center min-w-[120px]">الإجراءات</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 font-medium text-slate-600">
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium text-slate-600 dark:text-slate-400">
                 {filteredItems.map((item) => {
                   const balance = movements
                     ? movements
@@ -755,9 +871,9 @@ export default function ItemsView({
                     : 0;
                   
                   return (
-                    <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
-                      <td className="p-4 font-mono font-bold text-slate-900 sticky right-0 bg-white z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">{item.id}</td>
-                      <td className="p-4 font-bold text-slate-800 sticky right-[120px] bg-white z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">{item.name}</td>
+                    <tr key={item.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition-colors">
+                      <td className="p-4 font-mono font-bold text-slate-900 dark:text-slate-100 sticky right-0 bg-white dark:bg-slate-900 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">{item.id}</td>
+                      <td className="p-4 font-bold text-slate-800 dark:text-slate-200 sticky right-[120px] bg-white dark:bg-slate-900 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">{item.name}</td>
                       <td className="p-4">
                         <span className="bg-slate-100 text-slate-600 text-[10px] font-bold px-2 py-1 rounded-lg">
                           {item.category || 'غير محدد'}

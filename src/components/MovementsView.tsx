@@ -356,12 +356,12 @@ export default function MovementsView({
             <p className="text-xs mt-1">سجل حركة جديدة بالنقر على زر الإضافة (+) في الأعلى</p>
           </div>
         ) : viewMode === 'table' ? (
-          <div className="border border-slate-200 rounded-3xl overflow-x-auto bg-white shadow-xs" dir="rtl">
+          <div className="border border-slate-200 dark:border-slate-800 rounded-3xl overflow-x-auto bg-white dark:bg-slate-900 shadow-xs" dir="rtl">
             <table className="w-full text-right border-collapse text-xs">
               <thead>
-                <tr className="bg-slate-100 border-b border-slate-200 font-black text-slate-700">
-                  <th className="p-4 text-right sticky right-0 bg-slate-100 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] min-w-[80px]">رقم الحركة</th>
-                  <th className="p-4 text-right sticky right-[80px] bg-slate-100 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] min-w-[120px]">رمز الصنف</th>
+                <tr className="bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 font-black text-slate-700 dark:text-slate-300">
+                  <th className="p-4 text-right sticky right-0 bg-slate-100 dark:bg-slate-800 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] min-w-[80px]">رقم الحركة</th>
+                  <th className="p-4 text-right sticky right-[80px] bg-slate-100 dark:bg-slate-800 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] min-w-[120px]">رمز الصنف</th>
                   <th className="p-4 text-right min-w-[140px]">اسم الصنف</th>
                   <th className="p-4 text-right min-w-[90px]">النوع</th>
                   <th className="p-4 text-right min-w-[100px]">الكمية</th>
@@ -372,17 +372,17 @@ export default function MovementsView({
                   <th className="p-4 text-center min-w-[100px]">الإجراءات</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 font-medium text-slate-600">
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium text-slate-600 dark:text-slate-400">
                 {filteredMovements.map((movement) => {
                   const item = items.find((i) => i.id === movement.itemId);
                   const warehouse = warehouses.find((w) => w.id === movement.warehouseId);
                   const isInward = movement.type === 'in';
                   
                   return (
-                    <tr key={movement.id} className="hover:bg-slate-50/50 transition-colors">
-                      <td className="p-4 font-mono font-bold text-slate-900 sticky right-0 bg-white z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">#{movement.id}</td>
-                      <td className="p-4 font-mono font-bold text-slate-500 sticky right-[80px] bg-white z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">{movement.itemId}</td>
-                      <td className="p-4 font-bold text-slate-800">{item?.name || 'صنف غير معروف'}</td>
+                    <tr key={movement.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition-colors">
+                      <td className="p-4 font-mono font-bold text-slate-900 dark:text-slate-100 sticky right-0 bg-white dark:bg-slate-900 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">#{movement.id}</td>
+                      <td className="p-4 font-mono font-bold text-slate-500 dark:text-slate-400 sticky right-[80px] bg-white dark:bg-slate-900 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">{movement.itemId}</td>
+                      <td className="p-4 font-bold text-slate-800 dark:text-slate-200">{item?.name || 'صنف غير معروف'}</td>
                       <td className="p-4">
                         <span className={`inline-flex items-center gap-1 text-[10px] font-black px-2 py-1 rounded-lg ${
                           isInward ? 'bg-emerald-50 text-emerald-600' : 'bg-orange-50 text-orange-600'

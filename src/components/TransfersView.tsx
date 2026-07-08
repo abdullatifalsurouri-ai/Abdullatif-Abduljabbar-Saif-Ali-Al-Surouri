@@ -86,13 +86,46 @@ export default function TransfersView({
     const defaultFrom = managedWarehouseIds[0] || warehouses[0]?.id || '';
     const defaultTo = warehouses.find((w) => w.id !== defaultFrom)?.id || '';
     
-    setFromWarehouseId(defaultFrom);
-    setToWarehouseId(defaultTo);
-    setItemId(items[0]?.id || '');
-    setQuantity('');
+    let initialFrom = defaultFrom;
+    let initialTo = defaultTo;
+    let initialItemId = items[0]?.id || '';
+    let initialQuantity: number | '' = '';
+
+    const savedDraft = sessionStorage.getItem('draft_transfer_form');
+    if (savedDraft) {
+      try {
+        const parsed = JSON.parse(savedDraft);
+        if (parsed) {
+          if (parsed.fromWarehouseId) initialFrom = parsed.fromWarehouseId;
+          if (parsed.toWarehouseId) initialTo = parsed.toWarehouseId;
+          if (parsed.itemId) initialItemId = parsed.itemId;
+          if (parsed.quantity !== undefined && parsed.quantity !== '') {
+            initialQuantity = Number(parsed.quantity);
+          }
+        }
+      } catch (e) {}
+    }
+
+    setFromWarehouseId(initialFrom);
+    setToWarehouseId(initialTo);
+    setItemId(initialItemId);
+    setQuantity(initialQuantity);
     setError(null);
     setIsFormOpen(true);
   };
+
+  // Autosave to SessionStorage
+  React.useEffect(() => {
+    if (isFormOpen) {
+      const draft = {
+        fromWarehouseId,
+        toWarehouseId,
+        itemId,
+        quantity,
+      };
+      sessionStorage.setItem('draft_transfer_form', JSON.stringify(draft));
+    }
+  }, [fromWarehouseId, toWarehouseId, itemId, quantity, isFormOpen]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -130,6 +163,7 @@ export default function TransfersView({
     };
 
     onAddTransfer(newTransfer);
+    sessionStorage.removeItem('draft_transfer_form');
     setIsFormOpen(false);
   };
 
