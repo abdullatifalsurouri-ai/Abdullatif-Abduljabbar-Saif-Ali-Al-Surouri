@@ -132,7 +132,14 @@ export default function App() {
     read: boolean;
   }[]>(() => {
     const saved = localStorage.getItem('wms_notifications');
-    if (saved) return JSON.parse(saved);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (e) {
+        console.error('Error parsing wms_notifications', e);
+      }
+    }
     return [
       {
         id: '1',
@@ -365,7 +372,10 @@ export default function App() {
   useEffect(() => {
     const checkDailyReminder = () => {
       const savedTime = localStorage.getItem('wms_daily_reminder_time') || '18:00';
-      const [remHour, remMin] = savedTime.split(':').map(Number);
+      const timeParts = (savedTime && typeof savedTime === 'string' && savedTime.includes(':')) 
+        ? savedTime.split(':') 
+        : ['18', '00'];
+      const [remHour, remMin] = timeParts.map(Number);
       
       const now = new Date();
       if (now.getHours() === remHour && now.getMinutes() === remMin) {
@@ -1579,15 +1589,16 @@ export default function App() {
   const totalNotificationsBadgeCount = notifications.filter(n => !n.read).length;
 
   const filteredNotifications = notifications.filter(notif => {
+    if (!notif) return false;
     if (notificationFilter === 'all') return true;
     if (notificationFilter === 'alerts') {
       return notif.type === 'warning' || notif.type === 'error' || notif.id === 'sys-low-stock' || notif.id === 'sys-expiry-warning';
     }
     if (notificationFilter === 'pending') {
-      return notif.id === 'sys-transfer-warning' || notif.title.includes('تحويل') || notif.title.includes('مهمة') || notif.body.includes('طلب');
+      return notif.id === 'sys-transfer-warning' || (notif.title || '').includes('تحويل') || (notif.title || '').includes('مهمة') || (notif.body || '').includes('طلب');
     }
     if (notificationFilter === 'system') {
-      const isPending = notif.id === 'sys-transfer-warning' || notif.title.includes('تحويل') || notif.title.includes('مهمة') || notif.body.includes('طلب');
+      const isPending = notif.id === 'sys-transfer-warning' || (notif.title || '').includes('تحويل') || (notif.title || '').includes('مهمة') || (notif.body || '').includes('طلب');
       const isAlert = notif.type === 'warning' || notif.type === 'error' || notif.id === 'sys-low-stock' || notif.id === 'sys-expiry-warning';
       return !isPending && !isAlert;
     }
@@ -1720,14 +1731,22 @@ export default function App() {
               <div className="group relative">
                 <button
                   onClick={() => setIsNotificationsOpen(prev => !prev)}
-                  className={`p-2 rounded-xl transition-all cursor-pointer flex items-center justify-center relative ${
+                  className={`p-2 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 justify-center relative ${
                     isNotificationsOpen 
                       ? 'bg-blue-600/10 text-blue-600 dark:text-blue-400' 
                       : (isDarkMode ? 'hover:bg-slate-800 text-slate-300 hover:text-white' : 'hover:bg-white text-slate-600 hover:text-slate-900 hover:shadow-2xs')
                   }`}
-                  title={currentLanguage === 'ar' ? 'التنبيهات والفعاليات' : 'Notifications & Events'}
+                  title={currentLanguage === 'ar' 
+                    ? (totalNotificationsBadgeCount === 0 ? 'لا يوجد أي إشعارات جديدة' : 'التنبيهات والفعاليات') 
+                    : (totalNotificationsBadgeCount === 0 ? 'No new notifications' : 'Notifications & Events')
+                  }
                 >
                   <Bell size={17} className="stroke-[2.5]" />
+                  {totalNotificationsBadgeCount === 0 && (
+                    <span className="text-[10px] font-black text-slate-500 dark:text-slate-400 hidden sm:inline-block px-1">
+                      {currentLanguage === 'ar' ? 'لا يوجد أي إشعارات جديدة' : 'No new notifications'}
+                    </span>
+                  )}
                   {totalNotificationsBadgeCount > 0 && (
                     <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-black w-4.5 h-4.5 rounded-full flex items-center justify-center animate-bounce">
                       {totalNotificationsBadgeCount}
@@ -1736,7 +1755,10 @@ export default function App() {
                 </button>
                 {/* Tooltip */}
                 <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 hidden group-hover:block bg-slate-950 dark:bg-slate-850 text-white text-[10px] font-bold px-2.5 py-1.5 rounded-lg shadow-xl whitespace-nowrap z-50 pointer-events-none border border-white/10">
-                  {currentLanguage === 'ar' ? 'مركز التنبيهات 🔔' : 'Notifications 🔔'}
+                  {currentLanguage === 'ar' 
+                    ? (totalNotificationsBadgeCount === 0 ? 'لا يوجد أي إشعارات جديدة' : 'مركز التنبيهات 🔔') 
+                    : (totalNotificationsBadgeCount === 0 ? 'No new notifications' : 'Notifications 🔔')
+                  }
                 </div>
               </div>
             </div>
@@ -1818,7 +1840,7 @@ export default function App() {
               >
                 <AlertTriangle size={11} className="shrink-0" />
                 <span>{currentLanguage === 'ar' ? 'تنبيهات' : 'Alerts'}</span>
-                <span>({notifications.filter(n => n.type === 'warning' || n.type === 'error' || n.id === 'sys-low-stock' || n.id === 'sys-expiry-warning').length})</span>
+                <span>({notifications.filter(n => n && (n.type === 'warning' || n.type === 'error' || n.id === 'sys-low-stock' || n.id === 'sys-expiry-warning')).length})</span>
               </button>
               <button
                 onClick={() => setNotificationFilter('pending')}
@@ -1830,7 +1852,7 @@ export default function App() {
               >
                 <ArrowLeftRight size={11} className="shrink-0" />
                 <span>{currentLanguage === 'ar' ? 'مهام معلقة' : 'Pending Tasks'}</span>
-                <span>({notifications.filter(n => n.id === 'sys-transfer-warning' || n.title.includes('تحويل') || n.title.includes('مهمة') || n.body.includes('طلب')).length})</span>
+                <span>({notifications.filter(n => n && (n.id === 'sys-transfer-warning' || (n.title || '').includes('تحويل') || (n.title || '').includes('مهمة') || (n.body || '').includes('طلب'))).length})</span>
               </button>
               <button
                 onClick={() => setNotificationFilter('system')}
@@ -1843,7 +1865,8 @@ export default function App() {
                 <SettingsIcon size={11} className="shrink-0" />
                 <span>{currentLanguage === 'ar' ? 'تحديثات نظام' : 'System Updates'}</span>
                 <span>({notifications.filter(n => {
-                  const isPending = n.id === 'sys-transfer-warning' || n.title.includes('تحويل') || n.title.includes('مهمة') || n.body.includes('طلب');
+                  if (!n) return false;
+                  const isPending = n.id === 'sys-transfer-warning' || (n.title || '').includes('تحويل') || (n.title || '').includes('مهمة') || (n.body || '').includes('طلب');
                   const isAlert = n.type === 'warning' || n.type === 'error' || n.id === 'sys-low-stock' || n.id === 'sys-expiry-warning';
                   return !isPending && !isAlert;
                 }).length})</span>
@@ -1987,14 +2010,30 @@ export default function App() {
                       
                       <div className="flex-1 space-y-0.5 min-w-0">
                         <div className="flex items-center justify-between gap-2">
-                          <span className="text-[10px] font-bold text-slate-400 font-mono">{log.timestamp.split('T')[0] || log.timestamp}</span>
-                          <span className="text-[10px] font-black text-slate-500 dark:text-slate-400">بواسطة: {log.user}</span>
+                          <span className="text-[10px] font-bold text-slate-400 font-mono">{(log.date || '').split('T')[0] || log.date}</span>
+                          <span className="text-[10px] font-black text-slate-500 dark:text-slate-400">
+                            {currentLanguage === 'ar' ? 'بواسطة:' : 'By:'} {log.username}
+                          </span>
                         </div>
                         <p className="text-[11px] font-bold text-slate-700 dark:text-slate-300 leading-relaxed truncate">
                           {log.details}
                         </p>
                         <span className="text-[9px] px-2 py-0.5 rounded-full font-bold bg-slate-100 dark:bg-slate-900 text-slate-400 dark:text-slate-500 inline-block font-mono">
-                          {log.section}
+                          {currentLanguage === 'ar' ? (
+                            log.entityType === 'items' ? 'الأصناف' :
+                            log.entityType === 'movements' ? 'الحركات' :
+                            log.entityType === 'suppliers' ? 'الموردين' :
+                            log.entityType === 'warehouses' ? 'المستودعات' :
+                            log.entityType === 'transfers' ? 'التحويلات' :
+                            log.entityType === 'system' ? 'النظام' : log.entityType
+                          ) : (
+                            log.entityType === 'items' ? 'Items' :
+                            log.entityType === 'movements' ? 'Movements' :
+                            log.entityType === 'suppliers' ? 'Suppliers' :
+                            log.entityType === 'warehouses' ? 'Warehouses' :
+                            log.entityType === 'transfers' ? 'Transfers' :
+                            log.entityType === 'system' ? 'System' : log.entityType
+                          )}
                         </span>
                       </div>
                     </div>

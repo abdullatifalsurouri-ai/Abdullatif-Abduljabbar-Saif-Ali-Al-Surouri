@@ -11,6 +11,7 @@ export function getTranslation(lang: LanguageType) {
  * Example: t('dashboardStats.totalItems')
  */
 export function t(key: string, lang: LanguageType): string {
+  if (!key || typeof key !== 'string') return '';
   const dictionary = locales[lang] || locales.ar;
   const parts = key.split('.');
   
