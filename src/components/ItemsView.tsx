@@ -38,6 +38,7 @@ export default function ItemsView({
   const [editingItem, setEditingItem] = useState<Item | null>(null);
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
   const [previewPhoto, setPreviewPhoto] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
 
   // Microphone Voice Search State & Implementation
   const [isListening, setIsListening] = useState(false);
@@ -468,7 +469,7 @@ export default function ItemsView({
                       className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/50 px-4 py-3 rounded-2xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer shadow-2xs hover:scale-105 active:scale-95 whitespace-nowrap"
                       title="استيراد قائمة أصناف كاملة من ملف CSV"
                     >
-                      <UploadCloud size={15} className="stroke-[2.5]" />
+                      <UploadCloud size={12} className="stroke-[2.5]" />
                       <span>استيراد (CSV) 📥</span>
                     </button>
                   </div>
@@ -478,7 +479,7 @@ export default function ItemsView({
                     className="bg-teal-50 hover:bg-teal-100 text-teal-700 border border-teal-200/50 px-4 py-3 rounded-2xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer shadow-2xs hover:scale-105 active:scale-95 whitespace-nowrap"
                     title="تصدير قائمة أصناف كاملة إلى ملف CSV"
                   >
-                    <Download size={15} className="stroke-[2.5]" />
+                    <Download size={12} className="stroke-[2.5]" />
                     <span>تصدير (CSV) 📤</span>
                   </button>
                 </>
@@ -675,25 +676,49 @@ export default function ItemsView({
           </div>
         )}
 
-        {/* Categories Row (Group quick selection) */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 select-none no-scrollbar border-t border-slate-100/70 pt-3">
-          <span className="text-slate-400 text-xs font-bold whitespace-nowrap flex items-center gap-1 ml-1.5">
-            <Filter size={13} className="stroke-[2.5]" />
-            التصنيف السريع:
-          </span>
-          {categories.map((cat) => (
+        {/* Categories & View Mode Row */}
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 border-t border-slate-100/70 pt-3">
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 select-none no-scrollbar flex-1">
+            <span className="text-slate-400 text-xs font-bold whitespace-nowrap flex items-center gap-1 ml-1.5">
+              <Filter size={13} className="stroke-[2.5]" />
+              التصنيف السريع:
+            </span>
+            {categories.map((cat) => (
+              <button
+                key={cat}
+                onClick={() => setSelectedCategory(cat)}
+                className={`text-xs font-extrabold px-3.5 py-2 rounded-xl transition-all whitespace-nowrap cursor-pointer ${
+                  selectedCategory === cat
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200/50 hover:border-slate-300'
+                }`}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
+
+          {/* Table vs Cards Toggle */}
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl self-end md:self-auto shrink-0">
             <button
-              key={cat}
-              onClick={() => setSelectedCategory(cat)}
-              className={`text-xs font-extrabold px-3.5 py-2 rounded-xl transition-all whitespace-nowrap cursor-pointer ${
-                selectedCategory === cat
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200/50 hover:border-slate-300'
+              type="button"
+              onClick={() => setViewMode('cards')}
+              className={`text-[10px] font-black px-3 py-1.5 rounded-lg transition-all flex items-center gap-1 cursor-pointer ${
+                viewMode === 'cards' ? 'bg-white text-blue-600 shadow-xs' : 'text-slate-500 hover:text-slate-700'
               }`}
             >
-              {cat}
+              <span>🗂️ عرض البطاقات</span>
             </button>
-          ))}
+            <button
+              type="button"
+              onClick={() => setViewMode('table')}
+              className={`text-[10px] font-black px-3 py-1.5 rounded-lg transition-all flex items-center gap-1 cursor-pointer ${
+                viewMode === 'table' ? 'bg-white text-blue-600 shadow-xs' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <span>📊 عرض الجدول</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -703,6 +728,99 @@ export default function ItemsView({
           <div className="bg-white border border-slate-100 rounded-3xl p-10 text-center text-slate-400">
             <p className="text-sm font-semibold">لم يتم العثور على أي أصناف</p>
             <p className="text-xs mt-1">أضف أصنافًا جديدة أو عدّل خيارات البحث والتصفية</p>
+          </div>
+        ) : viewMode === 'table' ? (
+          <div className="border border-slate-200 rounded-3xl overflow-x-auto bg-white shadow-xs">
+            <table className="w-full text-right border-collapse text-xs">
+              <thead>
+                <tr className="bg-slate-100 border-b border-slate-200 font-black text-slate-700">
+                  {/* Sticky right columns for name/id */}
+                  <th className="p-4 text-right sticky right-0 bg-slate-100 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] min-w-[120px]">رمز الصنف</th>
+                  <th className="p-4 text-right sticky right-[120px] bg-slate-100 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] min-w-[150px]">اسم الصنف</th>
+                  <th className="p-4 text-right min-w-[100px]">الفئة</th>
+                  <th className="p-4 text-right min-w-[100px]">الرصيد الحالي</th>
+                  <th className="p-4 text-right min-w-[100px]">سعر الوحدة</th>
+                  <th className="p-4 text-right min-w-[120px]">القيمة الإجمالية</th>
+                  <th className="p-4 text-right min-w-[120px]">حد الأمان</th>
+                  <th className="p-4 text-right min-w-[150px]">تاريخ الصلاحية</th>
+                  <th className="p-4 text-center min-w-[120px]">الإجراءات</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 font-medium text-slate-600">
+                {filteredItems.map((item) => {
+                  const balance = movements
+                    ? movements
+                        .filter(m => m.itemId === item.id)
+                        .reduce((sum, m) => sum + (m.type === 'in' ? m.quantity : -m.quantity), 0)
+                    : 0;
+                  
+                  return (
+                    <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
+                      <td className="p-4 font-mono font-bold text-slate-900 sticky right-0 bg-white z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">{item.id}</td>
+                      <td className="p-4 font-bold text-slate-800 sticky right-[120px] bg-white z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">{item.name}</td>
+                      <td className="p-4">
+                        <span className="bg-slate-100 text-slate-600 text-[10px] font-bold px-2 py-1 rounded-lg">
+                          {item.category || 'غير محدد'}
+                        </span>
+                      </td>
+                      <td className="p-4">
+                        <span className={`font-mono font-bold text-xs px-2.5 py-1 rounded-lg ${
+                          balance === 0 
+                            ? 'bg-rose-50 text-rose-600' 
+                            : balance <= item.safetyLimit 
+                              ? 'bg-amber-50 text-amber-600' 
+                              : 'bg-emerald-50 text-emerald-600'
+                        }`}>
+                          {balance} {item.unit}
+                        </span>
+                      </td>
+                      <td className="p-4 font-mono">{item.price} {item.currency || 'ر.س'}</td>
+                      <td className="p-4 font-mono font-bold text-blue-600">{(balance * item.price).toLocaleString()} {item.currency || 'ر.س'}</td>
+                      <td className="p-4 font-mono">{item.safetyLimit}</td>
+                      <td className="p-4 text-xs">
+                        {item.expirationDate ? (
+                          <span className={balance <= item.safetyLimit ? 'text-rose-600 font-bold' : 'text-slate-500'}>
+                            {item.expirationDate}
+                          </span>
+                        ) : (
+                          <span className="text-slate-300">-</span>
+                        )}
+                      </td>
+                      <td className="p-4">
+                        <div className="flex items-center justify-center gap-1.5">
+                          {isDataLocked ? (
+                            <span className="text-amber-600 bg-amber-50 text-[9px] font-bold px-2 py-1 rounded-lg">عرض فقط</span>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEdit(item)}
+                                className="bg-slate-100 hover:bg-blue-50 text-slate-500 hover:text-blue-600 p-1.5 rounded-lg transition-all cursor-pointer"
+                                title="تعديل"
+                              >
+                                <Edit2 size={13} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (confirm(`هل أنت متأكد من حذف الصنف "${item.name}"؟`)) {
+                                    onDeleteItem(item.id);
+                                  }
+                                }}
+                                className="bg-slate-100 hover:bg-red-50 text-slate-400 hover:text-red-600 p-1.5 rounded-lg transition-all cursor-pointer"
+                                title="حذف"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         ) : (
           <VirtualList

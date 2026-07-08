@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { TrendingUp, FileText, Calendar, Box, Users, BarChart3, ArrowUpRight, ArrowDownLeft, Printer, Filter, Download } from 'lucide-react';
 import { Item, Movement, Supplier, ReportFilterType, Warehouse, InvoiceSettings, User } from '../types';
+import * as XLSX from 'xlsx';
 import {
   ResponsiveContainer,
   AreaChart,
@@ -272,6 +273,70 @@ export default function ReportView({ items, movements, suppliers, warehouses = [
     document.body.removeChild(link);
   };
 
+  const handleExcelExport = () => {
+    const wb = XLSX.utils.book_new();
+
+    // 1. First Sheet: Active Report Data
+    let reportHeaders: string[] = [];
+    let reportRows: any[][] = [];
+    let reportSheetName = "التقرير الحالي";
+
+    if (activeFilter === 'monthly') {
+      reportSheetName = "ملخص الجرد الشهري";
+      reportHeaders = ['اسم الصنف', 'رمز الصنف', 'الوارد', 'الصرف', 'الرصيد'];
+      reportRows = itemsReportData.map(item => [item.name, item.code, item.inward, item.outward, item.balance]);
+    } else if (activeFilter === 'top-moving') {
+      reportSheetName = "الأصناف الأكثر حركة";
+      reportHeaders = ['الترتيب', 'اسم الصنف', 'رمز الصنف', 'التصنيف', 'الوارد', 'الصرف', 'مجموع الكمية المتحركة'];
+      reportRows = topMovingItems.map((item, idx) => [
+        idx + 1,
+        item.item.name,
+        item.item.id,
+        item.item.category || '',
+        item.inQty,
+        item.outQty,
+        item.totalQty
+      ]);
+    } else if (activeFilter === 'items') {
+      reportSheetName = "تقرير حركة الأصناف";
+      reportHeaders = ['اسم الصنف', 'رمز الصنف', 'إجمالي الوارد', 'إجمالي الصرف', 'صافي المخزون'];
+      reportRows = itemsReportData.map(item => [item.name, item.code, item.inward, item.outward, item.balance]);
+    } else if (activeFilter === 'suppliers') {
+      reportSheetName = "تقرير الشركاء والموردين";
+      reportHeaders = ['اسم الشريك', 'تأمين وارد', 'سحب صرف', 'صافي الحركات'];
+      reportRows = partnersReportData.map(partner => [partner.name, partner.inward, partner.outward, partner.balance]);
+    }
+
+    const reportDataArray = [reportHeaders, ...reportRows];
+    const wsReport = XLSX.utils.aoa_to_sheet(reportDataArray);
+    XLSX.utils.book_append_sheet(wb, wsReport, reportSheetName);
+
+    // 2. Second Sheet: Movements Log during this period (سجل حركات المخزن المصفى)
+    const movementsHeaders = ['معرف الحركة', 'رمز الصنف', 'اسم الصنف', 'نوع الحركة', 'الكمية', 'الطرف الآخر/الشريك', 'التاريخ', 'المستودع'];
+    const movementsRows = filteredMovementsByDate.map((m) => {
+      const item = items.find((i) => i.id === m.itemId);
+      const warehouse = warehouses.find((w) => w.id === m.warehouseId);
+      return [
+        m.id,
+        m.itemId,
+        item ? item.name : 'غير معروف',
+        m.type === 'in' ? 'وارد (توريد)' : 'صرف (تصدير)',
+        m.quantity,
+        m.partner,
+        m.date,
+        warehouse ? warehouse.name : (m.warehouseId || 'غير محدد')
+      ];
+    });
+
+    const movementsDataArray = [movementsHeaders, ...movementsRows];
+    const wsMovements = XLSX.utils.aoa_to_sheet(movementsDataArray);
+    XLSX.utils.book_append_sheet(wb, wsMovements, "سجل الحركات المشمولة");
+
+    // Save the Excel workbook
+    const filename = `تقرير_جرد_مستودع_${activeFilter}_${startDate}_إلى_${endDate}.xlsx`;
+    XLSX.writeFile(wb, filename);
+  };
+
   return (
     <div className="space-y-6 animate-fade-in text-right" dir="rtl">
       
@@ -282,6 +347,14 @@ export default function ReportView({ items, movements, suppliers, warehouses = [
           <p className="text-slate-500 font-medium text-sm mt-0.5">تحليل شامل للتدفقات المخزنية والرسوم البيانية التفاعلية لحركات الوارد والصرف</p>
         </div>
         <div className="flex items-center gap-2.5 self-start sm:self-center">
+          <button
+            onClick={handleExcelExport}
+            className="bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-black px-5 py-3 rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xs shrink-0 hover:scale-105 active:scale-95"
+            title="تصدير بيانات التقرير والحركات المصفاة إلى ملف Excel ذو أوراق عمل متعددة"
+          >
+            <Download size={16} className="stroke-[2.5]" />
+            <span>تصدير إلى Excel (XLSX) 📊</span>
+          </button>
           <button
             onClick={handleCSVExport}
             className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black px-5 py-3 rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xs shrink-0 hover:scale-105 active:scale-95"

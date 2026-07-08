@@ -101,3 +101,75 @@ self.addEventListener('fetch', (event) => {
     );
   }
 });
+
+// Periodic background worker: checks inventory every hour and triggers Web Notifications when low stock is found
+async function checkInventoryStock() {
+  try {
+    const response = await fetch('/api/sync/pull');
+    if (!response.ok) throw new Error('Failed to pull sync data in background');
+    const data = await response.json();
+    if (data && Array.isArray(data.items) && Array.isArray(data.movements)) {
+      const items = data.items;
+      const movements = data.movements;
+      
+      const lowStockItems = [];
+      for (const item of items) {
+        const inward = movements
+          .filter(m => m.itemId === item.id && m.type === 'in')
+          .reduce((sum, m) => sum + m.quantity, 0);
+        const outward = movements
+          .filter(m => m.itemId === item.id && m.type === 'out')
+          .reduce((sum, m) => sum + m.quantity, 0);
+        const balance = inward - outward;
+        
+        if (balance < (item.safetyLimit || 0)) {
+          lowStockItems.push({ name: item.name, balance, limit: item.safetyLimit });
+        }
+      }
+      
+      if (lowStockItems.length > 0) {
+        const names = lowStockItems.map(i => `${i.name} (المتبقي: ${i.balance})`).slice(0, 3).join('، ');
+        const suffix = lowStockItems.length > 3 ? ` و ${lowStockItems.length - 3} أصناف أخرى` : '';
+        
+        // Ensure permission is granted in the background context
+        if (self.registration && self.Notification && self.Notification.permission === 'granted') {
+          self.registration.showNotification('تنبيه المخزون الحرج ⚠️', {
+            body: `الأصناف التالية تحت حد الأمان: ${names}${suffix}`,
+            icon: '/icon.svg',
+            badge: '/icon.svg',
+            vibrate: [200, 100, 200],
+            data: { url: '/' }
+          });
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Background stock check failed:', err);
+  }
+}
+
+// Check on activate, then every 1 hour (3600000 ms)
+setTimeout(() => {
+  checkInventoryStock();
+  setInterval(checkInventoryStock, 3600000);
+}, 10000);
+
+// Listen for manual trigger message to test notifications
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'CHECK_STOCK_NOW') {
+    checkInventoryStock();
+  }
+});
+
+// Handle notification click: open or focus the app
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      if (clientList.length > 0) {
+        return clientList[0].focus();
+      }
+      return clients.openWindow('/');
+    })
+  );
+});

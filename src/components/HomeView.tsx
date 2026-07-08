@@ -23,6 +23,19 @@ import {
   TrendingUp
 } from 'lucide-react';
 import { Item, Movement, Supplier, User, AuditLogEntry } from '../types';
+import { 
+  ResponsiveContainer, 
+  BarChart, 
+  Bar, 
+  LineChart, 
+  Line, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  Legend 
+} from 'recharts';
+import { t } from '../utils/i18n';
 
 interface HomeViewProps {
   items: Item[];
@@ -36,6 +49,7 @@ interface HomeViewProps {
   onResetData: () => void;
   currentUser: User;
   auditLogs: AuditLogEntry[];
+  currentLanguage: 'ar' | 'en';
   dashboardStatsConfig: {
     showSuppliers: boolean;
     showItems: boolean;
@@ -59,6 +73,7 @@ export default function HomeView({
   onResetData,
   currentUser,
   auditLogs = [],
+  currentLanguage,
   dashboardStatsConfig,
 }: HomeViewProps) {
   // PWA installation state
@@ -498,6 +513,116 @@ export default function HomeView({
             <p className="text-2xl font-black text-rose-600 mt-1">{shortCount}</p>
           </div>
         )}
+
+      </div>
+
+      {/* Interactive Charts Section (Recharts) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        
+        {/* Chart 1: Stock Movements Trends */}
+        <div className="bg-white border border-slate-100 rounded-3xl p-5 hover:shadow-md transition-all space-y-4">
+          <div className="flex items-center justify-between pb-2 border-b border-slate-50">
+            <div className="text-right w-full">
+              <h3 className="font-extrabold text-slate-800 text-sm sm:text-base">
+                {t('dashboardStats.stockTrends', currentLanguage)}
+              </h3>
+              <p className="text-[11px] text-slate-400 font-semibold mt-0.5">
+                {t('dashboardStats.trendsSubtitle', currentLanguage)}
+              </p>
+            </div>
+          </div>
+          
+          <div className="h-64 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={(() => {
+                const dataMap: { [key: string]: { date: string; inward: number; outward: number; balance: number } } = {};
+                const today = new Date();
+                
+                for (let i = 14; i >= 0; i--) {
+                  const d = new Date();
+                  d.setDate(today.getDate() - i);
+                  const dateStr = d.toISOString().split('T')[0];
+                  const label = currentLanguage === 'ar' 
+                    ? d.toLocaleDateString('ar-EG', { day: 'numeric', month: 'short' })
+                    : d.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
+                  dataMap[dateStr] = { date: label, inward: 0, outward: 0, balance: 0 };
+                }
+                
+                movements.forEach(m => {
+                  if (dataMap[m.date]) {
+                    if (m.type === 'in') {
+                      dataMap[m.date].inward += m.quantity;
+                    } else if (m.type === 'out') {
+                      dataMap[m.date].outward += m.quantity;
+                    }
+                  }
+                });
+
+                let accum = 0;
+                const sortedKeys = Object.keys(dataMap).sort();
+                sortedKeys.forEach(k => {
+                  accum += (dataMap[k].inward - dataMap[k].outward);
+                  dataMap[k].balance = Math.max(0, accum);
+                });
+
+                return Object.values(dataMap);
+              })()}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#64748b', fontWeight: 'bold' }} stroke="#cbd5e1" />
+                <YAxis tick={{ fontSize: 10, fill: '#64748b', fontWeight: 'bold' }} stroke="#cbd5e1" />
+                <Tooltip contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '11px', fontWeight: 'bold' }} />
+                <Legend wrapperStyle={{ fontSize: '11px', fontWeight: 'bold' }} />
+                <Line type="monotone" dataKey="inward" name={currentLanguage === 'ar' ? 'الوارد' : 'Inward'} stroke="#10b981" strokeWidth={2.5} activeDot={{ r: 6 }} />
+                <Line type="monotone" dataKey="outward" name={currentLanguage === 'ar' ? 'الصادر' : 'Outward'} stroke="#f97316" strokeWidth={2.5} activeDot={{ r: 6 }} />
+                <Line type="monotone" dataKey="balance" name={currentLanguage === 'ar' ? 'الرصيد التراكمي' : 'Balance'} stroke="#3b82f6" strokeWidth={1.5} strokeDasharray="4 4" />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Chart 2: Inventory Turnover Rate */}
+        <div className="bg-white border border-slate-100 rounded-3xl p-5 hover:shadow-md transition-all space-y-4">
+          <div className="flex items-center justify-between pb-2 border-b border-slate-50">
+            <div className="text-right w-full">
+              <h3 className="font-extrabold text-slate-800 text-sm sm:text-base">
+                {t('dashboardStats.stockTurnover', currentLanguage)}
+              </h3>
+              <p className="text-[11px] text-slate-400 font-semibold mt-0.5">
+                {t('dashboardStats.turnoverSubtitle', currentLanguage)}
+              </p>
+            </div>
+          </div>
+          
+          <div className="h-64 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={items.map(item => {
+                const itemMovements = movements.filter(m => m.itemId === item.id);
+                const inward = itemMovements.filter(m => m.type === 'in').reduce((sum, m) => sum + m.quantity, 0);
+                const outward = itemMovements.filter(m => m.type === 'out').reduce((sum, m) => sum + m.quantity, 0);
+                const currentStock = Math.max(0, inward - outward);
+                const avgStock = Math.max(1, (inward + currentStock) / 2);
+                const turnoverRate = parseFloat((outward / avgStock).toFixed(2));
+                return {
+                  name: item.name.length > 12 ? item.name.slice(0, 12) + '..' : item.name,
+                  [currentLanguage === 'ar' ? 'معدل الدوران' : 'Turnover Rate']: turnoverRate,
+                  [currentLanguage === 'ar' ? 'المخزون الحالي' : 'Stock Level']: currentStock
+                };
+              }).filter(d => {
+                const tr = d[currentLanguage === 'ar' ? 'معدل الدوران' : 'Turnover Rate'] as number;
+                const sl = d[currentLanguage === 'ar' ? 'المخزون الحالي' : 'Stock Level'] as number;
+                return tr > 0 || sl > 0;
+              }).slice(0, 6)}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                <XAxis dataKey="name" tick={{ fontSize: 8, fill: '#64748b', fontWeight: 'bold' }} stroke="#cbd5e1" />
+                <YAxis tick={{ fontSize: 10, fill: '#64748b', fontWeight: 'bold' }} stroke="#cbd5e1" />
+                <Tooltip contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '11px', fontWeight: 'bold' }} />
+                <Legend wrapperStyle={{ fontSize: '11px', fontWeight: 'bold' }} />
+                <Bar dataKey={currentLanguage === 'ar' ? 'معدل الدوران' : 'Turnover Rate'} fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={18} />
+                <Bar dataKey={currentLanguage === 'ar' ? 'المخزون الحالي' : 'Stock Level'} fill="#6366f1" radius={[4, 4, 0, 0]} barSize={18} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
 
       </div>
 

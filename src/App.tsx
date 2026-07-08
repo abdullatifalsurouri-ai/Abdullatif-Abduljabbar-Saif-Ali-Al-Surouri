@@ -23,6 +23,7 @@ import {
   Layers,
   Info,
   AlertTriangle,
+  Calendar,
   X
 } from 'lucide-react';
 import { AboutModal } from './components/AboutModal';
@@ -118,6 +119,7 @@ export default function App() {
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showInstallBtn, setShowInstallBtn] = useState(false);
   const [showExitModal, setShowExitModal] = useState(false);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -856,11 +858,12 @@ export default function App() {
 
   // User permission-aware lock status calculations
   // Reuses the existing client locking logic to enforce role permissions elegantly
-  const itemsLocked = isDataLocked || !currentUser || currentUser.permissions.items === 'read' || currentUser.permissions.items === 'none';
-  const movementsLocked = isDataLocked || !currentUser || currentUser.permissions.movements === 'read' || currentUser.permissions.movements === 'none';
-  const suppliersLocked = isDataLocked || !currentUser || currentUser.permissions.suppliers === 'read' || currentUser.permissions.suppliers === 'none';
-  const warehousesLocked = isDataLocked || !currentUser || currentUser.permissions.warehouses === 'read' || currentUser.permissions.warehouses === 'none';
-  const transfersLocked = isDataLocked || !currentUser || currentUser.permissions.transfers === 'read' || currentUser.permissions.transfers === 'none';
+  const isOwner = currentUser?.role === 'Owner';
+  const itemsLocked = !isOwner && (isDataLocked || !currentUser || currentUser.permissions.items === 'read' || currentUser.permissions.items === 'none');
+  const movementsLocked = !isOwner && (isDataLocked || !currentUser || currentUser.permissions.movements === 'read' || currentUser.permissions.movements === 'none');
+  const suppliersLocked = !isOwner && (isDataLocked || !currentUser || currentUser.permissions.suppliers === 'read' || currentUser.permissions.suppliers === 'none');
+  const warehousesLocked = !isOwner && (isDataLocked || !currentUser || currentUser.permissions.warehouses === 'read' || currentUser.permissions.warehouses === 'none');
+  const transfersLocked = !isOwner && (isDataLocked || !currentUser || currentUser.permissions.transfers === 'read' || currentUser.permissions.transfers === 'none');
 
   // Handler functions for adding/modifying/deleting items
   const handleAddItem = (item: Item) => {
@@ -1176,13 +1179,17 @@ export default function App() {
             }}
             onNavigate={(tab) => {
               // Ensure navigation is permitted
-              if (tab === 'items' && currentUser.permissions.items === 'none') return;
-              if (tab === 'movements' && currentUser.permissions.movements === 'none') return;
-              if ((tab === 'inventory' || tab === 'report' || tab === 'print') && currentUser.permissions.reports === 'none') return;
+              const isOwnerUser = currentUser?.role === 'Owner';
+              if (!isOwnerUser) {
+                if (tab === 'items' && currentUser.permissions.items === 'none') return;
+                if (tab === 'movements' && currentUser.permissions.movements === 'none') return;
+                if ((tab === 'inventory' || tab === 'report' || tab === 'print') && currentUser.permissions.reports === 'none') return;
+              }
               setActiveTab(tab);
             }}
             onOpenSuppliers={() => {
-              if (currentUser.permissions.suppliers !== 'none') {
+              const isOwnerUser = currentUser?.role === 'Owner';
+              if (isOwnerUser || currentUser.permissions.suppliers !== 'none') {
                 setIsSuppliersOpen(true);
               } else {
                 alert('عذراً، صلاحية الوصول لسجلات الموردين محجوبة عن حسابك الحالي.');
@@ -1206,11 +1213,12 @@ export default function App() {
             }}
             currentUser={currentUser}
             auditLogs={auditLogs}
+            currentLanguage={currentLanguage}
             dashboardStatsConfig={dashboardStatsConfig}
           />
         );
       case 'items':
-        if (currentUser.permissions.items === 'none') return <div className="text-center py-12 text-slate-400 font-bold">🔒 عذراً، تصفح الأصناف غير متاح لحسابك الحالي.</div>;
+        if (currentUser?.role !== 'Owner' && currentUser.permissions.items === 'none') return <div className="text-center py-12 text-slate-400 font-bold">🔒 عذراً، تصفح الأصناف غير متاح لحسابك الحالي.</div>;
         return (
           <ItemsView
             items={items}
@@ -1224,7 +1232,7 @@ export default function App() {
           />
         );
       case 'movements':
-        if (currentUser.permissions.movements === 'none') return <div className="text-center py-12 text-slate-400 font-bold">🔒 عذراً، تصفح الحركات غير متاح لحسابك الحالي.</div>;
+        if (currentUser?.role !== 'Owner' && currentUser.permissions.movements === 'none') return <div className="text-center py-12 text-slate-400 font-bold">🔒 عذراً، تصفح الحركات غير متاح لحسابك الحالي.</div>;
         return (
           <MovementsView
             movements={movements}
@@ -1238,7 +1246,7 @@ export default function App() {
           />
         );
       case 'warehouses':
-        if (currentUser.permissions.warehouses === 'none') return <div className="text-center py-12 text-slate-400 font-bold">🔒 عذراً، تصفح المستودعات غير متاح لحسابك الحالي.</div>;
+        if (currentUser?.role !== 'Owner' && currentUser.permissions.warehouses === 'none') return <div className="text-center py-12 text-slate-400 font-bold">🔒 عذراً، تصفح المستودعات غير متاح لحسابك الحالي.</div>;
         return (
           <WarehousesView
             warehouses={warehouses}
@@ -1252,7 +1260,7 @@ export default function App() {
           />
         );
       case 'transfers':
-        if (currentUser.permissions.transfers === 'none') return <div className="text-center py-12 text-slate-400 font-bold">🔒 عذراً، تحويلات المستودعات غير متاحة لحسابك الحالي.</div>;
+        if (currentUser?.role !== 'Owner' && currentUser.permissions.transfers === 'none') return <div className="text-center py-12 text-slate-400 font-bold">🔒 عذراً، تحويلات المستودعات غير متاحة لحسابك الحالي.</div>;
         return (
           <TransfersView
             transfers={transfers}
@@ -1266,13 +1274,23 @@ export default function App() {
           />
         );
       case 'inventory':
-        if (currentUser.permissions.reports === 'none') return <div className="text-center py-12 text-slate-400 font-bold">🔒 عذراً، تصفح الجرد مخفي عن حسابك الحالي.</div>;
-        return <InventoryView items={items} movements={movements} warehouses={warehouses} />;
+        if (currentUser?.role !== 'Owner' && currentUser.permissions.reports === 'none') return <div className="text-center py-12 text-slate-400 font-bold">🔒 عذراً، تصفح الجرد مخفي عن حسابك الحالي.</div>;
+        return (
+          <InventoryView
+            items={items}
+            movements={movements}
+            warehouses={warehouses}
+            invoiceSettings={invoiceSettings}
+            currentUser={currentUser}
+            onAddMovement={handleAddMovement}
+            isDataLocked={movementsLocked}
+          />
+        );
       case 'report':
-        if (currentUser.permissions.reports === 'none') return <div className="text-center py-12 text-slate-400 font-bold">🔒 عذراً، التقارير غير متاحة لحسابك الحالي.</div>;
+        if (currentUser?.role !== 'Owner' && currentUser.permissions.reports === 'none') return <div className="text-center py-12 text-slate-400 font-bold">🔒 عذراً، التقارير غير متاحة لحسابك الحالي.</div>;
         return <ReportView items={items} movements={movements} suppliers={suppliers} warehouses={warehouses} invoiceSettings={invoiceSettings} currentUser={currentUser} />;
       case 'print':
-        if (currentUser.permissions.reports === 'none') return <div className="text-center py-12 text-slate-400 font-bold">🔒 عذراً، السندات غير متاحة لحسابك الحالي.</div>;
+        if (currentUser?.role !== 'Owner' && currentUser.permissions.reports === 'none') return <div className="text-center py-12 text-slate-400 font-bold">🔒 عذراً، السندات غير متاحة لحسابك الحالي.</div>;
         return <PrintView movements={movements} items={items} warehouses={warehouses} invoiceSettings={invoiceSettings} currentUser={currentUser} />;
       case 'settings':
         return (
@@ -1308,6 +1326,7 @@ export default function App() {
               // Save it local, and also immediately trigger background push to sync
               pushDataToServer(items, suppliers, movements, warehouses, transfers, auditLogs, false);
             }}
+            currentLanguage={currentLanguage}
           />
         );
       default:
@@ -1358,6 +1377,34 @@ export default function App() {
   const pendingIncomingTransfersCount = transfers.filter(
     (tr) => tr.status === 'pending' && managedWarehouseIds.includes(tr.toWarehouseId)
   ).length;
+
+  // Calculate active alerts dynamically for the notification hub
+  const lowStockCount = items.map(item => {
+    const inward = movements
+      .filter(m => m.itemId === item.id && m.type === 'in')
+      .reduce((sum, m) => sum + m.quantity, 0);
+    const outward = movements
+      .filter(m => m.itemId === item.id && m.type === 'out')
+      .reduce((sum, m) => sum + m.quantity, 0);
+    return {
+      ...item,
+      balance: inward - outward
+    };
+  }).filter(item => item.balance < item.safetyLimit).length;
+
+  const todayDate = new Date();
+  const alertDays = (expirationAlertMonths || 1) * 30;
+  const expiryLimitDate = new Date();
+  expiryLimitDate.setDate(todayDate.getDate() + alertDays);
+
+  const expiredCount = items.filter(item => item.expirationDate && new Date(item.expirationDate) <= todayDate).length;
+  const nearExpiryCount = items.filter(item => {
+    if (!item.expirationDate) return false;
+    const exp = new Date(item.expirationDate);
+    return exp > todayDate && exp <= expiryLimitDate;
+  }).length;
+
+  const totalNotificationsBadgeCount = lowStockCount + expiredCount + nearExpiryCount + pendingIncomingTransfersCount;
 
   return (
     <div className={`min-h-screen ${isDarkMode ? 'bg-slate-950 text-slate-100 dark' : 'bg-slate-50 text-slate-800'} flex flex-col pb-24 font-sans select-none transition-colors duration-200`} dir={currentLanguage === 'ar' ? 'rtl' : 'ltr'}>
@@ -1470,10 +1517,202 @@ export default function App() {
                   {isDarkMode ? (currentLanguage === 'ar' ? 'المظهر النهاري ☀️' : 'Light Mode ☀️') : (currentLanguage === 'ar' ? 'المظهر الليلي 🌙' : 'Dark Mode 🌙')}
                 </div>
               </div>
+
+              {/* Notification Toggle Button */}
+              <div className="group relative">
+                <button
+                  onClick={() => setIsNotificationsOpen(prev => !prev)}
+                  className={`p-2 rounded-xl transition-all cursor-pointer flex items-center justify-center relative ${
+                    isNotificationsOpen 
+                      ? 'bg-blue-600/10 text-blue-600 dark:text-blue-400' 
+                      : (isDarkMode ? 'hover:bg-slate-800 text-slate-300 hover:text-white' : 'hover:bg-white text-slate-600 hover:text-slate-900 hover:shadow-2xs')
+                  }`}
+                  title={currentLanguage === 'ar' ? 'التنبيهات والفعاليات' : 'Notifications & Events'}
+                >
+                  <Bell size={17} className="stroke-[2.5]" />
+                  {totalNotificationsBadgeCount > 0 && (
+                    <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-black w-4.5 h-4.5 rounded-full flex items-center justify-center animate-bounce">
+                      {totalNotificationsBadgeCount}
+                    </span>
+                  )}
+                </button>
+                {/* Tooltip */}
+                <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 hidden group-hover:block bg-slate-950 dark:bg-slate-850 text-white text-[10px] font-bold px-2.5 py-1.5 rounded-lg shadow-xl whitespace-nowrap z-50 pointer-events-none border border-white/10">
+                  {currentLanguage === 'ar' ? 'مركز التنبيهات 🔔' : 'Notifications 🔔'}
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </header>
+
+      {/* ==================== NOTIFICATION DRAWER ==================== */}
+      {isNotificationsOpen && (
+        <div className="fixed inset-0 z-50 flex justify-end print:hidden">
+          {/* Backdrop */}
+          <div 
+            onClick={() => setIsNotificationsOpen(false)}
+            className="absolute inset-0 bg-black/45 backdrop-blur-xs transition-opacity duration-200 animate-fade-in"
+          />
+          
+          {/* Drawer content */}
+          <div className="relative w-full max-w-md bg-white dark:bg-slate-900 h-full shadow-2xl flex flex-col z-10 animate-slide-in-from-right duration-300 text-right">
+            {/* Header */}
+            <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+              <button
+                onClick={() => setIsNotificationsOpen(false)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-2 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-all cursor-pointer"
+              >
+                <X size={18} className="stroke-[2.5]" />
+              </button>
+
+              <div className="flex items-center gap-2">
+                <Bell size={18} className="text-blue-600 stroke-[2.5]" />
+                <h3 className="font-extrabold text-sm sm:text-base text-slate-800 dark:text-white">
+                  {currentLanguage === 'ar' ? 'مركز التنبيهات والفعاليات' : 'Notifications & Warehouse Events'}
+                </h3>
+              </div>
+            </div>
+
+            {/* Scrollable body */}
+            <div className="flex-1 overflow-y-auto p-5 space-y-6 no-scrollbar">
+              
+              {/* SECTION 1: SYSTEM ALERTS */}
+              <div className="space-y-3">
+                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                  {currentLanguage === 'ar' ? 'التنبيهات النشطة والحرجة' : 'Active Critical Alerts'}
+                </h4>
+
+                {totalNotificationsBadgeCount === 0 ? (
+                  <div className="bg-slate-50 dark:bg-slate-950/30 p-4 rounded-2xl text-center text-slate-400 text-xs font-semibold">
+                    ✅ {currentLanguage === 'ar' ? 'كل شيء ممتاز! لا توجد تنبيهات نشطة.' : 'Perfect! No active alerts.'}
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {/* Low stock Alert */}
+                    {lowStockCount > 0 && (
+                      <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900/30 p-3.5 rounded-2xl flex items-start gap-3">
+                        <div className="bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 p-2 rounded-xl shrink-0 mt-0.5">
+                          <AlertTriangle size={15} />
+                        </div>
+                        <div className="space-y-0.5 flex-1 text-right">
+                          <p className="text-xs font-black text-amber-900 dark:text-amber-300">
+                            {currentLanguage === 'ar' ? 'مخزون منخفض تحت حد الأمان' : 'Low Stock Alert'}
+                          </p>
+                          <p className="text-[11px] text-amber-700/85 dark:text-amber-400/80 font-bold leading-relaxed">
+                            {currentLanguage === 'ar' 
+                              ? `توجد ${lowStockCount} أصناف مخزنية انخفضت كميتها الحالية عن حد الأمان المسجل.` 
+                              : `There are ${lowStockCount} items currently below their registered safety limits.`}
+                          </p>
+                          <button
+                            onClick={() => {
+                              setActiveTab('home');
+                              setIsNotificationsOpen(false);
+                            }}
+                            className="text-[10px] text-amber-800 dark:text-amber-400 font-extrabold underline mt-1 cursor-pointer hover:text-amber-950 block text-left"
+                          >
+                            {currentLanguage === 'ar' ? 'عرض السلع المتأثرة &larr;' : 'View affected items &larr;'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Expiration Alerts */}
+                    {(expiredCount > 0 || nearExpiryCount > 0) && (
+                      <div className="bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/30 p-3.5 rounded-2xl flex items-start gap-3">
+                        <div className="bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400 p-2 rounded-xl shrink-0 mt-0.5">
+                          <Calendar size={15} />
+                        </div>
+                        <div className="space-y-0.5 flex-1 text-right">
+                          <p className="text-xs font-black text-red-900 dark:text-red-300">
+                            {currentLanguage === 'ar' ? 'تنبيهات تاريخ الصلاحية' : 'Expiry Date Warnings'}
+                          </p>
+                          <p className="text-[11px] text-red-700/85 dark:text-red-400/80 font-bold leading-relaxed">
+                            {currentLanguage === 'ar' 
+                              ? `وجدنا ${expiredCount} أصناف منتهية الصلاحية بالكامل، و ${nearExpiryCount} أصناف على وشك الانتهاء خلال ${expirationAlertMonths} أشهر.` 
+                              : `Found ${expiredCount} expired items and ${nearExpiryCount} items expiring within ${expirationAlertMonths} months.`}
+                          </p>
+                          <button
+                            onClick={() => {
+                              setActiveTab('items');
+                              setIsNotificationsOpen(false);
+                            }}
+                            className="text-[10px] text-red-800 dark:text-red-400 font-extrabold underline mt-1 cursor-pointer hover:text-red-950 block text-left"
+                          >
+                            {currentLanguage === 'ar' ? 'مراجعة تواريخ الصلاحية &larr;' : 'Inspect expiration dates &larr;'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Warehouse Transfer Alert */}
+                    {pendingIncomingTransfersCount > 0 && (
+                      <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/30 p-3.5 rounded-2xl flex items-start gap-3">
+                        <div className="bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 p-2 rounded-xl shrink-0 mt-0.5">
+                          <ArrowLeftRight size={15} />
+                        </div>
+                        <div className="space-y-0.5 flex-1 text-right">
+                          <p className="text-xs font-black text-blue-900 dark:text-blue-300">
+                            {currentLanguage === 'ar' ? 'طلبات تحويل معلقة واردة' : 'Pending Incoming Transfers'}
+                          </p>
+                          <p className="text-[11px] text-blue-700/85 dark:text-blue-400/80 font-bold leading-relaxed">
+                            {currentLanguage === 'ar' 
+                              ? `لديك ${pendingIncomingTransfersCount} طلبات تحويل واردة إلى مستودعك بانتظار المراجعة والاعتماد.` 
+                              : `You have ${pendingIncomingTransfersCount} incoming transfer requests waiting for approval.`}
+                          </p>
+                          <button
+                            onClick={() => {
+                              setActiveTab('transfers');
+                              setIsNotificationsOpen(false);
+                            }}
+                            className="text-[10px] text-blue-800 dark:text-blue-400 font-extrabold underline mt-1 cursor-pointer hover:text-blue-950 block text-left"
+                          >
+                            {currentLanguage === 'ar' ? 'مراجعة واعتماد الطلبات &larr;' : 'Approve transfers &larr;'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* SECTION 2: RECENT AUDIT LOGS / EVENTS */}
+              <div className="space-y-3">
+                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                  {currentLanguage === 'ar' ? 'أحدث سجلات الفعاليات والعمليات' : 'Recent Event & Activity Logs'}
+                </h4>
+
+                <div className="space-y-2.5">
+                  {auditLogs.slice(0, 10).map((log) => (
+                    <div 
+                      key={log.id} 
+                      className={`p-3 bg-slate-50 dark:bg-slate-950/20 border border-slate-100/50 dark:border-slate-800/80 rounded-2xl text-right transition-all flex items-start gap-2.5`}
+                    >
+                      <span className={`w-2 h-2 rounded-full shrink-0 mt-1.5 ${
+                        log.action === 'add' ? 'bg-emerald-500' : log.action === 'delete' ? 'bg-red-500' : 'bg-blue-500'
+                      }`} />
+                      
+                      <div className="flex-1 space-y-0.5 min-w-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[10px] font-bold text-slate-400 font-mono">{log.timestamp.split('T')[0] || log.timestamp}</span>
+                          <span className="text-[10px] font-black text-slate-500 dark:text-slate-400">بواسطة: {log.user}</span>
+                        </div>
+                        <p className="text-[11px] font-bold text-slate-700 dark:text-slate-300 leading-relaxed truncate">
+                          {log.details}
+                        </p>
+                        <span className="text-[9px] px-2 py-0.5 rounded-full font-bold bg-slate-100 dark:bg-slate-900 text-slate-400 dark:text-slate-500 inline-block font-mono">
+                          {log.section}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Main Container */}
       <main className="flex-1 w-full max-w-xl md:max-w-3xl lg:max-w-5xl xl:max-w-7xl mx-auto px-4 py-6">

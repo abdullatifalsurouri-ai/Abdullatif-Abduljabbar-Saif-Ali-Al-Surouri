@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { X, Camera, AlertCircle, Sparkles, Check } from 'lucide-react';
+import { X, Camera, AlertCircle, Sparkles, Check, Loader2 } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
+import Tesseract from 'tesseract.js';
 import { Item } from '../types';
 
 interface BarcodeScannerModalProps {
@@ -21,7 +22,10 @@ export default function BarcodeScannerModal({
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [isScanning, setIsScanning] = useState(true);
   const [scanResult, setScanResult] = useState<string | null>(null);
+  const [isOcrProcessing, setIsOcrProcessing] = useState(false);
+  const [ocrError, setOcrError] = useState<string | null>(null);
   const qrCodeRef = useRef<Html5Qrcode | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Start / Stop Camera Scanning
   useEffect(() => {
@@ -30,6 +34,8 @@ export default function BarcodeScannerModal({
     setCameraError(null);
     setScanResult(null);
     setIsScanning(true);
+    setOcrError(null);
+    setIsOcrProcessing(false);
 
     const initScanner = async () => {
       // Small timeout to ensure the DOM element "reader" is rendered
@@ -126,6 +132,71 @@ export default function BarcodeScannerModal({
     }, 800);
   };
 
+  const handleOcrFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsOcrProcessing(true);
+    setOcrError(null);
+
+    // If scanning with camera, stop it first to free resources
+    if (qrCodeRef.current && qrCodeRef.current.isScanning) {
+      try {
+        await qrCodeRef.current.stop();
+      } catch (err) {
+        console.warn('Could not stop camera scanner for OCR:', err);
+      }
+    }
+
+    try {
+      // Run Tesseract OCR on the chosen image (using English/Numbers model for IDs and barcodes)
+      const result = await Tesseract.recognize(file, 'eng');
+      const text = result.data.text || '';
+      console.log('OCR Result text:', text);
+
+      // Extract all alphanumeric tokens
+      const words = text
+        .split(/[\s\n\r,;:_/\\]+/)
+        .map(w => w.trim().replace(/[^a-zA-Z0-9-]/g, ''))
+        .filter(w => w.length >= 3);
+
+      console.log('OCR Extracted tokens:', words);
+
+      // Search tokens for an exact match in the items database
+      let matchedId = '';
+      for (const word of words) {
+        const found = items.find(
+          (item) => item.id.toLowerCase() === word.toLowerCase()
+        );
+        if (found) {
+          matchedId = found.id;
+          break;
+        }
+      }
+
+      // Fallback: If no exact item matched, let's pick the first token that looks like a barcode or serial number
+      if (!matchedId) {
+        const numericOrID = words.find(w => /^[a-zA-Z0-9-]{4,20}$/.test(w));
+        if (numericOrID) {
+          matchedId = numericOrID;
+        } else if (words.length > 0) {
+          matchedId = words[0];
+        }
+      }
+
+      if (matchedId) {
+        handleSuccess(matchedId);
+      } else {
+        setOcrError('لم نتمكن من قراءة أي رقم صنف أو باركود واضح من هذه الصورة. يرجى التأكد من جودة الإضاءة ووضوح الأرقام.');
+      }
+    } catch (err: any) {
+      console.error('OCR error occurred:', err);
+      setOcrError('عذراً، حدث خطأ أثناء معالجة الصورة للتعرف على النص.');
+    } finally {
+      setIsOcrProcessing(false);
+    }
+  };
+
   const handleClose = async () => {
     if (qrCodeRef.current && qrCodeRef.current.isScanning) {
       try {
@@ -150,8 +221,8 @@ export default function BarcodeScannerModal({
               <Camera size={20} className="stroke-[2]" />
             </div>
             <div>
-              <h3 className="font-bold text-sm">قارئ الرموز الشريطية (Barcode/QR)</h3>
-              <p className="text-[10px] text-slate-400 mt-0.5">وجه الكاميرا نحو الرمز الشريطي للمنتج</p>
+              <h3 className="font-bold text-sm">قارئ الرموز الشريطية (Barcode/OCR)</h3>
+              <p className="text-[10px] text-slate-400 mt-0.5">مسح باركود ذكي وتعرف ضوئي على الحروف من الصور</p>
             </div>
           </div>
           <button
@@ -164,7 +235,13 @@ export default function BarcodeScannerModal({
 
         {/* Video / Camera mounting view */}
         <div className="relative aspect-video bg-slate-950 flex items-center justify-center overflow-hidden">
-          {cameraError ? (
+          {isOcrProcessing ? (
+            <div className="absolute inset-0 bg-slate-900 flex flex-col items-center justify-center text-white p-4">
+              <Loader2 className="animate-spin text-blue-500 mb-3" size={40} />
+              <p className="text-sm font-bold animate-pulse">جاري فحص وقراءة النصوص في الصورة (OCR)...</p>
+              <p className="text-[10px] text-slate-400 mt-1">يتم الآن تحليل الأرقام والرموز عبر Tesseract.js</p>
+            </div>
+          ) : cameraError && !ocrError ? (
             <div className="p-6 text-center text-slate-400 max-w-xs space-y-2">
               <AlertCircle size={32} className="mx-auto text-amber-500" />
               <p className="text-xs font-bold leading-relaxed">{cameraError}</p>
@@ -183,6 +260,21 @@ export default function BarcodeScannerModal({
             </div>
           )}
 
+          {/* OCR Error Display overlay */}
+          {ocrError && !isOcrProcessing && (
+            <div className="absolute inset-0 bg-slate-900/95 flex flex-col items-center justify-center text-center text-white p-6 z-15">
+              <AlertCircle size={36} className="text-rose-500 mb-2" />
+              <p className="text-xs font-bold leading-relaxed max-w-xs">{ocrError}</p>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="mt-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs py-1.5 px-4 rounded-xl shadow-md cursor-pointer transition-all"
+              >
+                محاولة التقاط صورة أخرى
+              </button>
+            </div>
+          )}
+
           {/* Scanned Success Overlay */}
           {scanResult && (
             <div className="absolute inset-0 bg-blue-600/90 flex flex-col items-center justify-center text-white animate-fade-in z-20">
@@ -195,8 +287,32 @@ export default function BarcodeScannerModal({
           )}
         </div>
 
+        {/* OCR Trigger Section */}
+        <div className="p-3 bg-slate-100 border-b border-slate-200 flex flex-col items-center justify-center gap-1">
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isOcrProcessing}
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-black py-2.5 px-4 rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm disabled:opacity-50 cursor-pointer"
+          >
+            <Camera size={15} />
+            <span>التقاط صورة الصنف/الباركود لقراءتها بـ OCR 📸</span>
+          </button>
+          <p className="text-[10px] text-slate-500 text-center font-medium mt-1">
+            في حالة تعذر المسح، التقط صورة واضحة لبطاقة المنتج أو الملصق لتحليلها ضوئياً
+          </p>
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleOcrFileChange}
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+          />
+        </div>
+
         {/* Simulator Option - VERY ROBUST FOR PREVIEW/DEMO */}
-        <div className="p-5 border-t border-slate-100 bg-slate-50 text-right space-y-3">
+        <div className="p-5 bg-slate-50 text-right space-y-3">
           <div className="flex items-center gap-1.5 text-blue-600">
             <Sparkles size={14} className="stroke-[2.5]" />
             <span className="text-xs font-extrabold">
@@ -209,7 +325,7 @@ export default function BarcodeScannerModal({
               : 'اختر أي صنف من القائمة أدناه لمحاكاة قراءة الباركود فورياً وسرعة إدراجه في النموذج:'}
           </p>
 
-          <div className="grid grid-cols-2 gap-2 max-h-36 overflow-y-auto pr-1">
+          <div className="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto pr-1">
             {allowNewCode ? (
               <>
                 {[

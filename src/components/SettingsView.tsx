@@ -29,6 +29,7 @@ import {
   Receipt
 } from 'lucide-react';
 import { User, RoleType, UserPermissions, Warehouse, AuditLogEntry, Item, Movement, Supplier, WarehouseTransfer, InvoiceSettings } from '../types';
+import { t } from '../utils/i18n';
 
 interface SettingsViewProps {
   currentUser: User;
@@ -39,6 +40,7 @@ interface SettingsViewProps {
   lastSyncTime: string | null;
   isOnline: boolean;
   onResetAllData: () => void;
+  currentLanguage: 'ar' | 'en';
   warehouses?: Warehouse[];
   auditLogs?: AuditLogEntry[];
   items?: Item[];
@@ -82,8 +84,10 @@ export default function SettingsView({
   onUpdateInvoiceSettings,
   expirationAlertMonths = 1,
   onUpdateExpirationAlertMonths,
+  currentLanguage,
 }: SettingsViewProps) {
   const [settingsTab, setSettingsTab] = useState<'general' | 'audit'>('general');
+  const [subTab, setSubTab] = useState<'general' | 'permissions' | 'notifications' | 'backup'>('general');
   const [usersList, setUsersList] = useState<any[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -101,6 +105,16 @@ export default function SettingsView({
     return typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'denied';
   });
 
+  // Email Alert Configuration states
+  const [alertEmail, setAlertEmail] = useState(() => {
+    return localStorage.getItem('wms_alert_email') || '';
+  });
+  const [emailAlertsEnabled, setEmailAlertsEnabled] = useState(() => {
+    return localStorage.getItem('wms_email_alerts_enabled') === 'true';
+  });
+  const [isSendingTestAlert, setIsSendingTestAlert] = useState(false);
+  const [testAlertStatus, setTestAlertStatus] = useState<string | null>(null);
+
   const handleRequestNotifPermission = async () => {
     if ('Notification' in window) {
       const permission = await Notification.requestPermission();
@@ -112,6 +126,52 @@ export default function SettingsView({
       }
     } else {
       alert('المتصفح الحالي لا يدعم إشعارات سطح المكتب.');
+    }
+  };
+
+  const handleSaveEmailAlertSettings = (e: React.FormEvent) => {
+    e.preventDefault();
+    localStorage.setItem('wms_alert_email', alertEmail);
+    localStorage.setItem('wms_email_alerts_enabled', String(emailAlertsEnabled));
+    alert(currentLanguage === 'ar' ? '✓ تم حفظ إعدادات تنبيهات البريد الإلكتروني بنجاح!' : '✓ Email alert settings saved successfully!');
+  };
+
+  const handleSendTestAlertEmail = async () => {
+    if (!alertEmail) {
+      alert(currentLanguage === 'ar' ? 'يرجى إدخال بريد إلكتروني أولاً!' : 'Please enter an email address first!');
+      return;
+    }
+    
+    setIsSendingTestAlert(true);
+    setTestAlertStatus(null);
+    
+    try {
+      const response = await fetch('/api/alerts/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: alertEmail,
+          type: 'test_alert',
+          subject: currentLanguage === 'ar' 
+            ? '🚀 تجربة تنبيهات مستودع المدى الذكية' 
+            : '🚀 Al-Mada Smart WMS Test Alert',
+          body: currentLanguage === 'ar'
+            ? 'هذه رسالة تنبيه تجريبية مرسلة تلقائياً عبر نظام إدارة المستودعات الذكي للتحقق من تكامل البوابات السحابية بنجاح.'
+            : 'This is an automated test alert email sent from the Smart Warehouse Management System to verify external cloud API gateway integration.',
+          items: items.slice(0, 3)
+        })
+      });
+      
+      const data = await response.json();
+      if (response.ok && data.success) {
+        setTestAlertStatus(currentLanguage === 'ar' ? '✓ تم إرسال البريد بنجاح عبر خدمة الإرسال السحابية!' : '✓ Alert sent successfully via Cloud gateway!');
+      } else {
+        setTestAlertStatus(data.error || 'Failed to dispatch test alert');
+      }
+    } catch (err) {
+      setTestAlertStatus(currentLanguage === 'ar' ? 'حدث خطأ في الاتصال بخادم البريد الإلكتروني' : 'Network/connection error with mail service');
+    } finally {
+      setIsSendingTestAlert(false);
     }
   };
 
@@ -626,11 +686,82 @@ export default function SettingsView({
 
       {settingsTab === 'general' ? (
         <>
+          {/* Sub-tab Selection Header */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-slate-100 dark:bg-slate-900 p-1.5 rounded-2xl border border-slate-200 dark:border-slate-800 mb-5">
+            <button
+              type="button"
+              onClick={() => setSubTab('general')}
+              className={`py-2 px-3 text-[11px] sm:text-xs font-black transition-all rounded-xl cursor-pointer flex items-center justify-center gap-1.5 ${
+                subTab === 'general'
+                  ? 'bg-white dark:bg-slate-800 text-blue-700 dark:text-blue-400 shadow-sm border border-slate-200/50'
+                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'
+              }`}
+            >
+              <Settings size={14} />
+              <span>عام</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setSubTab('permissions')}
+              className={`py-2 px-3 text-[11px] sm:text-xs font-black transition-all rounded-xl cursor-pointer flex items-center justify-center gap-1.5 ${
+                subTab === 'permissions'
+                  ? 'bg-white dark:bg-slate-800 text-blue-700 dark:text-blue-400 shadow-sm border border-slate-200/50'
+                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'
+              }`}
+            >
+              <ShieldCheck size={14} />
+              <span>الصلاحيات</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setSubTab('notifications')}
+              className={`py-2 px-3 text-[11px] sm:text-xs font-black transition-all rounded-xl cursor-pointer flex items-center justify-center gap-1.5 ${
+                subTab === 'notifications'
+                  ? 'bg-white dark:bg-slate-800 text-blue-700 dark:text-blue-400 shadow-sm border border-slate-200/50'
+                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'
+              }`}
+            >
+              <Bell size={14} />
+              <span>الإشعارات</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setSubTab('backup')}
+              className={`py-2 px-3 text-[11px] sm:text-xs font-black transition-all rounded-xl cursor-pointer flex items-center justify-center gap-1.5 ${
+                subTab === 'backup'
+                  ? 'bg-white dark:bg-slate-800 text-blue-700 dark:text-blue-400 shadow-sm border border-slate-200/50'
+                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'
+              }`}
+            >
+              <Database size={14} />
+              <span>النسخ الاحتياطي</span>
+            </button>
+          </div>
+
+          {/* Success/Error Alerts for settings forms */}
+          {(errorMessage || successMessage) && (
+            <div className="p-4 rounded-2xl border border-slate-100 bg-slate-50/30 transition-all text-xs font-bold leading-relaxed mb-4">
+              {errorMessage && (
+                <div className="bg-rose-50 border-rose-100 text-rose-600 flex items-start gap-2 p-3 rounded-xl">
+                  <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+                  <span>⚠️ خطأ: {errorMessage}</span>
+                </div>
+              )}
+              {successMessage && (
+                <div className="bg-emerald-50 border-emerald-100 text-emerald-700 flex items-start gap-2 p-3 rounded-xl">
+                  <CheckCircle size={16} className="shrink-0 mt-0.5" />
+                  <span>{successMessage}</span>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Grid: Profile info & Cloud Sync */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             
             {/* Profile Card */}
-            <div className="bg-white border border-slate-100 p-5 rounded-3xl shadow-xs space-y-4">
+            {subTab === 'general' && (
+              <div className="bg-white border border-slate-100 p-5 rounded-3xl shadow-xs space-y-4">
               <div className="flex items-center gap-2 border-b border-slate-50 pb-3">
                 <UserIcon size={18} className="text-blue-500 shrink-0" />
                 <span className="text-xs font-black text-slate-800">بيانات الحساب الحالي</span>
@@ -712,9 +843,11 @@ export default function SettingsView({
                 </div>
               </div>
             </div>
+          )}
 
             {/* Cloud Sync Card */}
-            <div className="bg-white border border-slate-100 p-5 rounded-3xl shadow-xs space-y-4">
+            {subTab === 'backup' && (
+              <div className="bg-white border border-slate-100 p-5 rounded-3xl shadow-xs space-y-4">
               <div className="flex items-center gap-2 border-b border-slate-50 pb-3">
                 <CloudLightning size={18} className="text-purple-600 shrink-0" />
                 <span className="text-xs font-black text-slate-800">مركز المزامنة السحابية والإنترنت</span>
@@ -809,9 +942,11 @@ export default function SettingsView({
                 </div>
               </div>
             </div>
+          )}
 
             {/* Invoice Header/Footer Settings Card */}
-            <div className="bg-white border border-slate-100 p-5 rounded-3xl shadow-xs space-y-4 col-span-1 md:col-span-2">
+            {subTab === 'general' && (
+              <div className="bg-white border border-slate-100 p-5 rounded-3xl shadow-xs space-y-4 col-span-1 md:col-span-2">
               <div className="flex items-center justify-between border-b border-slate-50 pb-3">
                 <div className="flex items-center gap-2">
                   <Receipt size={18} className="text-blue-600 shrink-0" />
@@ -948,9 +1083,11 @@ export default function SettingsView({
                 )}
               </form>
             </div>
+          )}
 
             {/* Dashboard Customization Card */}
-            <div className="bg-white border border-slate-100 p-5 rounded-3xl shadow-xs space-y-4">
+            {subTab === 'general' && (
+              <div className="bg-white border border-slate-100 p-5 rounded-3xl shadow-xs space-y-4">
               <div className="flex items-center gap-2 border-b border-slate-50 pb-3">
                 <Settings size={18} className="text-blue-600 shrink-0" />
                 <span className="text-xs font-black text-slate-800">تخصيص لوحة التحكم (البطاقات الإحصائية)</span>
@@ -992,9 +1129,11 @@ export default function SettingsView({
                 ))}
               </div>
             </div>
+          )}
 
             {/* Local Backup Card */}
-            <div className="bg-white border border-slate-100 p-5 rounded-3xl shadow-xs space-y-4">
+            {subTab === 'backup' && (
+              <div className="bg-white border border-slate-100 p-5 rounded-3xl shadow-xs space-y-4">
               <div className="flex items-center gap-2 border-b border-slate-50 pb-3">
                 <Database size={18} className="text-emerald-600 shrink-0" />
                 <span className="text-xs font-black text-slate-800">النسخ الاحتياطي الوقائي والوقاية الإضافية</span>
@@ -1052,9 +1191,11 @@ export default function SettingsView({
                 </div>
               </div>
             </div>
+          )}
 
             {/* Daily Reminder Settings Card */}
-            <div className="bg-white border border-slate-100 p-5 rounded-3xl shadow-xs space-y-4">
+            {subTab === 'notifications' && (
+              <div className="bg-white border border-slate-100 p-5 rounded-3xl shadow-xs space-y-4">
               <div className="flex items-center gap-2 border-b border-slate-50 pb-3">
                 <Bell size={18} className="text-amber-500 shrink-0" />
                 <span className="text-xs font-black text-slate-800">توقيت التنبيه اليومي وإشعارات المتصفح 🔔</span>
@@ -1126,29 +1267,99 @@ export default function SettingsView({
                 </div>
               </div>
             </div>
+          )}
 
-          </div>
+            {/* Email Alerts Configuration Card */}
+            {subTab === 'notifications' && (
+              <div className="bg-white border border-slate-100 p-5 rounded-3xl shadow-xs space-y-4">
+              <div className="flex items-center gap-2 border-b border-slate-50 pb-3">
+                <Bell size={18} className="text-blue-500 shrink-0" />
+                <span className="text-xs font-black text-slate-800">
+                  {t('settingsView.emailAlerts', currentLanguage)}
+                </span>
+              </div>
 
-          {/* Success/Error Alerts for settings forms */}
-          {(errorMessage || successMessage) && (
-            <div className="p-4 rounded-2xl border transition-all text-xs font-bold leading-relaxed">
-              {errorMessage && (
-                <div className="bg-rose-50 border-rose-100 text-rose-600 flex items-start gap-2">
-                  <AlertTriangle size={16} className="shrink-0 mt-0.5" />
-                  <span>⚠️ خطأ: {errorMessage}</span>
+              <div className="space-y-4">
+                <p className="text-[11px] text-slate-400 font-semibold leading-relaxed">
+                  {currentLanguage === 'ar' ? 'قم بضبط عنوان البريد الإلكتروني لتلقي إشعارات تلقائية وتقارير دورية فورية عن حالة المخزون المنخفض أو الحركات المعلقة.' : 'Configure the recipient email address to receive immediate automated alerts when items go below low-stock limit or get near expiration.'}
+                </p>
+
+                <form onSubmit={handleSaveEmailAlertSettings} className="space-y-4">
+                  {/* Enable toggle */}
+                  <div className="flex items-center justify-between bg-slate-50 border border-slate-100 p-3 rounded-2xl">
+                    <span className="text-[11px] text-slate-600 font-extrabold">
+                      {t('settingsView.enableAlerts', currentLanguage)}
+                    </span>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={emailAlertsEnabled}
+                        onChange={(e) => setEmailAlertsEnabled(e.target.checked)}
+                        className="sr-only peer"
+                      />
+                      <div className="w-9 h-5 bg-slate-200 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                    </label>
+                  </div>
+
+                  {/* Email Input */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-400 font-extrabold block">
+                      {currentLanguage === 'ar' ? 'البريد الإلكتروني للمستلم:' : 'Recipient Email Address:'}
+                    </label>
+                    <input
+                      type="email"
+                      value={alertEmail}
+                      onChange={(e) => setAlertEmail(e.target.value)}
+                      placeholder={t('settingsView.emailPlaceholder', currentLanguage)}
+                      className="w-full bg-slate-50 text-xs font-bold p-2.5 rounded-xl border border-slate-200/80 focus:border-blue-500 outline-hidden font-mono"
+                      required={emailAlertsEnabled}
+                    />
+                  </div>
+
+                  {/* Save Button */}
+                  <button
+                    type="submit"
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-black py-2.5 rounded-xl transition-all shadow-md shadow-blue-600/10 cursor-pointer"
+                  >
+                    {t('save', currentLanguage)}
+                  </button>
+                </form>
+
+                {/* Send Test Email button */}
+                <div className="border-t border-slate-50 pt-3 flex flex-col gap-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="space-y-0.5">
+                      <span className="text-[10px] font-black text-slate-700 block">
+                        {currentLanguage === 'ar' ? 'هل تود تجربة الإرسال السحابي؟' : 'Test cloud email service?'}
+                      </span>
+                      <span className="text-[9px] text-slate-400 font-bold leading-normal block">
+                        {currentLanguage === 'ar' ? 'أدخل بريدك الإلكتروني وسيتم محاكاة إرسال بريد حقيقي عبر السحابة.' : 'Enter your email above to simulate a live alert delivery.'}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={isSendingTestAlert}
+                      onClick={handleSendTestAlertEmail}
+                      className="bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-700 text-[10px] font-black px-3 py-2 rounded-xl transition-all cursor-pointer flex items-center gap-1 shrink-0"
+                    >
+                      <span>{isSendingTestAlert ? (currentLanguage === 'ar' ? 'جاري الإرسال...' : 'Sending...') : t('settingsView.testEmail', currentLanguage)}</span>
+                    </button>
+                  </div>
+                  {testAlertStatus && (
+                    <p className={`text-[9px] font-bold mt-1 text-center ${testAlertStatus.startsWith('✓') ? 'text-emerald-600' : 'text-rose-500'}`}>
+                      {testAlertStatus}
+                    </p>
+                  )}
                 </div>
-              )}
-              {successMessage && (
-                <div className="bg-emerald-50 border-emerald-100 text-emerald-700 flex items-start gap-2">
-                  <CheckCircle size={16} className="shrink-0 mt-0.5" />
-                  <span>{successMessage}</span>
-                </div>
-              )}
+              </div>
             </div>
           )}
 
+          </div>
+
           {/* User Management Section (Only visible to Owners/Admins who can manage settings) */}
-          {canManageUsers ? (
+          {subTab === 'permissions' && (
+            canManageUsers ? (
             <div className="bg-white border border-slate-100 rounded-3xl shadow-xs p-5 space-y-6">
               <div className="flex items-center justify-between border-b border-slate-50 pb-3">
                 <div className="flex items-center gap-2">
@@ -1243,7 +1454,7 @@ export default function SettingsView({
                             <select
                               value={editPermissions.items}
                               onChange={(e) => setEditPermissions({ ...editPermissions, items: e.target.value as any })}
-                              disabled={editingUser.username.toLowerCase() === 'owner'}
+                              disabled={editingUser.username.toLowerCase() === 'owner' && currentUser.role !== 'Owner'}
                               className="w-full bg-slate-50 text-[10px] p-1 rounded-md text-right border border-slate-200 cursor-pointer font-bold"
                             >
                               <option value="write">إدخال وتعديل</option>
@@ -1258,7 +1469,7 @@ export default function SettingsView({
                             <select
                               value={editPermissions.movements}
                               onChange={(e) => setEditPermissions({ ...editPermissions, movements: e.target.value as any })}
-                              disabled={editingUser.username.toLowerCase() === 'owner'}
+                              disabled={editingUser.username.toLowerCase() === 'owner' && currentUser.role !== 'Owner'}
                               className="w-full bg-slate-50 text-[10px] p-1 rounded-md text-right border border-slate-200 cursor-pointer font-bold"
                             >
                               <option value="write">إضافة وتوثيق</option>
@@ -1273,7 +1484,7 @@ export default function SettingsView({
                             <select
                               value={editPermissions.suppliers}
                               onChange={(e) => setEditPermissions({ ...editPermissions, suppliers: e.target.value as any })}
-                              disabled={editingUser.username.toLowerCase() === 'owner'}
+                              disabled={editingUser.username.toLowerCase() === 'owner' && currentUser.role !== 'Owner'}
                               className="w-full bg-slate-50 text-[10px] p-1 rounded-md text-right border border-slate-200 cursor-pointer font-bold"
                             >
                               <option value="write">إدارة وتعديل</option>
@@ -1288,7 +1499,7 @@ export default function SettingsView({
                             <select
                               value={editPermissions.reports}
                               onChange={(e) => setEditPermissions({ ...editPermissions, reports: e.target.value as any })}
-                              disabled={editingUser.username.toLowerCase() === 'owner'}
+                              disabled={editingUser.username.toLowerCase() === 'owner' && currentUser.role !== 'Owner'}
                               className="w-full bg-slate-50 text-[10px] p-1 rounded-md text-right border border-slate-200 cursor-pointer font-bold"
                             >
                               <option value="read">متاحة</option>
@@ -1302,7 +1513,7 @@ export default function SettingsView({
                             <select
                               value={editPermissions.settings}
                               onChange={(e) => setEditPermissions({ ...editPermissions, settings: e.target.value as any })}
-                              disabled={editingUser.username.toLowerCase() === 'owner'}
+                              disabled={editingUser.username.toLowerCase() === 'owner' && currentUser.role !== 'Owner'}
                               className="w-full bg-slate-50 text-[10px] p-1 rounded-md text-right border border-slate-200 cursor-pointer font-bold"
                             >
                               <option value="write">إدارة كاملة</option>
@@ -1317,7 +1528,7 @@ export default function SettingsView({
                             <select
                               value={editPermissions.warehouses}
                               onChange={(e) => setEditPermissions({ ...editPermissions, warehouses: e.target.value as any })}
-                              disabled={editingUser.username.toLowerCase() === 'owner'}
+                              disabled={editingUser.username.toLowerCase() === 'owner' && currentUser.role !== 'Owner'}
                               className="w-full bg-slate-50 text-[10px] p-1 rounded-md text-right border border-slate-200 cursor-pointer font-bold"
                             >
                               <option value="write">إدارة كاملة</option>
@@ -1332,7 +1543,7 @@ export default function SettingsView({
                             <select
                               value={editPermissions.transfers}
                               onChange={(e) => setEditPermissions({ ...editPermissions, transfers: e.target.value as any })}
-                              disabled={editingUser.username.toLowerCase() === 'owner'}
+                              disabled={editingUser.username.toLowerCase() === 'owner' && currentUser.role !== 'Owner'}
                               className="w-full bg-slate-50 text-[10px] p-1 rounded-md text-right border border-slate-200 cursor-pointer font-bold"
                             >
                               <option value="write">إنشاء وقبول/رفض</option>
@@ -1353,7 +1564,7 @@ export default function SettingsView({
                             <select
                               value={editPermissions.canAddIncoming ? "true" : "false"}
                               onChange={(e) => setEditPermissions({ ...editPermissions, canAddIncoming: e.target.value === "true" })}
-                              disabled={editingUser.username.toLowerCase() === 'owner'}
+                              disabled={editingUser.username.toLowerCase() === 'owner' && currentUser.role !== 'Owner'}
                               className="w-full bg-slate-50 text-[10px] p-1 rounded-md text-right border border-slate-200 cursor-pointer font-bold text-slate-700"
                             >
                               <option value="true">مسموح</option>
@@ -1367,7 +1578,7 @@ export default function SettingsView({
                             <select
                               value={editPermissions.canAddOutgoing ? "true" : "false"}
                               onChange={(e) => setEditPermissions({ ...editPermissions, canAddOutgoing: e.target.value === "true" })}
-                              disabled={editingUser.username.toLowerCase() === 'owner'}
+                              disabled={editingUser.username.toLowerCase() === 'owner' && currentUser.role !== 'Owner'}
                               className="w-full bg-slate-50 text-[10px] p-1 rounded-md text-right border border-slate-200 cursor-pointer font-bold text-slate-700"
                             >
                               <option value="true">مسموح</option>
@@ -1381,7 +1592,7 @@ export default function SettingsView({
                             <select
                               value={editPermissions.canApproveTransfer ? "true" : "false"}
                               onChange={(e) => setEditPermissions({ ...editPermissions, canApproveTransfer: e.target.value === "true" })}
-                              disabled={editingUser.username.toLowerCase() === 'owner'}
+                              disabled={editingUser.username.toLowerCase() === 'owner' && currentUser.role !== 'Owner'}
                               className="w-full bg-slate-50 text-[10px] p-1 rounded-md text-right border border-slate-200 cursor-pointer font-bold text-slate-700"
                             >
                               <option value="true">مسموح</option>
@@ -1395,7 +1606,7 @@ export default function SettingsView({
                             <select
                               value={editPermissions.canEditPrices ? "true" : "false"}
                               onChange={(e) => setEditPermissions({ ...editPermissions, canEditPrices: e.target.value === "true" })}
-                              disabled={editingUser.username.toLowerCase() === 'owner'}
+                              disabled={editingUser.username.toLowerCase() === 'owner' && currentUser.role !== 'Owner'}
                               className="w-full bg-slate-50 text-[10px] p-1 rounded-md text-right border border-slate-200 cursor-pointer font-bold text-slate-700"
                             >
                               <option value="true">مسموح</option>
@@ -1409,7 +1620,7 @@ export default function SettingsView({
                             <select
                               value={editPermissions.canImportExportCSV ? "true" : "false"}
                               onChange={(e) => setEditPermissions({ ...editPermissions, canImportExportCSV: e.target.value === "true" })}
-                              disabled={editingUser.username.toLowerCase() === 'owner'}
+                              disabled={editingUser.username.toLowerCase() === 'owner' && currentUser.role !== 'Owner'}
                               className="w-full bg-slate-50 text-[10px] p-1 rounded-md text-right border border-slate-200 cursor-pointer font-bold text-slate-700"
                             >
                               <option value="true">مسموح</option>
@@ -1423,7 +1634,7 @@ export default function SettingsView({
                             <select
                               value={editPermissions.canResetSystem ? "true" : "false"}
                               onChange={(e) => setEditPermissions({ ...editPermissions, canResetSystem: e.target.value === "true" })}
-                              disabled={editingUser.username.toLowerCase() === 'owner'}
+                              disabled={editingUser.username.toLowerCase() === 'owner' && currentUser.role !== 'Owner'}
                               className="w-full bg-slate-50 text-[10px] p-1 rounded-md text-right border border-slate-200 cursor-pointer font-bold text-slate-700"
                             >
                               <option value="true">مسموح</option>
@@ -1437,7 +1648,7 @@ export default function SettingsView({
                             <select
                               value={editPermissions.canEditInvoiceSettings ? "true" : "false"}
                               onChange={(e) => setEditPermissions({ ...editPermissions, canEditInvoiceSettings: e.target.value === "true" })}
-                              disabled={editingUser.username.toLowerCase() === 'owner'}
+                              disabled={editingUser.username.toLowerCase() === 'owner' && currentUser.role !== 'Owner'}
                               className="w-full bg-slate-50 text-[10px] p-1 rounded-md text-right border border-slate-200 cursor-pointer font-bold text-slate-700"
                             >
                               <option value="true">مسموح</option>
@@ -1624,17 +1835,18 @@ export default function SettingsView({
                   </form>
                 </div>
 
-              </div>
+                </div>
 
-            </div>
-          ) : (
-            <div className="bg-slate-50 border border-slate-100 p-5 rounded-3xl text-center text-slate-400 text-xs font-bold leading-relaxed">
-              🔒 إدارة الحسابات وصلاحيات الموظفين تقتصر فقط على مشرفي المستودع أو المالك الرئيسي للنظام.
-            </div>
+              </div>
+            ) : (
+              <div className="bg-slate-50 border border-slate-100 p-5 rounded-3xl text-center text-slate-400 text-xs font-bold leading-relaxed">
+                🔒 إدارة الحسابات وصلاحيات الموظفين تقتصر فقط على مشرفي المستودع أو المالك الرئيسي للنظام.
+              </div>
+            )
           )}
 
           {/* Cloud Master Reset Section (Owner Only) */}
-          {currentUser.role === 'Owner' && (
+          {subTab === 'backup' && currentUser.role === 'Owner' && (
             <div className="bg-rose-50/50 border border-rose-100 rounded-3xl p-5 space-y-3 text-right">
               <div className="flex items-center gap-2 text-rose-700">
                 <Database size={18} className="stroke-[2]" />

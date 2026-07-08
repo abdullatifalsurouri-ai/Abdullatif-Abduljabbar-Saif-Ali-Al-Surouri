@@ -31,7 +31,15 @@ export default function MovementsView({
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isSearchScannerOpen, setIsSearchScannerOpen] = useState(false);
   const [previewPhoto, setPreviewPhoto] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
   const [search, setSearch] = useState('');
+
+  // Advanced Filters State
+  const [filterType, setFilterType] = useState<'all' | 'in' | 'out'>('all');
+  const [filterWarehouseId, setFilterWarehouseId] = useState<string>('all');
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
+  const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
 
   const [formData, setFormData] = useState({
     itemId: '',
@@ -48,9 +56,20 @@ export default function MovementsView({
   // Filter movements by selected type and search
   const filteredMovements = movements
     .filter((m) => {
-      const matchesType = m.type === activeType;
+      // 1. Filter Type
+      const matchesType = filterType === 'all' || m.type === filterType;
       if (!matchesType) return false;
 
+      // 2. Warehouse Filter
+      if (filterWarehouseId !== 'all') {
+        if (m.warehouseId !== filterWarehouseId) return false;
+      }
+
+      // 3. Date Range Filter
+      if (startDate && m.date < startDate) return false;
+      if (endDate && m.date > endDate) return false;
+
+      // 4. Search Query
       if (!search.trim()) return true;
 
       const query = search.toLowerCase();
@@ -145,9 +164,12 @@ export default function MovementsView({
       {/* Toggle Filter (Inward vs Outward) */}
       <div className="bg-slate-100 p-1 rounded-2xl flex w-full">
         <button
-          onClick={() => setActiveType('in')}
+          onClick={() => {
+            setActiveType('in');
+            setFilterType('in');
+          }}
           className={`flex-1 py-3 px-4 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-            activeType === 'in'
+            filterType === 'in'
               ? 'bg-blue-900 text-white shadow-xs'
               : 'text-slate-500 hover:text-slate-700'
           }`}
@@ -156,9 +178,12 @@ export default function MovementsView({
           <span>حركة الوارد</span>
         </button>
         <button
-          onClick={() => setActiveType('out')}
+          onClick={() => {
+            setActiveType('out');
+            setFilterType('out');
+          }}
           className={`flex-1 py-3 px-4 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-            activeType === 'out'
+            filterType === 'out'
               ? 'bg-blue-900 text-white shadow-xs'
               : 'text-slate-500 hover:text-slate-700'
           }`}
@@ -166,34 +191,160 @@ export default function MovementsView({
           <ArrowUpRight size={16} />
           <span>حركة الصرف</span>
         </button>
+        <button
+          onClick={() => {
+            setFilterType('all');
+          }}
+          className={`flex-1 py-3 px-4 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+            filterType === 'all'
+              ? 'bg-blue-900 text-white shadow-xs'
+              : 'text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          <ArrowLeftRight size={16} />
+          <span>كافة الحركات</span>
+        </button>
       </div>
 
-      {/* Search and Scan Bar */}
-      <div className="bg-white border border-slate-100 p-4 rounded-3xl shadow-2xs">
-        <div className="flex gap-2">
+      {/* Search and Scan Bar with Advanced Filters */}
+      <div className="bg-white border border-slate-100 p-5 rounded-3xl shadow-2xs space-y-4">
+        <div className="flex flex-col sm:flex-row gap-3">
           {/* Main Search input */}
-          <div className="relative flex-1 flex gap-2">
-            <div className="relative flex-1">
-              <input
-                type="text"
-                placeholder="البحث بالاسم، رمز الصنف، أو الجهة... 🔍"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 focus:border-blue-500 focus:bg-white text-sm px-11 py-3.5 rounded-2xl outline-hidden transition-all text-slate-700 text-right font-bold placeholder:text-slate-400"
-              />
-              <Search size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 stroke-[2.5]" />
-            </div>
+          <div className="relative flex-1">
+            <input
+              type="text"
+              placeholder="البحث بالاسم، رمز الصنف، أو الجهة... 🔍"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 focus:border-blue-500 focus:bg-white text-sm px-11 py-3.5 rounded-2xl outline-hidden transition-all text-slate-700 text-right font-bold placeholder:text-slate-400"
+            />
+            <Search size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 stroke-[2.5]" />
+          </div>
 
+          <div className="flex gap-2">
+            {/* Barcode scanner */}
             <button
               type="button"
               onClick={() => setIsSearchScannerOpen(true)}
-              className="bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 px-4 rounded-2xl transition-all cursor-pointer flex items-center justify-center gap-1.5 hover:scale-105 active:scale-95 shrink-0"
+              className="bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-100 px-4 py-3.5 rounded-2xl transition-all cursor-pointer flex-1 sm:flex-initial flex items-center justify-center gap-1.5 hover:scale-105 active:scale-95 shrink-0"
               title="مسح باركود للبحث في الحركات"
             >
               <Camera size={16} className="stroke-[2.5]" />
-              <span className="text-xs font-black hidden sm:inline">مسح باركود للبحث</span>
+              <span className="text-xs font-black">مسح باركود</span>
+            </button>
+
+            {/* Advanced Filters Toggle Button */}
+            <button
+              type="button"
+              onClick={() => setIsAdvancedOpen(!isAdvancedOpen)}
+              className={`px-4 py-3.5 rounded-2xl border transition-all flex-1 sm:flex-initial flex items-center justify-center gap-1.5 hover:scale-105 active:scale-95 shrink-0 cursor-pointer ${
+                isAdvancedOpen || filterWarehouseId !== 'all' || startDate || endDate
+                  ? 'bg-blue-900 border-blue-900 text-white shadow-xs'
+                  : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-600 font-bold'
+              }`}
+            >
+              <span className="text-xs font-black">تصفية متقدمة</span>
+              <span className="w-2 h-2 rounded-full bg-orange-500 inline-block animate-pulse shrink-0" style={{ display: (filterWarehouseId !== 'all' || startDate || endDate) ? 'inline-block' : 'none' }} />
             </button>
           </div>
+        </div>
+
+        {/* Collapsible Advanced Filters Panel */}
+        {isAdvancedOpen && (
+          <div className="border-t border-slate-50 pt-4 mt-2 space-y-4 animate-in fade-in slide-in-from-top-2 duration-200">
+            <h5 className="text-[11px] font-black text-slate-400 uppercase tracking-wider text-right">خيارات البحث والفلترة المتقدمة</h5>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+              {/* Warehouse Filter */}
+              <div>
+                <label className="block text-xs font-black text-slate-500 mb-1.5 text-right">مستودع محدد</label>
+                <select
+                  value={filterWarehouseId}
+                  onChange={(e) => setFilterWarehouseId(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 focus:border-blue-500 text-xs px-3.5 py-3 rounded-xl outline-hidden text-slate-700 font-bold text-right"
+                >
+                  <option value="all">كافة المستودعات 🏢</option>
+                  {warehouses.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Start Date */}
+              <div>
+                <label className="block text-xs font-black text-slate-500 mb-1.5 text-right">من تاريخ</label>
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 focus:border-blue-500 text-xs px-3.5 py-2.5 rounded-xl outline-hidden text-slate-700 font-bold"
+                />
+              </div>
+
+              {/* End Date */}
+              <div>
+                <label className="block text-xs font-black text-slate-500 mb-1.5 text-right">إلى تاريخ</label>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 focus:border-blue-500 text-xs px-3.5 py-2.5 rounded-xl outline-hidden text-slate-700 font-bold"
+                />
+              </div>
+            </div>
+
+            {/* Quick Stats and Reset button inside panel */}
+            <div className="flex items-center justify-between pt-2 border-t border-slate-50">
+              <span className="text-[10px] font-bold text-slate-400">
+                الحركات المطابقة للفلاتر الحالية: <strong className="text-blue-900 font-mono">{filteredMovements.length}</strong>
+              </span>
+              
+              {(filterWarehouseId !== 'all' || startDate !== '' || endDate !== '' || filterType !== 'all' || search !== '') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFilterWarehouseId('all');
+                    setStartDate('');
+                    setEndDate('');
+                    setFilterType('all');
+                    setSearch('');
+                  }}
+                  className="text-[11px] font-bold text-red-600 hover:text-red-700 transition-colors underline cursor-pointer"
+                >
+                  إعادة تعيين كافة الفلاتر &times;
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* View Mode Toggle Switch */}
+      <div className="flex items-center justify-between mb-4 mt-2" dir="rtl">
+        <span className="text-xs font-bold text-slate-400">
+          عدد الحركات المعروضة: <strong className="text-blue-600 font-mono">{filteredMovements.length}</strong>
+        </span>
+        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl shrink-0">
+          <button
+            type="button"
+            onClick={() => setViewMode('cards')}
+            className={`text-[10px] font-black px-3 py-1.5 rounded-lg transition-all flex items-center gap-1 cursor-pointer ${
+              viewMode === 'cards' ? 'bg-white text-blue-600 shadow-xs' : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            <span>🗂️ عرض البطاقات</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('table')}
+            className={`text-[10px] font-black px-3 py-1.5 rounded-lg transition-all flex items-center gap-1 cursor-pointer ${
+              viewMode === 'table' ? 'bg-white text-blue-600 shadow-xs' : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            <span>📊 عرض الجدول</span>
+          </button>
         </div>
       </div>
 
@@ -203,6 +354,85 @@ export default function MovementsView({
           <div className="bg-white border border-slate-100 rounded-3xl p-10 text-center text-slate-400">
             <p className="text-sm font-semibold">لا توجد حركات مسجلة لهذا التصنيف</p>
             <p className="text-xs mt-1">سجل حركة جديدة بالنقر على زر الإضافة (+) في الأعلى</p>
+          </div>
+        ) : viewMode === 'table' ? (
+          <div className="border border-slate-200 rounded-3xl overflow-x-auto bg-white shadow-xs" dir="rtl">
+            <table className="w-full text-right border-collapse text-xs">
+              <thead>
+                <tr className="bg-slate-100 border-b border-slate-200 font-black text-slate-700">
+                  <th className="p-4 text-right sticky right-0 bg-slate-100 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] min-w-[80px]">رقم الحركة</th>
+                  <th className="p-4 text-right sticky right-[80px] bg-slate-100 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] min-w-[120px]">رمز الصنف</th>
+                  <th className="p-4 text-right min-w-[140px]">اسم الصنف</th>
+                  <th className="p-4 text-right min-w-[90px]">النوع</th>
+                  <th className="p-4 text-right min-w-[100px]">الكمية</th>
+                  <th className="p-4 text-right min-w-[130px]">المستودع</th>
+                  <th className="p-4 text-right min-w-[140px]">المورد/الجهة</th>
+                  <th className="p-4 text-right min-w-[120px]">التاريخ</th>
+                  <th className="p-4 text-center min-w-[60px]">صورة</th>
+                  <th className="p-4 text-center min-w-[100px]">الإجراءات</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 font-medium text-slate-600">
+                {filteredMovements.map((movement) => {
+                  const item = items.find((i) => i.id === movement.itemId);
+                  const warehouse = warehouses.find((w) => w.id === movement.warehouseId);
+                  const isInward = movement.type === 'in';
+                  
+                  return (
+                    <tr key={movement.id} className="hover:bg-slate-50/50 transition-colors">
+                      <td className="p-4 font-mono font-bold text-slate-900 sticky right-0 bg-white z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">#{movement.id}</td>
+                      <td className="p-4 font-mono font-bold text-slate-500 sticky right-[80px] bg-white z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">{movement.itemId}</td>
+                      <td className="p-4 font-bold text-slate-800">{item?.name || 'صنف غير معروف'}</td>
+                      <td className="p-4">
+                        <span className={`inline-flex items-center gap-1 text-[10px] font-black px-2 py-1 rounded-lg ${
+                          isInward ? 'bg-emerald-50 text-emerald-600' : 'bg-orange-50 text-orange-600'
+                        }`}>
+                          <span className="text-[10px]">{isInward ? '⬇️' : '⬆️'}</span>
+                          {isInward ? 'وارد' : 'صرف'}
+                        </span>
+                      </td>
+                      <td className="p-4 font-mono font-bold">{movement.quantity} {item?.unit || 'حبة'}</td>
+                      <td className="p-4 font-bold text-slate-700">{warehouse?.name || 'الرئيسي'}</td>
+                      <td className="p-4 text-slate-500">{movement.partner || '-'}</td>
+                      <td className="p-4 font-mono text-slate-400">{movement.date}</td>
+                      <td className="p-4 text-center">
+                        {movement.photo ? (
+                          <button
+                            type="button"
+                            onClick={() => setPreviewPhoto(movement.photo!)}
+                            className="w-8 h-8 rounded-lg overflow-hidden border border-slate-100 mx-auto hover:scale-105 transition-all cursor-pointer shadow-3xs"
+                          >
+                            <img src={movement.photo} alt="Thumbnail" className="w-full h-full object-cover" />
+                          </button>
+                        ) : (
+                          <span className="text-slate-300">-</span>
+                        )}
+                      </td>
+                      <td className="p-4">
+                        <div className="flex items-center justify-center">
+                          {isDataLocked ? (
+                            <span className="text-amber-600 bg-amber-50 text-[9px] font-bold px-2 py-1 rounded-lg">عرض فقط</span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (confirm(`هل أنت متأكد من حذف هذه الحركة المخزنية رقم #${movement.id}؟`)) {
+                                  onDeleteMovement(movement.id);
+                                }
+                              }}
+                              className="bg-slate-100 hover:bg-red-50 text-slate-400 hover:text-red-600 p-1.5 rounded-lg transition-all cursor-pointer"
+                              title="حذف الحركة"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         ) : (
           <VirtualList

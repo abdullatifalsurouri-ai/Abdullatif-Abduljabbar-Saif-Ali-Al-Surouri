@@ -15,6 +15,7 @@ import {
   Layers, 
   AlertTriangle 
 } from 'lucide-react';
+import { exportToPDF } from '../utils/pdfExport';
 import { Item, Movement, Warehouse, InvoiceSettings, User } from '../types';
 
 interface PrintViewProps {
@@ -485,7 +486,7 @@ export default function PrintView({ movements, items, warehouses = [], invoiceSe
 
       {/* PRINTABLE DOCUMENT 1: SINGLE VOUCHER (Only rendered when selected) */}
       {activeTab === 'single' && queriedVoucher && activeItem && (
-        <div className="bg-white border-2 border-slate-200 rounded-3xl p-6 sm:p-8 space-y-6 shadow-md print-container print:p-0 print:border-none print:shadow-none">
+        <div id="voucher-document-container" className="bg-white border-2 border-slate-200 rounded-3xl p-6 sm:p-8 space-y-6 shadow-md print-container print:p-0 print:border-none print:shadow-none">
           
           {/* Action button bar */}
           <div className="flex items-center justify-between border-b border-slate-100 pb-4 print:hidden">
@@ -497,6 +498,14 @@ export default function PrintView({ movements, items, warehouses = [], invoiceSe
               >
                 <Printer size={15} />
                 <span>طباعة السند</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => exportToPDF('voucher-document-container', `سند_${voucherType === 'in' ? 'وارد' : 'صرف'}_رقم_${queriedVoucher.id}.pdf`)}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <FileText size={15} />
+                <span>تصدير PDF</span>
               </button>
               <button
                 onClick={() => {
@@ -561,7 +570,7 @@ export default function PrintView({ movements, items, warehouses = [], invoiceSe
             </div>
 
             {/* Items Table */}
-            <div className="border border-slate-200 rounded-2xl overflow-hidden">
+            <div className="border border-slate-200 rounded-2xl overflow-x-auto">
               <table className="w-full text-right border-collapse text-xs sm:text-sm">
                 <thead>
                   <tr className="bg-slate-100 border-b border-slate-200 font-black text-slate-700">
@@ -622,7 +631,7 @@ export default function PrintView({ movements, items, warehouses = [], invoiceSe
 
       {/* PRINTABLE DOCUMENT 2: FILTERED MOVEMENTS REPORT */}
       {activeTab === 'filtered' && (
-        <div className="bg-white border-2 border-slate-200 rounded-3xl p-6 sm:p-8 space-y-6 shadow-md print-container print:p-0 print:border-none print:shadow-none mt-6">
+        <div id="filtered-movements-container" className="bg-white border-2 border-slate-200 rounded-3xl p-6 sm:p-8 space-y-6 shadow-md print-container print:p-0 print:border-none print:shadow-none mt-6">
           
           {/* Action button bar */}
           <div className="flex items-center justify-between border-b border-slate-100 pb-4 print:hidden">
@@ -633,7 +642,15 @@ export default function PrintView({ movements, items, warehouses = [], invoiceSe
                 className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
               >
                 <Printer size={15} />
-                <span>طباعة التقرير وتصدير PDF</span>
+                <span>طباعة التقرير</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => exportToPDF('filtered-movements-container', `تقرير_حركات_المخزن_${startDate}_إلى_${endDate}.pdf`)}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <FileText size={15} />
+                <span>تصدير PDF</span>
               </button>
             </div>
           </div>
@@ -675,7 +692,7 @@ export default function PrintView({ movements, items, warehouses = [], invoiceSe
           </div>
 
           {/* Movements table */}
-          <div className="border border-slate-200 rounded-2xl overflow-hidden">
+          <div className="border border-slate-200 rounded-2xl overflow-x-auto">
             <table className="w-full text-right border-collapse text-xs">
               <thead>
                 <tr className="bg-slate-100 border-b border-slate-200 font-black text-slate-700">
@@ -731,7 +748,7 @@ export default function PrintView({ movements, items, warehouses = [], invoiceSe
 
       {/* PRINTABLE DOCUMENT 3: DETAILED INVENTORY REPORT */}
       {activeTab === 'inventory' && (
-        <div className="bg-white border-2 border-slate-200 rounded-3xl p-6 sm:p-8 space-y-6 shadow-md print-container print:p-0 print:border-none print:shadow-none mt-6">
+        <div id="detailed-inventory-container" className="bg-white border-2 border-slate-200 rounded-3xl p-6 sm:p-8 space-y-6 shadow-md print-container print:p-0 print:border-none print:shadow-none mt-6">
           
           {/* Action button bar */}
           <div className="flex items-center justify-between border-b border-slate-100 pb-4 print:hidden">
@@ -742,7 +759,15 @@ export default function PrintView({ movements, items, warehouses = [], invoiceSe
                 className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
               >
                 <Printer size={15} />
-                <span>طباعة التقرير وتصدير PDF</span>
+                <span>طباعة التقرير</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => exportToPDF('detailed-inventory-container', `تقرير_الجرد_التفصيلي_${new Date().toISOString().split('T')[0]}.pdf`)}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <FileText size={15} />
+                <span>تصدير PDF</span>
               </button>
             </div>
           </div>
@@ -787,7 +812,7 @@ export default function PrintView({ movements, items, warehouses = [], invoiceSe
           </div>
 
           {/* Detailed Inventory report table */}
-          <div className="border border-slate-200 rounded-2xl overflow-hidden">
+          <div className="border border-slate-200 rounded-2xl overflow-x-auto">
             <table className="w-full text-right border-collapse text-xs">
               <thead>
                 <tr className="bg-slate-100 border-b border-slate-200 font-black text-slate-700">
