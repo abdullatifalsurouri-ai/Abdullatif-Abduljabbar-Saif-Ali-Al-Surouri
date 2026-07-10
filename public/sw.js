@@ -131,14 +131,16 @@ async function checkInventoryStock() {
         const names = lowStockItems.map(i => `${i.name} (المتبقي: ${i.balance})`).slice(0, 3).join('، ');
         const suffix = lowStockItems.length > 3 ? ` و ${lowStockItems.length - 3} أصناف أخرى` : '';
         
-        // Ensure permission is granted in the background context
-        if (self.registration && self.Notification && self.Notification.permission === 'granted') {
+        // Ensure registration is active and show notification safely
+        if (self.registration) {
           self.registration.showNotification('تنبيه المخزون الحرج ⚠️', {
             body: `الأصناف التالية تحت حد الأمان: ${names}${suffix}`,
             icon: '/icon.svg',
             badge: '/icon.svg',
             vibrate: [200, 100, 200],
             data: { url: '/' }
+          }).catch((err) => {
+            console.warn('Background notification show failed:', err);
           });
         }
       }

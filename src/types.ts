@@ -9,6 +9,10 @@ export interface Item {
   description?: string; // وصف المنتج
   expirationDate?: string; // تاريخ انتهاء الصلاحية
   alertBeforeMonths?: number; // التنبيه قبل بالشهور
+  // وحدات قياس كبرى وصغرى
+  unitMajor?: string; // الوحدة الكبرى مثل كرتون
+  unitMinor?: string; // الوحدة الصغرى مثل حبة
+  unitConversion?: number; // معامل التحويل: كرتون يحتوي كم حبة
 }
 
 export interface Movement {
@@ -22,6 +26,10 @@ export interface Movement {
   warehouseId?: string; // Associate movement with a warehouse
   expirationDate?: string; // تاريخ انتهاء الصلاحية للحركة (خاص بالوارد)
   alertBeforeMonths?: number; // التنبيه قبل بالشهور
+  // حالة الاعتماد المالي ونوع الدفع في السندات
+  paymentType?: 'cash' | 'credit'; // نوع الدفع: نقدي / آجل
+  financialApproval?: 'pending' | 'approved'; // حالة الاعتماد المالي
+  purchaseInvoiceId?: string; // رقم الفاتورة المرتبطة
 }
 
 export interface Supplier {
@@ -29,6 +37,7 @@ export interface Supplier {
   name: string;
   phone: string;
   email: string;
+  balance?: number; // الرصيد المالي / مستحقات المورد
 }
 
 export interface Warehouse {
@@ -51,7 +60,53 @@ export interface WarehouseTransfer {
   handledDate?: string;
 }
 
-export type TabType = 'home' | 'items' | 'movements' | 'inventory' | 'warehouses' | 'transfers' | 'report' | 'print' | 'settings';
+export type TabType = 'home' | 'items' | 'movements' | 'inventory' | 'warehouses' | 'transfers' | 'report' | 'print' | 'settings' | 'suppliers' | 'purchases' | 'security' | 'sales';
+
+export interface PurchaseRequest {
+  id: string; // e.g., PR-001
+  itemId: string;
+  quantity: number;
+  unit: string;
+  notes?: string;
+  date: string;
+  status: 'pending' | 'approved' | 'rejected' | 'ordered';
+  createdBy: string;
+}
+
+export interface PurchaseOrderItem {
+  itemId: string;
+  quantity: number;
+  price: number;
+}
+
+export interface PurchaseOrder {
+  id: string; // e.g., PO-001
+  supplierId: string;
+  date: string;
+  items: PurchaseOrderItem[];
+  status: 'pending' | 'sent' | 'received';
+  notes?: string;
+  createdBy: string;
+}
+
+export interface PurchaseInvoiceItem {
+  itemId: string;
+  quantity: number;
+  price: number;
+}
+
+export interface PurchaseInvoice {
+  id: string; // e.g., PI-001
+  supplierId: string;
+  date: string;
+  items: PurchaseInvoiceItem[];
+  paymentType: 'cash' | 'credit';
+  financialApproval: 'pending' | 'approved';
+  status: 'saved' | 'received';
+  warehouseId: string;
+  createdBy: string;
+  notes?: string;
+}
 
 export type RoleType = 'Owner' | 'Admin' | 'Storekeeper' | 'Viewer';
 

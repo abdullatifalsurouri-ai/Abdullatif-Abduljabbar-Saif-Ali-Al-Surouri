@@ -175,7 +175,36 @@ function readDB() {
           date: '2026-06-27T10:00:00.000Z'
         }
       ],
-      invoiceSettings: null as any
+      invoiceSettings: null as any,
+      customers: [
+        { id: 'CUST-001', name: 'مؤسسة الرياض التجارية', phone: '0501234567', email: 'riyadh@example.com', balance: 12500 },
+        { id: 'CUST-002', name: 'شركة الأمل للمقاولات', phone: '0559876543', email: 'hope@example.com', balance: 8000 },
+        { id: 'CUST-003', name: 'مكتبة الفجر الحديثة', phone: '0545556667', email: 'fajr@example.com', balance: 3400 }
+      ],
+      treasuryBalance: 250000,
+      financialVouchers: [] as any[],
+      employees: [
+        { id: 'EMP-001', name: 'أحمد الشمري', role: 'محاسب', salary: 12000, balance: 0, advances: 0, custody: 5000, phone: '0501112223', email: 'ahmad@example.com', history: [] },
+        { id: 'EMP-002', name: 'خالد العتيبي', role: 'أمين مستودع', salary: 8000, balance: 0, advances: 1500, custody: 0, phone: '0554443332', email: 'khaled@example.com', history: [] },
+        { id: 'EMP-003', name: 'ياسر الحربي', role: 'سائق / مندوب', salary: 6000, balance: 0, advances: 0, custody: 2000, phone: '0532225554', email: 'yasser@example.com', history: [] }
+      ] as any[],
+      journalEntries: [
+        {
+          id: 'JV-1001',
+          date: '2026-07-10',
+          notes: 'القيد الافتتاحي للخزينة والأرصدة الأولية',
+          reference: 'قيد افتتاحي',
+          createdBy: 'System',
+          isReversed: false,
+          lines: [
+            { account: 'الخزينة العامة', debit: 250000, credit: 0 },
+            { account: 'حساب العميل: مؤسسة الرياض التجارية', debit: 12500, credit: 0 },
+            { account: 'حساب العميل: شركة الأمل للمقاولات', debit: 8000, credit: 0 },
+            { account: 'حساب العميل: مكتبة الفجر الحديثة', debit: 3400, credit: 0 },
+            { account: 'رأس المال / الأرصدة الافتتاحية', debit: 0, credit: 273900 }
+          ]
+        }
+      ] as any[]
     }
   };
 
@@ -210,6 +239,25 @@ function readDB() {
     }
     if (!db.warehouseData.auditLogs) {
       db.warehouseData.auditLogs = defaultDB.warehouseData.auditLogs;
+    }
+    if (!db.warehouseData.customers) {
+      db.warehouseData.customers = [
+        { id: 'CUST-001', name: 'مؤسسة الرياض التجارية', phone: '0501234567', email: 'riyadh@example.com', balance: 12500 },
+        { id: 'CUST-002', name: 'شركة الأمل للمقاولات', phone: '0559876543', email: 'hope@example.com', balance: 8000 },
+        { id: 'CUST-003', name: 'مكتبة الفجر الحديثة', phone: '0545556667', email: 'fajr@example.com', balance: 3400 }
+      ];
+    }
+    if (db.warehouseData.treasuryBalance === undefined) {
+      db.warehouseData.treasuryBalance = 250000;
+    }
+    if (!db.warehouseData.financialVouchers) {
+      db.warehouseData.financialVouchers = [];
+    }
+    if (!db.warehouseData.employees) {
+      db.warehouseData.employees = defaultDB.warehouseData.employees;
+    }
+    if (!db.warehouseData.journalEntries) {
+      db.warehouseData.journalEntries = defaultDB.warehouseData.journalEntries;
     }
     if (db.warehouseData.invoiceSettings === undefined) {
       db.warehouseData.invoiceSettings = null;
@@ -492,7 +540,7 @@ app.get("/api/sync/pull", (req, res) => {
 
 // Data Push / Sync
 app.post("/api/sync/push", (req, res) => {
-  const { items, movements, suppliers, warehouses, transfers, auditLogs, groups, invoiceSettings } = req.body;
+  const { items, movements, suppliers, warehouses, transfers, auditLogs, groups, invoiceSettings, customers, treasuryBalance, financialVouchers, employees, journalEntries } = req.body;
   if (!items || !movements || !suppliers) {
     return res.status(400).json({ success: false, error: "بيانات المزامنة غير مكتملة" });
   }
@@ -508,7 +556,12 @@ app.post("/api/sync/push", (req, res) => {
     transfers: transfers || db.warehouseData.transfers || [],
     auditLogs: auditLogs || db.warehouseData.auditLogs || [],
     groups: groups || db.warehouseData.groups || [],
-    invoiceSettings: invoiceSettings || db.warehouseData.invoiceSettings || null
+    invoiceSettings: invoiceSettings || db.warehouseData.invoiceSettings || null,
+    customers: customers || db.warehouseData.customers || [],
+    treasuryBalance: treasuryBalance !== undefined ? treasuryBalance : db.warehouseData.treasuryBalance || 250000,
+    financialVouchers: financialVouchers || db.warehouseData.financialVouchers || [],
+    employees: employees || db.warehouseData.employees || [],
+    journalEntries: journalEntries || db.warehouseData.journalEntries || []
   };
 
   writeDB(db);

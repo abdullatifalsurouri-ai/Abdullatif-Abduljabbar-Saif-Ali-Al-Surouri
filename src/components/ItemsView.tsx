@@ -53,7 +53,14 @@ export default function ItemsView({
       return;
     }
 
-    const recognition = new SpeechRecognition();
+    let recognition;
+    try {
+      recognition = new SpeechRecognition();
+    } catch (err) {
+      console.warn('SpeechRecognition instantiation failed:', err);
+      alert('تعذر تشغيل ميزة البحث الصوتي بسبب قيود المتصفح أو البيئة الحالية.');
+      return;
+    }
     recognition.lang = 'ar-SA';
     recognition.interimResults = false;
     recognition.maxAlternatives = 1;
@@ -165,6 +172,9 @@ export default function ItemsView({
     category: '',
     description: '',
     expirationDate: '',
+    unitMajor: 'كرتون',
+    unitMinor: 'حبة',
+    unitConversion: 24,
   });
 
   // Extract unique categories from dynamic groups & items list
@@ -446,6 +456,9 @@ export default function ItemsView({
       category: '',
       description: '',
       expirationDate: '',
+      unitMajor: 'كرتون',
+      unitMinor: 'حبة',
+      unitConversion: 24,
     };
 
     const savedDraft = sessionStorage.getItem('draft_add_item_form');
@@ -485,6 +498,9 @@ export default function ItemsView({
       category: item.category || '',
       description: item.description || '',
       expirationDate: item.expirationDate || '',
+      unitMajor: item.unitMajor || 'كرتون',
+      unitMinor: item.unitMinor || 'حبة',
+      unitConversion: item.unitConversion || 24,
     });
     setIsFormOpen(true);
   };
@@ -503,6 +519,9 @@ export default function ItemsView({
       category: formData.category.trim() || undefined,
       description: formData.description.trim() || undefined,
       expirationDate: formData.expirationDate ? formData.expirationDate : undefined,
+      unitMajor: formData.unitMajor ? formData.unitMajor.trim() : undefined,
+      unitMinor: formData.unitMinor ? formData.unitMinor.trim() : undefined,
+      unitConversion: formData.unitConversion ? Number(formData.unitConversion) : undefined,
     };
 
     if (editingItem) {
@@ -1040,6 +1059,11 @@ export default function ItemsView({
                             {item.category}
                           </span>
                         )}
+                        {item.unitMajor && item.unitMinor && item.unitConversion && (
+                          <span className="bg-teal-50 text-teal-700 border border-teal-100 text-xs font-bold px-3 py-1.5 rounded-xl flex items-center gap-1">
+                            📦 {item.unitMajor} = {item.unitConversion} {item.unitMinor}
+                          </span>
+                        )}
                         {expBadge}
                       </div>
                     </div>
@@ -1325,7 +1349,7 @@ export default function ItemsView({
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-500 mb-1.5">الوحدة</label>
+                  <label className="block text-xs font-bold text-slate-500 mb-1.5">الوحدة الافتراضية</label>
                   <input
                     type="text"
                     value={formData.unit}
@@ -1334,6 +1358,48 @@ export default function ItemsView({
                     placeholder="مثال: حبة، كرتون"
                   />
                 </div>
+              </div>
+
+              {/* Units Conversion Setup (حبة / كرتون / درزن) */}
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-3">
+                <span className="text-[11px] font-black text-blue-600 block">📦 إعدادات وحدات القياس (الصغرى والكبرى):</span>
+                
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 mb-1">الوحدة الكبرى</label>
+                    <input
+                      type="text"
+                      value={formData.unitMajor}
+                      onChange={(e) => setFormData({ ...formData, unitMajor: e.target.value })}
+                      className="w-full bg-white border border-slate-200 focus:border-blue-500 text-xs px-3 py-2 rounded-xl text-slate-700"
+                      placeholder="كرتون / درزن"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 mb-1">الوحدة الصغرى</label>
+                    <input
+                      type="text"
+                      value={formData.unitMinor}
+                      onChange={(e) => setFormData({ ...formData, unitMinor: e.target.value })}
+                      className="w-full bg-white border border-slate-200 focus:border-blue-500 text-xs px-3 py-2 rounded-xl text-slate-700"
+                      placeholder="حبة"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 mb-1">عامل التحويل</label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={formData.unitConversion}
+                      onChange={(e) => setFormData({ ...formData, unitConversion: Number(e.target.value) || 1 })}
+                      className="w-full bg-white border border-slate-200 focus:border-blue-500 text-xs px-3 py-2 rounded-xl text-slate-700 font-mono text-center"
+                      placeholder="مثال: 24"
+                    />
+                  </div>
+                </div>
+                <p className="text-[9px] text-slate-400 leading-normal">
+                  💡 تتيح هذه الميزة شحن البضائع كرتونياً وصرفها بالحبات مع تتبع الجرد الدقيق (مثال: كرتون يحتوي على 24 حبة).
+                </p>
               </div>
 
               <div>

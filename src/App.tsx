@@ -26,7 +26,12 @@ import {
   Calendar,
   X,
   CheckCircle,
-  Trash2
+  Trash2,
+  Users,
+  ShoppingBag,
+  ShieldCheck,
+  Briefcase,
+  Scale
 } from 'lucide-react';
 import { AboutModal } from './components/AboutModal';
 import { 
@@ -58,6 +63,10 @@ import PrintView from './components/PrintView';
 import WarehousesView from './components/WarehousesView';
 import TransfersView from './components/TransfersView';
 import SuppliersModal from './components/SuppliersModal';
+import SuppliersView from './components/SuppliersView';
+import PurchasesView from './components/PurchasesView';
+import SalesView from './components/SalesView';
+
 import LoginView from './components/LoginView';
 import SettingsView from './components/SettingsView';
 import Toast, { ToastMessage } from './components/Toast';
@@ -89,6 +98,40 @@ export default function App() {
   }, [currentUser]);
 
   const [activeTab, setActiveTab] = useState<TabType>('home');
+  const [warehouseSubTab, setWarehouseSubTab] = useState<'warehouses' | 'transfers' | 'inventory'>('warehouses');
+  const [financialSubTab, setFinancialSubTab] = useState<'suppliers' | 'customers' | 'vouchers' | 'employees' | 'journal_entries'>('suppliers');
+  const [financialVouchers, setFinancialVouchers] = useState<any[]>(() => {
+    const saved = localStorage.getItem('wms_financial_vouchers');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [employees, setEmployees] = useState<any[]>(() => {
+    const saved = localStorage.getItem('wms_employees');
+    return saved ? JSON.parse(saved) : [
+      { id: 'EMP-001', name: 'أحمد الشمري', role: 'محاسب', salary: 12000, balance: 0, advances: 0, custody: 5000, phone: '0501112223', email: 'ahmad@example.com', history: [] },
+      { id: 'EMP-002', name: 'خالد العتيبي', role: 'أمين مستودع', salary: 8000, balance: 0, advances: 1500, custody: 0, phone: '0554443332', email: 'khaled@example.com', history: [] },
+      { id: 'EMP-003', name: 'ياسر الحربي', role: 'سائق / مندوب', salary: 6000, balance: 0, advances: 0, custody: 2000, phone: '0532225554', email: 'yasser@example.com', history: [] }
+    ];
+  });
+  const [journalEntries, setJournalEntries] = useState<any[]>(() => {
+    const saved = localStorage.getItem('wms_journal_entries');
+    return saved ? JSON.parse(saved) : [
+      {
+        id: 'JV-1001',
+        date: '2026-07-10',
+        notes: 'القيد الافتتاحي للخزينة والأرصدة الأولية',
+        reference: 'قيد افتتاحي',
+        createdBy: 'System',
+        isReversed: false,
+        lines: [
+          { account: 'الخزينة العامة', debit: 250000, credit: 0 },
+          { account: 'حساب العميل: مؤسسة الرياض التجارية', debit: 12500, credit: 0 },
+          { account: 'حساب العميل: شركة الأمل للمقاولات', debit: 8000, credit: 0 },
+          { account: 'حساب العميل: مكتبة الفجر الحديثة', debit: 3400, credit: 0 },
+          { account: 'رأس المال / الأرصدة الافتتاحية', debit: 0, credit: 273900 }
+        ]
+      }
+    ];
+  });
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
   const [isSuppliersOpen, setIsSuppliersOpen] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
@@ -207,6 +250,20 @@ export default function App() {
     return saved ? JSON.parse(saved) : INITIAL_SUPPLIERS;
   });
 
+  const [customers, setCustomers] = useState<any[]>(() => {
+    const saved = localStorage.getItem('wms_customers');
+    return saved ? JSON.parse(saved) : [
+      { id: 'CUST-001', name: 'مؤسسة الرياض التجارية', phone: '0501234567', email: 'riyadh@example.com', balance: 12500 },
+      { id: 'CUST-002', name: 'شركة الأمل للمقاولات', phone: '0559876543', email: 'hope@example.com', balance: 8000 },
+      { id: 'CUST-003', name: 'مكتبة الفجر الحديثة', phone: '0545556667', email: 'fajr@example.com', balance: 3400 }
+    ];
+  });
+
+  const [treasuryBalance, setTreasuryBalance] = useState<number>(() => {
+    const saved = localStorage.getItem('wms_treasury_balance');
+    return saved ? Number(saved) : 250000;
+  });
+
   const [movements, setMovements] = useState<Movement[]>(() => {
     const saved = localStorage.getItem('wms_movements');
     return saved ? JSON.parse(saved) : INITIAL_MOVEMENTS;
@@ -226,6 +283,42 @@ export default function App() {
     const saved = localStorage.getItem('wms_audit_logs');
     return saved ? JSON.parse(saved) : INITIAL_AUDIT_LOGS;
   });
+
+  const [purchaseRequests, setPurchaseRequests] = useState<any[]>(() => {
+    const saved = localStorage.getItem('wms_purchase_requests');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const [purchaseOrders, setPurchaseOrders] = useState<any[]>(() => {
+    const saved = localStorage.getItem('wms_purchase_orders');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const [purchaseInvoices, setPurchaseInvoices] = useState<any[]>(() => {
+    const saved = localStorage.getItem('wms_purchase_invoices');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  useEffect(() => {
+    localStorage.setItem('wms_purchase_requests', JSON.stringify(purchaseRequests));
+  }, [purchaseRequests]);
+
+  useEffect(() => {
+    localStorage.setItem('wms_purchase_orders', JSON.stringify(purchaseOrders));
+  }, [purchaseOrders]);
+
+  useEffect(() => {
+    localStorage.setItem('wms_purchase_invoices', JSON.stringify(purchaseInvoices));
+  }, [purchaseInvoices]);
+
+  const [salesInvoices, setSalesInvoices] = useState<any[]>(() => {
+    const saved = localStorage.getItem('wms_sales_invoices');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  useEffect(() => {
+    localStorage.setItem('wms_sales_invoices', JSON.stringify(salesInvoices));
+  }, [salesInvoices]);
 
   const [isDataLocked, setIsDataLocked] = useState<boolean>(() => {
     return localStorage.getItem('wms_is_data_locked') === 'true';
@@ -357,18 +450,50 @@ export default function App() {
     return saved ? Number(saved) : 1; // Default to 1 month
   });
 
+  const [browserNotificationPermission, setBrowserNotificationPermission] = useState<string>(() => {
+    try {
+      return typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'denied';
+    } catch (e) {
+      return 'denied';
+    }
+  });
+
   useEffect(() => {
     localStorage.setItem('wms_expiration_alert_months', expirationAlertMonths.toString());
   }, [expirationAlertMonths]);
 
-  // Request browser Notification permission if not set
+  // Request browser Notification permission if not set (Safely wrapped for Sandbox/iFrames)
   useEffect(() => {
-    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission();
+    try {
+      if (
+        typeof window !== 'undefined' && 
+        'Notification' in window && 
+        typeof Notification === 'function' &&
+        typeof Notification.requestPermission === 'function'
+      ) {
+        let currentPermission = 'denied';
+        try {
+          currentPermission = Notification.permission;
+        } catch (perErr) {
+          console.warn('Unable to read Notification.permission inside sandbox:', perErr);
+        }
+
+        if (currentPermission === 'default') {
+          Notification.requestPermission().then((perm) => {
+            setBrowserNotificationPermission(perm);
+          }).catch((e) => {
+            console.warn('Notification.requestPermission failed inside sandbox/iframe:', e);
+          });
+        } else {
+          setBrowserNotificationPermission(currentPermission);
+        }
+      }
+    } catch (e) {
+      console.warn('Notification API is fully restricted in this browser environment:', e);
     }
   }, []);
 
-  // Check and trigger daily reminder browser notification
+  // Check and trigger daily reminder browser notification (Safely wrapped for Sandbox/iFrames)
   useEffect(() => {
     const checkDailyReminder = () => {
       const savedTime = localStorage.getItem('wms_daily_reminder_time') || '18:00';
@@ -387,23 +512,33 @@ export default function App() {
           const lastNotifiedDate = localStorage.getItem('wms_last_notified_date');
           if (lastNotifiedDate !== todayStr) {
             localStorage.setItem('wms_last_notified_date', todayStr);
-            if ('Notification' in window && Notification.permission === 'granted') {
-              try {
-                new Notification('تنبيه المستودع اليومي 📦', {
-                  body: 'تنبيه: لم يتم تسجيل أي حركة صادر أو وارد خلال هذا اليوم في المستودع حتى الآن. يرجى مراجعة المخزون والعمليات اليومية.',
-                });
-              } catch (e) {
-                console.warn('Daily notification constructor failed, trying service worker:', e);
-                if ('serviceWorker' in navigator) {
-                  navigator.serviceWorker.ready.then((registration) => {
-                    registration.showNotification('تنبيه المستودع اليومي 📦', {
-                      body: 'تنبيه: لم يتم تسجيل أي حركة صادر أو وارد خلال هذا اليوم في المستودع حتى الآن. يرجى مراجعة المخزون والعمليات اليومية.',
-                    });
-                  }).catch((err) => {
-                    console.error('Service worker daily notification failed:', err);
+            
+            try {
+              if (
+                typeof window !== 'undefined' && 
+                'Notification' in window && 
+                typeof Notification === 'function' &&
+                Notification.permission === 'granted'
+              ) {
+                try {
+                  new Notification('تنبيه المستودع اليومي 📦', {
+                    body: 'تنبيه: لم يتم تسجيل أي حركة صادر أو وارد خلال هذا اليوم في المستودع حتى الآن. يرجى مراجعة المخزون والعمليات اليومية.',
                   });
+                } catch (e) {
+                  console.warn('Daily notification constructor failed, trying service worker:', e);
+                  if ('serviceWorker' in navigator) {
+                    navigator.serviceWorker.ready.then((registration) => {
+                      registration.showNotification('تنبيه المستودع اليومي 📦', {
+                        body: 'تنبيه: لم يتم تسجيل أي حركة صادر أو وارد خلال هذا اليوم في المستودع حتى الآن. يرجى مراجعة المخزون والعمليات اليومية.',
+                      });
+                    }).catch((err) => {
+                      console.error('Service worker daily notification failed:', err);
+                    });
+                  }
                 }
               }
+            } catch (permErr) {
+              console.warn('Failed checking permissions or showing daily notification inside iframe:', permErr);
             }
           }
         }
@@ -724,6 +859,26 @@ export default function App() {
           setAuditLogs(data.auditLogs);
           localStorage.setItem('wms_audit_logs', JSON.stringify(data.auditLogs));
         }
+        if (data.customers) {
+          setCustomers(data.customers);
+          localStorage.setItem('wms_customers', JSON.stringify(data.customers));
+        }
+        if (data.treasuryBalance !== undefined) {
+          setTreasuryBalance(data.treasuryBalance);
+          localStorage.setItem('wms_treasury_balance', String(data.treasuryBalance));
+        }
+        if (data.financialVouchers) {
+          setFinancialVouchers(data.financialVouchers);
+          localStorage.setItem('wms_financial_vouchers', JSON.stringify(data.financialVouchers));
+        }
+        if (data.employees) {
+          setEmployees(data.employees);
+          localStorage.setItem('wms_employees', JSON.stringify(data.employees));
+        }
+        if (data.journalEntries) {
+          setJournalEntries(data.journalEntries);
+          localStorage.setItem('wms_journal_entries', JSON.stringify(data.journalEntries));
+        }
         if (data.invoiceSettings) {
           setInvoiceSettings(data.invoiceSettings);
           localStorage.setItem('wms_invoice_settings', JSON.stringify(data.invoiceSettings));
@@ -764,7 +919,12 @@ export default function App() {
     currentWarehouses = warehouses,
     currentTransfers = transfers,
     currentAuditLogs = auditLogs,
-    showToast = false
+    showToast = false,
+    currentCustomers = customers,
+    currentTreasuryBalance = treasuryBalance,
+    currentFinancialVouchers = financialVouchers,
+    currentEmployees = employees,
+    currentJournalEntries = journalEntries
   ) => {
     if (!isOnline) {
       if (showToast) {
@@ -788,7 +948,12 @@ export default function App() {
           warehouses: currentWarehouses,
           transfers: currentTransfers,
           auditLogs: currentAuditLogs,
-          invoiceSettings: invoiceSettings
+          invoiceSettings: invoiceSettings,
+          customers: currentCustomers,
+          treasuryBalance: currentTreasuryBalance,
+          financialVouchers: currentFinancialVouchers,
+          employees: currentEmployees,
+          journalEntries: currentJournalEntries
         })
       });
       if (response.ok) {
@@ -869,11 +1034,11 @@ export default function App() {
   useEffect(() => {
     if (currentUser && isOnline) {
       const delayFn = setTimeout(() => {
-        pushDataToServer(items, suppliers, movements, warehouses, transfers, auditLogs);
+        pushDataToServer(items, suppliers, movements, warehouses, transfers, auditLogs, false, customers, treasuryBalance, financialVouchers, employees, journalEntries);
       }, 1500); // 1.5 seconds debounce
       return () => clearTimeout(delayFn);
     }
-  }, [items, suppliers, movements, warehouses, transfers, auditLogs, isOnline, currentUser]);
+  }, [items, suppliers, movements, warehouses, transfers, auditLogs, isOnline, currentUser, customers, treasuryBalance, financialVouchers, employees, journalEntries]);
 
   // Sync state with localStorage
   useEffect(() => {
@@ -883,6 +1048,26 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('wms_suppliers', JSON.stringify(suppliers));
   }, [suppliers]);
+
+  useEffect(() => {
+    localStorage.setItem('wms_customers', JSON.stringify(customers));
+  }, [customers]);
+
+  useEffect(() => {
+    localStorage.setItem('wms_treasury_balance', treasuryBalance.toString());
+  }, [treasuryBalance]);
+
+  useEffect(() => {
+    localStorage.setItem('wms_financial_vouchers', JSON.stringify(financialVouchers));
+  }, [financialVouchers]);
+
+  useEffect(() => {
+    localStorage.setItem('wms_employees', JSON.stringify(employees));
+  }, [employees]);
+
+  useEffect(() => {
+    localStorage.setItem('wms_journal_entries', JSON.stringify(journalEntries));
+  }, [journalEntries]);
 
   useEffect(() => {
     localStorage.setItem('wms_movements', JSON.stringify(movements));
@@ -1100,6 +1285,57 @@ export default function App() {
     );
   };
 
+  const handleUpdateSupplierBalance = (supplierId: string, amount: number) => {
+    setSuppliers((prev) => prev.map((s) => {
+      if (s.id === supplierId) {
+        return {
+          ...s,
+          balance: (s.balance || 0) + amount
+        };
+      }
+      return s;
+    }));
+  };
+
+  const handleAddPurchaseRequest = (pr: any) => {
+    setPurchaseRequests((prev) => [...prev, pr]);
+    logAction('add', 'system', `تم إنشاء طلب شراء جديد رقم #${pr.id}`);
+  };
+
+  const handleUpdatePurchaseRequestStatus = (id: string, status: string) => {
+    setPurchaseRequests((prev) => prev.map(pr => pr.id === id ? { ...pr, status } : pr));
+    logAction('edit', 'system', `تم تحديث حالة طلب الشراء رقم #${id} إلى ${status}`);
+  };
+
+  const handleAddPurchaseOrder = (po: any) => {
+    setPurchaseOrders((prev) => [...prev, po]);
+    logAction('add', 'system', `تم إنشاء أمر توريد جديد رقم #${po.id}`);
+  };
+
+  const handleUpdatePurchaseOrderStatus = (id: string, status: string) => {
+    setPurchaseOrders((prev) => prev.map(po => po.id === id ? { ...po, status } : po));
+    logAction('edit', 'system', `تم تحديث حالة أمر التوريد رقم #${id} إلى ${status}`);
+  };
+
+  const handleAddPurchaseInvoice = (pi: any) => {
+    setPurchaseInvoices((prev) => [...prev, pi]);
+    logAction('add', 'system', `تم إنشاء فاتورة مشتريات جديدة رقم #${pi.id}`);
+  };
+
+  const handleUpdatePurchaseInvoiceStatus = (id: string, status: string) => {
+    setPurchaseInvoices((prev) => prev.map(pi => {
+      if (pi.id === id) {
+        return { 
+          ...pi, 
+          status,
+          financialApproval: status === 'received' ? 'approved' as const : pi.financialApproval
+        };
+      }
+      return pi;
+    }));
+    logAction('edit', 'system', `تم تحديث حالة فاتورة المشتريات رقم #${id} إلى ${status}`);
+  };
+
   // Handler functions for adding/editing/deleting warehouses
   const handleAddWarehouse = (warehouse: Warehouse) => {
     if (warehousesLocked) return;
@@ -1250,19 +1486,6 @@ export default function App() {
     }, 200);
   };
 
-  // If user is not logged in, force elegant login screen
-  if (!currentUser) {
-    return (
-      <LoginView 
-        onLoginSuccess={handleLoginSuccess} 
-        currentLanguage={currentLanguage} 
-        onLanguageChange={setCurrentLanguage} 
-        isDarkMode={isDarkMode}
-        onToggleDarkMode={() => setIsDarkMode(prev => !prev)}
-      />
-    );
-  }
-
   // Render the appropriate subview based on current active tab and user permissions
   const renderView = () => {
     switch (activeTab) {
@@ -1288,7 +1511,12 @@ export default function App() {
                 if (tab === 'movements' && currentUser.permissions.movements === 'none') return;
                 if ((tab === 'inventory' || tab === 'report' || tab === 'print') && currentUser.permissions.reports === 'none') return;
               }
-              setActiveTab(tab);
+              if (tab === 'inventory') {
+                setWarehouseSubTab('inventory');
+                setActiveTab('warehouses');
+              } else {
+                setActiveTab(tab);
+              }
             }}
             onOpenSuppliers={() => {
               const isOwnerUser = currentUser?.role === 'Owner';
@@ -1360,35 +1588,32 @@ export default function App() {
             onAddWarehouse={handleAddWarehouse}
             onEditWarehouse={handleEditWarehouse}
             onDeleteWarehouse={handleDeleteWarehouse}
-          />
-        );
-      case 'transfers':
-        if (currentUser?.role !== 'Owner' && currentUser.permissions.transfers === 'none') return <div className="text-center py-12 text-slate-400 font-bold">🔒 عذراً، تحويلات المستودعات غير متاحة لحسابك الحالي.</div>;
-        return (
-          <TransfersView
             transfers={transfers}
-            warehouses={warehouses}
-            items={items}
             currentUser={currentUser}
-            isDataLocked={transfersLocked}
+            transfersLocked={transfersLocked}
             onAddTransfer={handleAddTransfer}
             onAcceptTransfer={handleAcceptTransfer}
             onRejectTransfer={handleRejectTransfer}
-          />
-        );
-      case 'inventory':
-        if (currentUser?.role !== 'Owner' && currentUser.permissions.reports === 'none') return <div className="text-center py-12 text-slate-400 font-bold">🔒 عذراً، تصفح الجرد مخفي عن حسابك الحالي.</div>;
-        return (
-          <InventoryView
-            items={items}
-            movements={movements}
-            warehouses={warehouses}
             invoiceSettings={invoiceSettings}
-            currentUser={currentUser}
             onAddMovement={handleAddMovement}
-            isDataLocked={movementsLocked}
+            activeSubTab={warehouseSubTab}
+            onSubTabChange={setWarehouseSubTab}
           />
         );
+      case 'transfers':
+        // Self-healing redirect to warehouses under transfers sub-tab
+        setTimeout(() => {
+          setWarehouseSubTab('transfers');
+          setActiveTab('warehouses');
+        }, 0);
+        return null;
+      case 'inventory':
+        // Self-healing redirect to warehouses under inventory sub-tab
+        setTimeout(() => {
+          setWarehouseSubTab('inventory');
+          setActiveTab('warehouses');
+        }, 0);
+        return null;
       case 'report':
         if (currentUser?.role !== 'Owner' && currentUser.permissions.reports === 'none') return <div className="text-center py-12 text-slate-400 font-bold">🔒 عذراً، التقارير غير متاحة لحسابك الحالي.</div>;
         return <ReportView items={items} movements={movements} suppliers={suppliers} warehouses={warehouses} invoiceSettings={invoiceSettings} currentUser={currentUser} />;
@@ -1432,6 +1657,73 @@ export default function App() {
             currentLanguage={currentLanguage}
           />
         );
+      case 'suppliers':
+        if (currentUser?.role !== 'Owner' && currentUser.permissions.suppliers === 'none') return <div className="text-center py-12 text-slate-400 font-bold">🔒 عذراً، تصفح الموردين والعملاء غير متاح لحسابك الحالي.</div>;
+        return (
+          <SuppliersView
+            suppliers={suppliers}
+            customers={customers}
+            treasuryBalance={treasuryBalance}
+            onUpdateCustomers={setCustomers}
+            onUpdateTreasuryBalance={setTreasuryBalance}
+            onLogAction={logAction}
+            currentUser={currentUser!}
+            isDataLocked={suppliersLocked}
+            onAddSupplier={handleAddSupplier}
+            onEditSupplier={handleEditSupplier}
+            onDeleteSupplier={handleDeleteSupplier}
+            usersList={usersList}
+            financialSubTab={financialSubTab}
+            setFinancialSubTab={setFinancialSubTab}
+            financialVouchers={financialVouchers}
+            onUpdateFinancialVouchers={setFinancialVouchers}
+            employees={employees}
+            onUpdateEmployees={setEmployees}
+            journalEntries={journalEntries}
+            onUpdateJournalEntries={setJournalEntries}
+          />
+        );
+      case 'purchases':
+        return (
+          <PurchasesView
+            items={items}
+            suppliers={suppliers}
+            warehouses={warehouses}
+            currentUser={currentUser}
+            isDataLocked={movementsLocked}
+            purchaseRequests={purchaseRequests}
+            purchaseOrders={purchaseOrders}
+            purchaseInvoices={purchaseInvoices}
+            onAddPurchaseRequest={handleAddPurchaseRequest || ((pr) => setPurchaseRequests(prev => [...prev, pr]))}
+            onUpdatePurchaseRequestStatus={handleUpdatePurchaseRequestStatus || ((id, status) => setPurchaseRequests(prev => prev.map(p => p.id === id ? {...p, status} : p)))}
+            onAddPurchaseOrder={handleAddPurchaseOrder || ((po) => setPurchaseOrders(prev => [...prev, po]))}
+            onUpdatePurchaseOrderStatus={handleUpdatePurchaseOrderStatus || ((id, status) => setPurchaseOrders(prev => prev.map(p => p.id === id ? {...p, status} : p)))}
+            onAddPurchaseInvoice={handleAddPurchaseInvoice || ((pi) => setPurchaseInvoices(prev => [...prev, pi]))}
+            onUpdatePurchaseInvoiceStatus={handleUpdatePurchaseInvoiceStatus || ((id, status) => setPurchaseInvoices(prev => prev.map(p => p.id === id ? {...p, status} : p)))}
+            onAddMovement={handleAddMovement}
+            onUpdateSupplierBalance={handleUpdateSupplierBalance}
+            onAddSupplier={handleAddSupplier}
+          />
+        );
+      case 'sales':
+        return (
+          <SalesView
+            items={items}
+            customers={customers}
+            warehouses={warehouses}
+            treasuryBalance={treasuryBalance}
+            onUpdateCustomers={setCustomers}
+            onUpdateTreasuryBalance={setTreasuryBalance}
+            onAddMovement={handleAddMovement}
+            onLogAction={logAction}
+            currentUser={currentUser!}
+            isDataLocked={isDataLocked}
+            salesInvoices={salesInvoices}
+            onAddSalesInvoice={(inv) => setSalesInvoices(prev => [...prev, inv])}
+            movements={movements}
+          />
+        );
+
       default:
         return null;
     }
@@ -1451,7 +1743,10 @@ export default function App() {
       navWarehouses: "المستودعات",
       navTransfers: "التحويلات المخزنية",
       navSettings: "الإعدادات",
-      navAbout: "حول التطبيق"
+      navAbout: "حول التطبيق",
+      navSuppliers: "شاشة الموردين المستقلة",
+      navPurchases: "دورة المشتريات المتكاملة",
+      navSecurity: "الأمان المتقدم والتصفير"
     },
     en: {
       title: "Al-Mada Smart WMS",
@@ -1466,7 +1761,10 @@ export default function App() {
       navWarehouses: "Warehouses",
       navTransfers: "Inventory Transfers",
       navSettings: "Settings",
-      navAbout: "About App"
+      navAbout: "About App",
+      navSuppliers: "Suppliers Directory",
+      navPurchases: "Purchase Management Cycle",
+      navSecurity: "Advanced Security & Reset"
     }
   };
 
@@ -1605,23 +1903,36 @@ export default function App() {
     return true;
   });
 
+  // If user is not logged in, force elegant login screen
+  if (!currentUser) {
+    return (
+      <LoginView 
+        onLoginSuccess={handleLoginSuccess} 
+        currentLanguage={currentLanguage} 
+        onLanguageChange={setCurrentLanguage} 
+        isDarkMode={isDarkMode}
+        onToggleDarkMode={() => setIsDarkMode(prev => !prev)}
+      />
+    );
+  }
+
   return (
     <div className={`min-h-screen ${isDarkMode ? 'bg-slate-950 text-slate-100 dark' : 'bg-slate-50 text-slate-800'} flex flex-col pb-24 font-sans select-none transition-colors duration-200`} dir={currentLanguage === 'ar' ? 'rtl' : 'ltr'}>
       
       {/* Top Banner (Print-only Hidden or Styled properly) */}
-      <header className={`border-b ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-800'} py-4 px-6 sticky top-0 z-40 print:hidden shadow-xs`}>
-        <div className="max-w-xl md:max-w-3xl lg:max-w-5xl xl:max-w-7xl w-full mx-auto flex flex-col gap-4">
+      <header className={`border-b ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-800'} py-2.5 px-6 sticky top-0 z-40 print:hidden shadow-xs`}>
+        <div className="max-w-xl md:max-w-3xl lg:max-w-5xl xl:max-w-7xl w-full mx-auto flex flex-col gap-1.5">
           
           {/* Row 1: Logo, Company Name, App Subtitle, Employee Info */}
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800/40 pb-3">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-2 pb-1">
             
             {/* Logo and Company Name / App Subtitle */}
             <div className="flex items-center gap-3 w-full sm:w-auto">
               {invoiceSettings?.logo ? (
-                <img src={invoiceSettings.logo} alt="Company Logo" className="w-11 h-11 object-contain rounded-xl shrink-0 bg-slate-50 dark:bg-slate-950 p-1 border border-slate-200/60 dark:border-slate-800" referrerPolicy="no-referrer" />
+                <img src={invoiceSettings.logo} alt="Company Logo" className="w-10 h-10 object-contain rounded-xl shrink-0 bg-slate-50 dark:bg-slate-950 p-1 border border-slate-200/60 dark:border-slate-800" referrerPolicy="no-referrer" />
               ) : (
-                <div className="bg-blue-600 text-white p-2.5 rounded-xl shadow-xs shrink-0">
-                  <Receipt size={22} className="stroke-[2.5]" />
+                <div className="bg-blue-600 text-white p-2 rounded-xl shadow-xs shrink-0">
+                  <Receipt size={20} className="stroke-[2.5]" />
                 </div>
               )}
               <div className="flex flex-col text-right">
@@ -1630,7 +1941,7 @@ export default function App() {
                   مؤسسة المدى للتجارة والتوريدات
                 </h1>
                 {/* Underneath: مستودع المدى الذكي وبجانبه الموظف */}
-                <div className="flex items-center gap-2 mt-1 flex-wrap">
+                <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                   <span className="text-[11px] font-bold text-blue-600 dark:text-blue-400">
                     مستودع المدى الذكي
                   </span>
@@ -1652,7 +1963,7 @@ export default function App() {
             <div className="flex items-center gap-3 w-full sm:w-auto justify-start sm:justify-end">
               {/* Offline Pending Sync Badge */}
               {offlineQueue.length > 0 && (
-                <span className="animate-pulse bg-rose-500 text-white font-black text-[10px] sm:text-xs px-3 py-1.5 rounded-xl flex items-center gap-1 shadow-md border border-rose-600 shrink-0">
+                <span className="animate-pulse bg-rose-500 text-white font-black text-[10px] sm:text-xs px-2.5 py-1 rounded-lg flex items-center gap-1 shadow-md border border-rose-600 shrink-0">
                   <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping shrink-0" />
                   {currentLanguage === 'ar' 
                     ? `${offlineQueue.length} بانتظار المزامنة` 
@@ -1664,75 +1975,75 @@ export default function App() {
           </div>
 
           {/* Row 2: Controls (About, Language, Fullscreen, Dark Mode, Notifications) */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-start gap-4">
-            <span className="text-[11px] font-extrabold text-slate-400 dark:text-slate-500 hidden sm:inline whitespace-nowrap">
+          <div className="flex items-center justify-start gap-2 w-full">
+            <span className="text-[11px] font-extrabold text-slate-400 dark:text-slate-500 whitespace-nowrap">
               {currentLanguage === 'ar' ? 'خيارات النظام السريعة:' : 'Quick System Actions:'}
             </span>
 
-            <div className={`flex flex-wrap items-center gap-1.5 p-1 rounded-2xl w-full sm:w-auto justify-start border ${
+            <div className={`flex flex-nowrap items-center gap-1 p-0.5 rounded-xl w-full sm:w-auto justify-start border overflow-x-auto scrollbar-none ${
               isDarkMode ? 'bg-slate-950/50 border-slate-800/80' : 'bg-slate-50 border-slate-100'
             }`}>
               
               {/* 1. About App Button */}
               <button
                 onClick={() => setShowAboutModal(true)}
-                className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-black transition-all cursor-pointer border ${
+                className={`shrink-0 flex items-center justify-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-black transition-all cursor-pointer border ${
                   isDarkMode 
                     ? 'hover:bg-slate-800 text-slate-300 hover:text-white border-transparent' 
                     : 'bg-white hover:bg-slate-100 text-slate-600 hover:text-slate-900 border-slate-200/60 shadow-2xs hover:shadow-xs'
                 }`}
                 title={currentLanguage === 'ar' ? 'حول التطبيق ومميزاته' : 'About App & Features'}
               >
-                <Info size={14} className="stroke-[2.5]" />
+                <Info size={13} className="stroke-[2.5]" />
                 <span>{currentLanguage === 'ar' ? 'حول التطبيق' : 'About'}</span>
               </button>
 
               {/* 2. Language Toggle Button */}
               <button
                 onClick={() => setCurrentLanguage(prev => prev === 'ar' ? 'en' : 'ar')}
-                className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-black transition-all cursor-pointer border ${
+                className={`shrink-0 flex items-center justify-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-black transition-all cursor-pointer border ${
                   isDarkMode 
                     ? 'hover:bg-slate-800 text-slate-300 hover:text-white border-transparent' 
                     : 'bg-white hover:bg-slate-100 text-slate-600 hover:text-slate-900 border-slate-200/60 shadow-2xs hover:shadow-xs'
                 }`}
                 title={currentLanguage === 'ar' ? 'Switch language to English' : 'تغيير اللغة إلى العربية'}
               >
-                <Globe size={14} className="stroke-[2.5]" />
+                <Globe size={13} className="stroke-[2.5]" />
                 <span>{currentLanguage === 'ar' ? 'English' : 'العربية'}</span>
               </button>
 
               {/* 3. Fullscreen Toggle Button */}
               <button
                 onClick={toggleFullscreen}
-                className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-black transition-all cursor-pointer border ${
+                className={`shrink-0 flex items-center justify-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-black transition-all cursor-pointer border ${
                   isDarkMode 
                     ? 'hover:bg-slate-800 text-slate-300 hover:text-white border-transparent' 
                     : 'bg-white hover:bg-slate-100 text-slate-600 hover:text-slate-900 border-slate-200/60 shadow-2xs hover:shadow-xs'
                 }`}
                 title={isFullscreen ? (currentLanguage === 'ar' ? 'الخروج من ملء الشاشة' : 'Exit Fullscreen') : (currentLanguage === 'ar' ? 'وضع ملء الشاشة' : 'Fullscreen Mode')}
               >
-                {isFullscreen ? <Minimize size={14} className="stroke-[2.5]" /> : <Maximize size={14} className="stroke-[2.5]" />}
+                {isFullscreen ? <Minimize size={13} className="stroke-[2.5]" /> : <Maximize size={13} className="stroke-[2.5]" />}
                 <span>{isFullscreen ? (currentLanguage === 'ar' ? 'نافذة' : 'Exit Full') : (currentLanguage === 'ar' ? 'ملء الشاشة' : 'Fullscreen')}</span>
               </button>
 
               {/* 4. Dark Mode Toggle Button */}
               <button
                 onClick={() => setIsDarkMode(prev => !prev)}
-                className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-black transition-all cursor-pointer border ${
+                className={`shrink-0 flex items-center justify-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-black transition-all cursor-pointer border ${
                   isDarkMode 
                     ? 'hover:bg-slate-800 text-amber-400 border-transparent' 
                     : 'bg-white hover:bg-slate-100 text-slate-600 hover:text-amber-500 border-slate-200/60 shadow-2xs hover:shadow-xs'
                 }`}
                 title={isDarkMode ? 'الوضع النهاري' : 'الوضع الليلي'}
               >
-                {isDarkMode ? <Sun size={14} className="stroke-[2.5]" /> : <Moon size={14} className="stroke-[2.5]" />}
+                {isDarkMode ? <Sun size={13} className="stroke-[2.5]" /> : <Moon size={13} className="stroke-[2.5]" />}
                 <span>{isDarkMode ? (currentLanguage === 'ar' ? 'النهاري' : 'Light') : (currentLanguage === 'ar' ? 'الليلي' : 'Dark')}</span>
               </button>
 
               {/* 5. Notification Toggle Button */}
               <button
                 onClick={() => setIsNotificationsOpen(prev => !prev)}
-                className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-black transition-all cursor-pointer relative border ${
+                className={`shrink-0 flex items-center justify-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-black transition-all cursor-pointer relative border ${
                   isNotificationsOpen 
                     ? 'bg-blue-600/10 text-blue-600 dark:text-blue-400 border-blue-600/20' 
                     : (isDarkMode 
@@ -1744,10 +2055,10 @@ export default function App() {
                   : (totalNotificationsBadgeCount === 0 ? 'No new notifications' : 'Notifications & Events')
                 }
               >
-                <Bell size={14} className="stroke-[2.5]" />
+                <Bell size={13} className="stroke-[2.5]" />
                 <span>{currentLanguage === 'ar' ? 'الإشعارات' : 'Alerts'}</span>
                 {totalNotificationsBadgeCount > 0 && (
-                  <span className="bg-red-500 text-white text-[9px] font-black w-4.5 h-4.5 rounded-full flex items-center justify-center animate-bounce shrink-0">
+                  <span className="bg-red-500 text-white text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center animate-bounce shrink-0">
                     {totalNotificationsBadgeCount}
                   </span>
                 )}
@@ -1870,7 +2181,7 @@ export default function App() {
             <div className="flex-1 overflow-y-auto p-5 space-y-6 no-scrollbar">
               
               {/* Browser notification activation card */}
-              {typeof window !== 'undefined' && 'Notification' in window && Notification.permission !== 'granted' && (
+              {browserNotificationPermission !== 'granted' && (
                 <div className="bg-blue-50/70 dark:bg-blue-950/20 border border-blue-100/50 dark:border-blue-900/30 p-4 rounded-2xl text-center space-y-2.5">
                   <p className="text-xs font-black text-blue-900 dark:text-blue-300">هل تود تفعيل التنبيهات الفورية؟ 🔔</p>
                   <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold leading-relaxed">
@@ -1878,15 +2189,36 @@ export default function App() {
                   </p>
                   <button
                     onClick={() => {
-                      Notification.requestPermission().then(permission => {
-                        if (permission === 'granted') {
-                          addToast('✓ تم تفعيل تنبيهات المتصفح بنجاح!', 'success');
-                          new Notification('نظام المدى الذكي WMS 🔔', {
-                            body: 'تم تفعيل التنبيهات الفورية وبث المخزون الخلفي بنجاح.',
-                            icon: '/icon.svg'
+                      try {
+                        if (
+                          typeof window !== 'undefined' && 
+                          'Notification' in window && 
+                          typeof Notification === 'function' &&
+                          typeof Notification.requestPermission === 'function'
+                        ) {
+                          Notification.requestPermission().then(permission => {
+                            setBrowserNotificationPermission(permission);
+                            if (permission === 'granted') {
+                              addToast('✓ تم تفعيل تنبيهات المتصفح بنجاح!', 'success');
+                              try {
+                                new Notification('نظام المدى الذكي WMS 🔔', {
+                                  body: 'تم تفعيل التنبيهات الفورية وبث المخزون الخلفي بنجاح.',
+                                  icon: '/icon.svg'
+                                });
+                              } catch (e) {
+                                console.warn('Notification construction failed inside sandbox:', e);
+                              }
+                            }
+                          }).catch(err => {
+                            console.warn('Notification permission request rejected:', err);
                           });
+                        } else {
+                          addToast('⚠️ إشعارات المتصفح غير مدعومة في بيئة العمل الحالية.', 'warning');
                         }
-                      });
+                      } catch (e) {
+                        console.error('Notification click setup failed:', e);
+                        addToast('⚠️ تعذر تفعيل الإشعارات بسبب قيود المتصفح.', 'warning');
+                      }
                     }}
                     className="bg-blue-600 hover:bg-blue-700 text-white font-black text-[10px] py-2 px-4 rounded-xl shadow-xs cursor-pointer transition-all hover:scale-105 active:scale-95 inline-block"
                   >
@@ -2051,7 +2383,7 @@ export default function App() {
             <div className="flex items-center gap-2">
               <Layers size={14} className="text-blue-500 stroke-[2.5]" />
               <span className="text-[11px] font-black text-slate-700 dark:text-slate-300">
-                {currentLanguage === 'ar' ? 'خيارات إضافية' : 'More Options'}
+                {currentLanguage === 'ar' ? 'أقسام النظام المتكاملة' : 'System Modules'}
               </span>
             </div>
             <button
@@ -2062,113 +2394,225 @@ export default function App() {
             </button>
           </div>
           
-          <div className="grid grid-cols-2 gap-2.5">
-            {/* Tab: التقرير */}
-            {currentUser.permissions.reports !== 'none' && (
-              <button
-                onClick={() => {
-                  setActiveTab('report');
-                  setIsMoreMenuOpen(false);
-                }}
-                className={`flex items-center gap-2 p-2.5 rounded-xl border transition-all cursor-pointer ${
-                  activeTab === 'report'
-                    ? 'bg-blue-600/10 border-blue-500/40 text-blue-600 dark:text-blue-400 font-black'
-                    : 'bg-slate-50/50 dark:bg-slate-950/30 hover:bg-slate-100 border-slate-100 dark:border-slate-800 text-slate-600 dark:text-slate-400'
-                }`}
-              >
-                <TrendingUp size={15} className="stroke-[2.5]" />
-                <span className="text-[10px] font-bold">{t.navReport}</span>
-              </button>
-            )}
+          <div className="space-y-4 text-right">
+            {/* Section 1: المبيعات والعملاء */}
+            <div className="space-y-1.5">
+              <h4 className="text-[10px] font-black text-blue-600 uppercase tracking-wider border-b border-slate-100 dark:border-slate-800 pb-1 flex items-center gap-1">
+                <span>🛒 قسم المبيعات والعملاء</span>
+              </h4>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => {
+                    setActiveTab('sales');
+                    setIsMoreMenuOpen(false);
+                  }}
+                  className={`flex items-center gap-2 p-2 rounded-xl border transition-all cursor-pointer ${
+                    activeTab === 'sales'
+                      ? 'bg-blue-600/10 border-blue-500/40 text-blue-600 font-black'
+                      : 'bg-slate-50 dark:bg-slate-950/30 hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-100 dark:border-slate-800 text-slate-600 dark:text-slate-400 font-bold'
+                  }`}
+                >
+                  <ShoppingBag size={14} className="stroke-[2.5] text-blue-500" />
+                  <span className="text-[10px]">فواتير المبيعات ونقاط البيع</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setActiveTab('sales');
+                    setIsMoreMenuOpen(false);
+                  }}
+                  className={`flex items-center gap-2 p-2 rounded-xl border transition-all cursor-pointer ${
+                    activeTab === 'sales'
+                      ? 'bg-blue-600/10 border-blue-500/40 text-blue-600 font-black'
+                      : 'bg-slate-50 dark:bg-slate-950/30 hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-100 dark:border-slate-800 text-slate-600 dark:text-slate-400 font-bold'
+                  }`}
+                >
+                  <Users size={14} className="stroke-[2.5] text-blue-500" />
+                  <span className="text-[10px]">إضافة العملاء وإدارتهم</span>
+                </button>
+              </div>
+            </div>
 
-            {/* Tab: السندات */}
-            {currentUser.permissions.reports !== 'none' && (
-              <button
-                onClick={() => {
-                  setActiveTab('print');
-                  setIsMoreMenuOpen(false);
-                }}
-                className={`flex items-center gap-2 p-2.5 rounded-xl border transition-all cursor-pointer ${
-                  activeTab === 'print'
-                    ? 'bg-blue-600/10 border-blue-500/40 text-blue-600 dark:text-blue-400 font-black'
-                    : 'bg-slate-50/50 dark:bg-slate-950/30 hover:bg-slate-100 border-slate-100 dark:border-slate-800 text-slate-600 dark:text-slate-400'
-                }`}
-              >
-                <FileText size={15} className="stroke-[2.5]" />
-                <span className="text-[10px] font-bold">{t.navPrint}</span>
-              </button>
-            )}
+            {/* Section 2: المشتريات والموردين */}
+            <div className="space-y-1.5">
+              <h4 className="text-[10px] font-black text-emerald-600 uppercase tracking-wider border-b border-slate-100 dark:border-slate-800 pb-1">
+                <span>📦 قسم المشتريات والمخازن</span>
+              </h4>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => {
+                    setActiveTab('purchases');
+                    setIsMoreMenuOpen(false);
+                  }}
+                  className={`flex items-center gap-2 p-2 rounded-xl border transition-all cursor-pointer ${
+                    activeTab === 'purchases'
+                      ? 'bg-emerald-600/10 border-emerald-500/40 text-emerald-600 font-black'
+                      : 'bg-slate-50 dark:bg-slate-950/30 hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-100 dark:border-slate-800 text-slate-600 dark:text-slate-400 font-bold'
+                  }`}
+                >
+                  <ShoppingBag size={14} className="stroke-[2.5] text-emerald-500" />
+                  <span className="text-[10px]">{t.navPurchases}</span>
+                </button>
+                {currentUser.permissions.warehouses !== 'none' && (
+                  <button
+                    onClick={() => {
+                      setWarehouseSubTab('warehouses');
+                      setActiveTab('warehouses');
+                      setIsMoreMenuOpen(false);
+                    }}
+                    className={`flex items-center gap-2 p-2 rounded-xl border transition-all cursor-pointer relative ${
+                      activeTab === 'warehouses'
+                        ? 'bg-emerald-600/10 border-emerald-500/40 text-emerald-600 font-black'
+                        : 'bg-slate-50 dark:bg-slate-950/30 hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-100 dark:border-slate-800 text-slate-600 dark:text-slate-400'
+                    }`}
+                  >
+                    <div className="relative">
+                      {pendingIncomingTransfersCount > 0 && (
+                        <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-[9px] font-black text-white animate-bounce shadow-xs">
+                          {pendingIncomingTransfersCount}
+                        </span>
+                      )}
+                      <WarehouseIcon size={14} className="stroke-[2.5] text-emerald-500" />
+                    </div>
+                    <span className="text-[10px] font-bold">{t.navWarehouses}</span>
+                  </button>
+                )}
+              </div>
+            </div>
 
-            {/* Tab: المستودعات */}
-            {currentUser.permissions.warehouses !== 'none' && (
-              <button
-                onClick={() => {
-                  setActiveTab('warehouses');
-                  setIsMoreMenuOpen(false);
-                }}
-                className={`flex items-center gap-2 p-2.5 rounded-xl border transition-all cursor-pointer ${
-                  activeTab === 'warehouses'
-                    ? 'bg-blue-600/10 border-blue-500/40 text-blue-600 dark:text-blue-400 font-black'
-                    : 'bg-slate-50/50 dark:bg-slate-950/30 hover:bg-slate-100 border-slate-100 dark:border-slate-800 text-slate-600 dark:text-slate-400'
-                }`}
-              >
-                <WarehouseIcon size={15} className="stroke-[2.5]" />
-                <span className="text-[10px] font-bold">{t.navWarehouses}</span>
-              </button>
-            )}
+            {/* Section 3: المالية والحسابات */}
+            <div className="space-y-1.5">
+              <h4 className="text-[10px] font-black text-amber-600 uppercase tracking-wider border-b border-slate-100 dark:border-slate-800 pb-1">
+                <span>💸 قسم المالية والحسابات</span>
+              </h4>
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  onClick={() => {
+                    setActiveTab('suppliers');
+                    setFinancialSubTab('suppliers');
+                    setIsMoreMenuOpen(false);
+                  }}
+                  className={`flex items-center justify-center text-center flex-col gap-1.5 p-2 rounded-xl border transition-all cursor-pointer ${
+                    activeTab === 'suppliers' && financialSubTab === 'suppliers'
+                      ? 'bg-amber-600/10 border-amber-500/40 text-amber-600 font-black'
+                      : 'bg-slate-50 dark:bg-slate-950/30 hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-100 dark:border-slate-800 text-slate-600 dark:text-slate-400 font-bold'
+                  }`}
+                >
+                  <Users size={14} className="stroke-[2.5] text-amber-500" />
+                  <span className="text-[10px]">الموردين</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setActiveTab('suppliers');
+                    setFinancialSubTab('customers');
+                    setIsMoreMenuOpen(false);
+                  }}
+                  className={`flex items-center justify-center text-center flex-col gap-1.5 p-2 rounded-xl border transition-all cursor-pointer ${
+                    activeTab === 'suppliers' && financialSubTab === 'customers'
+                      ? 'bg-amber-600/10 border-amber-500/40 text-amber-600 font-black'
+                      : 'bg-slate-50 dark:bg-slate-950/30 hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-100 dark:border-slate-800 text-slate-600 dark:text-slate-400 font-bold'
+                  }`}
+                >
+                  <Users size={14} className="stroke-[2.5] text-amber-500" />
+                  <span className="text-[10px]">العملاء</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setActiveTab('suppliers');
+                    setFinancialSubTab('vouchers');
+                    setIsMoreMenuOpen(false);
+                  }}
+                  className={`flex items-center justify-center text-center flex-col gap-1.5 p-2 rounded-xl border transition-all cursor-pointer ${
+                    activeTab === 'suppliers' && financialSubTab === 'vouchers'
+                      ? 'bg-amber-600/10 border-amber-500/40 text-amber-600 font-black'
+                      : 'bg-slate-50 dark:bg-slate-950/30 hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-100 dark:border-slate-800 text-slate-600 dark:text-slate-400 font-bold'
+                  }`}
+                >
+                  <FileText size={14} className="stroke-[2.5] text-amber-500" />
+                  <span className="text-[10px]">السندات</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setActiveTab('suppliers');
+                    setFinancialSubTab('employees');
+                    setIsMoreMenuOpen(false);
+                  }}
+                  className={`flex items-center justify-center text-center flex-col gap-1.5 p-2 rounded-xl border transition-all cursor-pointer ${
+                    activeTab === 'suppliers' && financialSubTab === 'employees'
+                      ? 'bg-amber-600/10 border-amber-500/40 text-amber-600 font-black'
+                      : 'bg-slate-50 dark:bg-slate-950/30 hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-100 dark:border-slate-800 text-slate-600 dark:text-slate-400 font-bold'
+                  }`}
+                >
+                  <Briefcase size={14} className="stroke-[2.5] text-amber-500" />
+                  <span className="text-[10px]">الموظفين</span>
+                </button>
+                {(currentUser.role === 'Owner' || (currentUser.role as string) === 'Accountant' || currentUser.role === 'Admin') && (
+                  <button
+                    onClick={() => {
+                      setActiveTab('suppliers');
+                      setFinancialSubTab('journal_entries');
+                      setIsMoreMenuOpen(false);
+                    }}
+                    className={`flex items-center justify-center text-center flex-col gap-1.5 p-2 rounded-xl border transition-all cursor-pointer ${
+                      activeTab === 'suppliers' && financialSubTab === 'journal_entries'
+                        ? 'bg-amber-600/10 border-amber-500/40 text-amber-600 font-black'
+                        : 'bg-slate-50 dark:bg-slate-950/30 hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-100 dark:border-slate-800 text-slate-600 dark:text-slate-400 font-bold'
+                    }`}
+                  >
+                    <Scale size={14} className="stroke-[2.5] text-amber-500" />
+                    <span className="text-[10px]">القيود المحاسبية</span>
+                  </button>
+                )}
+              </div>
+            </div>
 
-            {/* Tab: التحويلات المخزنية */}
-            {currentUser.permissions.transfers !== 'none' && (
-              <button
-                onClick={() => {
-                  setActiveTab('transfers');
-                  setIsMoreMenuOpen(false);
-                }}
-                className={`flex items-center gap-2 p-2.5 rounded-xl border transition-all cursor-pointer relative ${
-                  activeTab === 'transfers'
-                    ? 'bg-blue-600/10 border-blue-500/40 text-blue-600 dark:text-blue-400 font-black'
-                    : 'bg-slate-50/50 dark:bg-slate-950/30 hover:bg-slate-100 border-slate-100 dark:border-slate-800 text-slate-600 dark:text-slate-400'
-                }`}
-              >
-                <div className="relative">
-                  {pendingIncomingTransfersCount > 0 && (
-                    <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-[9px] font-black text-white animate-bounce shadow-xs">
-                      {pendingIncomingTransfersCount}
-                    </span>
-                  )}
-                  <Bell size={15} className="stroke-[2.5]" />
-                </div>
-                <span className="text-[10px] font-bold">{t.navTransfers}</span>
-              </button>
-            )}
-
-            {/* Tab: الإعدادات */}
-            <button
-              onClick={() => {
-                setActiveTab('settings');
-                setIsMoreMenuOpen(false);
-              }}
-              className={`flex items-center gap-2 p-2.5 rounded-xl border transition-all cursor-pointer ${
-                activeTab === 'settings'
-                  ? 'bg-blue-600/10 border-blue-500/40 text-blue-600 dark:text-blue-400 font-black'
-                  : 'bg-slate-50/50 dark:bg-slate-950/30 hover:bg-slate-100 border-slate-100 dark:border-slate-800 text-slate-600 dark:text-slate-400'
-              }`}
-            >
-              <SettingsIcon size={15} className="stroke-[2.5]" />
-              <span className="text-[10px] font-bold">{t.navSettings}</span>
-            </button>
-
-            {/* Tab: حول التطبيق */}
-            <button
-              onClick={() => {
-                setShowAboutModal(true);
-                setIsMoreMenuOpen(false);
-              }}
-              className="flex items-center gap-2 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/30 hover:bg-slate-100 text-slate-600 dark:text-slate-400 transition-all cursor-pointer"
-            >
-              <Info size={15} className="stroke-[2.5] text-blue-500" />
-              <span className="text-[10px] font-bold">{t.navAbout}</span>
-            </button>
+            {/* Section 4: إحصائيات وإعدادات */}
+            <div className="space-y-1.5">
+              <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-wider border-b border-slate-100 dark:border-slate-800 pb-1">
+                <span>⚙️ خيارات الإدارة العامة</span>
+              </h4>
+              <div className="grid grid-cols-3 gap-2">
+                {currentUser.permissions.reports !== 'none' && (
+                  <button
+                    onClick={() => {
+                      setActiveTab('report');
+                      setIsMoreMenuOpen(false);
+                    }}
+                    className={`flex items-center justify-center text-center flex-col gap-1 p-2 rounded-xl border transition-all cursor-pointer ${
+                      activeTab === 'report'
+                        ? 'bg-blue-600/10 border-blue-500/40 text-blue-600 font-black'
+                        : 'bg-slate-50 dark:bg-slate-950/30 hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-100 dark:border-slate-800 text-slate-600 dark:text-slate-400'
+                    }`}
+                  >
+                    <TrendingUp size={14} className="text-blue-500" />
+                    <span className="text-[9px] font-bold">{t.navReport}</span>
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    setActiveTab('settings');
+                    setIsMoreMenuOpen(false);
+                  }}
+                  className={`flex items-center justify-center text-center flex-col gap-1 p-2 rounded-xl border transition-all cursor-pointer ${
+                    activeTab === 'settings'
+                      ? 'bg-blue-600/10 border-blue-500/40 text-blue-600 font-black'
+                      : 'bg-slate-50 dark:bg-slate-950/30 hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-100 dark:border-slate-800 text-slate-600 dark:text-slate-400 font-bold'
+                  }`}
+                >
+                  <SettingsIcon size={14} className="text-slate-500" />
+                  <span className="text-[9px]">{t.navSettings}</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setShowAboutModal(true);
+                    setIsMoreMenuOpen(false);
+                  }}
+                  className="flex items-center justify-center text-center flex-col gap-1 p-2 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/30 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 font-bold transition-all cursor-pointer"
+                >
+                  <Info size={14} className="text-indigo-500" />
+                  <span className="text-[9px]">{t.navAbout}</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -2234,32 +2678,12 @@ export default function App() {
               </div>
             </button>
           )}
- 
-          {/* Tab: الجرد */}
-          {currentUser.permissions.reports !== 'none' && (
-            <button
-              onClick={() => {
-                setActiveTab('inventory');
-                setIsMoreMenuOpen(false);
-              }}
-              className={`flex flex-col items-center gap-1 transition-all cursor-pointer group relative ${
-                activeTab === 'inventory' ? 'text-blue-600 scale-105' : 'text-slate-400 hover:text-slate-500'
-              }`}
-            >
-              <BarChart2 size={20} className={activeTab === 'inventory' ? 'stroke-[2.5]' : 'stroke-[2]'} />
-              <span className="text-[10px] font-black">{t.navInventory}</span>
-              {/* Tooltip */}
-              <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 hidden group-hover:block bg-slate-950 text-white text-[9px] font-black px-2.5 py-1 rounded-md shadow-lg whitespace-nowrap z-50 pointer-events-none border border-white/10 text-center">
-                {currentLanguage === 'ar' ? 'كشوفات جرد المخزون، النواقص والكميات 📋' : 'Inventory Audits & Reports 📋'}
-              </div>
-            </button>
-          )}
 
           {/* Tab: المزيد */}
           <button
             onClick={() => setIsMoreMenuOpen(prev => !prev)}
             className={`flex flex-col items-center gap-1 transition-all cursor-pointer relative group ${
-              ['report', 'print', 'warehouses', 'transfers', 'settings'].includes(activeTab) || isMoreMenuOpen
+              ['report', 'print', 'warehouses', 'transfers', 'settings', 'suppliers', 'purchases'].includes(activeTab) || isMoreMenuOpen
                 ? 'text-blue-600 scale-105' 
                 : 'text-slate-400 hover:text-slate-500'
             }`}
@@ -2269,7 +2693,7 @@ export default function App() {
                 {pendingIncomingTransfersCount}
               </span>
             )}
-            <MoreHorizontal size={20} className={['report', 'print', 'warehouses', 'transfers', 'settings'].includes(activeTab) || isMoreMenuOpen ? 'stroke-[2.5]' : 'stroke-[2]'} />
+            <MoreHorizontal size={20} className={['report', 'print', 'warehouses', 'transfers', 'settings', 'suppliers', 'purchases'].includes(activeTab) || isMoreMenuOpen ? 'stroke-[2.5]' : 'stroke-[2]'} />
             <span className="text-[10px] font-black">{currentLanguage === 'ar' ? 'المزيد ☰' : 'More ☰'}</span>
             {/* Tooltip */}
             <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 hidden group-hover:block bg-slate-950 text-white text-[9px] font-black px-2.5 py-1 rounded-md shadow-lg whitespace-nowrap z-50 pointer-events-none border border-white/10 text-center">

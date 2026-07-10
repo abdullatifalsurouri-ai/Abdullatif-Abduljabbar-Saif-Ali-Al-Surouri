@@ -596,18 +596,38 @@ export default function PrintView({ movements, items, warehouses = [], invoiceSe
             </div>
 
             {/* General Info */}
-            <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100 text-sm">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100 text-xs sm:text-sm">
               <div className="flex items-center gap-2">
-                <UserIcon size={15} className="text-slate-400" />
+                <UserIcon size={15} className="text-slate-400 shrink-0" />
                 <span className="font-bold text-slate-500">
                   {voucherType === 'in' ? 'المورّد:' : 'العميل/المستلم:'}
                 </span>
                 <span className="font-extrabold text-slate-800">{queriedVoucher.partner}</span>
               </div>
-              <div className="flex items-center gap-2 border-r border-slate-200 pr-4">
-                <Calendar size={15} className="text-slate-400" />
-                <span className="font-bold text-slate-500">التاريخ القيد:</span>
+              <div className="flex items-center gap-2 sm:border-r border-slate-200 sm:pr-4">
+                <Calendar size={15} className="text-slate-400 shrink-0" />
+                <span className="font-bold text-slate-500">تاريخ القيد:</span>
                 <span className="font-extrabold text-slate-800 font-mono">{queriedVoucher.date}</span>
+              </div>
+              <div className="flex items-center gap-2 md:border-r border-slate-200 md:pr-4">
+                <span className="font-bold text-slate-500">نوع الدفع:</span>
+                <span className={`px-2 py-0.5 rounded-lg text-[11px] font-black ${
+                  queriedVoucher.paymentType === 'cash' 
+                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' 
+                    : 'bg-amber-50 text-amber-700 border border-amber-100'
+                }`}>
+                  {queriedVoucher.paymentType === 'cash' ? 'نقدي (Cash)' : 'آجل (Credit)'}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 md:border-r border-slate-200 md:pr-4">
+                <span className="font-bold text-slate-500">الاعتماد المالي:</span>
+                <span className={`px-2 py-0.5 rounded-lg text-[11px] font-black ${
+                  queriedVoucher.financialApproval === 'approved' 
+                    ? 'bg-blue-50 text-blue-700 border border-blue-100' 
+                    : 'bg-rose-50 text-rose-700 border border-rose-100'
+                }`}>
+                  {queriedVoucher.financialApproval === 'approved' ? '✓ معتمد مالياً' : '⏳ قيد المراجعة'}
+                </span>
               </div>
             </div>
 

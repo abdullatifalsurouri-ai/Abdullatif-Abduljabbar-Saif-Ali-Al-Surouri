@@ -823,34 +823,9 @@ export default function HomeView({
             <Database size={18} className="stroke-[2.5]" />
           </div>
           <div className="text-right">
-            <h3 className="font-extrabold text-slate-800 text-sm sm:text-base">إعدادات وإدارة البيانات</h3>
-            <p className="text-[11px] text-slate-400 font-semibold">تصدير واستيراد النسخ الاحتياطية للمستودع والعمل بدون إنترنت</p>
+            <h3 className="font-extrabold text-slate-800 text-sm sm:text-base">إدارة النسخ الاحتياطية</h3>
+            <p className="text-[11px] text-slate-400 font-semibold font-sans">تصدير واستيراد قواعد بيانات المستودع للاحتفاظ بها محلياً</p>
           </div>
-        </div>
-
-        {/* Lock Data / Read-Only Mode Switch */}
-        <div className={`border rounded-2xl p-4 flex items-center justify-between gap-4 transition-all ${isDataLocked ? 'bg-amber-50/50 border-amber-100' : 'bg-slate-50 border-slate-100'}`}>
-          <div className="flex items-center gap-3">
-            <div className={`p-2.5 rounded-xl transition-colors ${isDataLocked ? 'bg-amber-50 text-amber-600 border border-amber-100 animate-pulse-subtle' : 'bg-white border border-slate-200 text-slate-400'}`}>
-              {isDataLocked ? <Lock size={18} className="stroke-[2.5]" /> : <Unlock size={18} className="stroke-[2.5]" />}
-            </div>
-            <div className="text-right">
-              <span className="font-extrabold text-xs text-slate-800 block">قفل البيانات (وضع القراءة فقط)</span>
-              <span className="text-[10px] text-slate-400 font-semibold block mt-0.5">يمنع التعديل أو الحذف أو الإضافة عن طريق الخطأ</span>
-            </div>
-          </div>
-          <button
-            onClick={() => {
-              onToggleLock(!isDataLocked);
-              setToast({
-                message: !isDataLocked ? 'تم تفعيل وضع القراءة فقط وقفل البيانات بنجاح 🔒' : 'تم إلغاء قفل البيانات، وضع التعديل نشط الآن 🔓',
-                type: 'success'
-              });
-            }}
-            className={`w-12 h-6.5 rounded-full p-0.5 transition-all duration-300 relative cursor-pointer ${isDataLocked ? 'bg-amber-500' : 'bg-slate-300'}`}
-          >
-            <div className={`w-5.5 h-5.5 rounded-full bg-white shadow-xs transition-all duration-300 transform ${isDataLocked ? '-translate-x-5.5' : 'translate-x-0'}`} />
-          </button>
         </div>
 
         <div className="grid grid-cols-2 gap-3.5">
@@ -889,23 +864,10 @@ export default function HomeView({
           )}
         </div>
 
-        {/* Clear Data Option (Safe with custom modal) */}
-        <div className="text-[11px] text-slate-400 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pt-1 border-t border-slate-50">
-          <span>حجم البيانات الحالي: {JSON.stringify({ items, movements, suppliers }).length} بايت</span>
-          {isDataLocked ? (
-            <span className="text-slate-400 font-semibold flex items-center gap-1">
-              <Lock size={12} />
-              <span>إعادة تعيين البيانات معطلة (مقفل)</span>
-            </span>
-          ) : (
-            <button
-              onClick={() => setShowConfirmReset(true)}
-              className="text-red-500 hover:text-red-700 font-bold hover:underline transition-all cursor-pointer text-right flex items-center gap-1"
-            >
-              <Trash2 size={12} />
-              <span>مسح كافة البيانات وإعادة التعيين</span>
-            </button>
-          )}
+        {/* Clear Data Option (Moved to separate tab, showing only size here) */}
+        <div className="text-[11px] text-slate-400 flex items-center justify-between pt-1 border-t border-slate-50">
+          <span>حجم قاعدة البيانات الحالية: {JSON.stringify({ items, movements, suppliers }).length} بايت</span>
+          <span className="text-[10px] text-slate-400 font-bold">لإجراء إعادة التهيئة الشاملة، توجه لتبويب "الأمان المتقدم والتصفير".</span>
         </div>
       </div>
 

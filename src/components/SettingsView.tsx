@@ -87,7 +87,7 @@ export default function SettingsView({
   currentLanguage,
 }: SettingsViewProps) {
   const [settingsTab, setSettingsTab] = useState<'general' | 'audit'>('general');
-  const [subTab, setSubTab] = useState<'general' | 'permissions' | 'notifications' | 'backup'>('general');
+  const [subTab, setSubTab] = useState<'general' | 'permissions' | 'notifications' | 'security'>('general');
   const [usersList, setUsersList] = useState<any[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -102,7 +102,12 @@ export default function SettingsView({
     return localStorage.getItem('wms_daily_reminder_time') || '18:00';
   });
   const [notifPermission, setNotifPermission] = useState(() => {
-    return typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'denied';
+    try {
+      return typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'denied';
+    } catch (e) {
+      console.warn('Unable to read Notification.permission inside sandbox:', e);
+      return 'denied';
+    }
   });
 
   // Email Alert Configuration states
@@ -116,16 +121,26 @@ export default function SettingsView({
   const [testAlertStatus, setTestAlertStatus] = useState<string | null>(null);
 
   const handleRequestNotifPermission = async () => {
-    if ('Notification' in window) {
-      const permission = await Notification.requestPermission();
-      setNotifPermission(permission);
-      if (permission === 'granted') {
-        alert('تم تفعيل سماحية الإشعارات بنجاح! ستتلقى التنبيهات مخصصة.');
+    try {
+      if (
+        typeof window !== 'undefined' && 
+        'Notification' in window && 
+        typeof Notification === 'function' &&
+        typeof Notification.requestPermission === 'function'
+      ) {
+        const permission = await Notification.requestPermission();
+        setNotifPermission(permission);
+        if (permission === 'granted') {
+          alert('تم تفعيل سماحية الإشعارات بنجاح! ستتلقى التنبيهات مخصصة.');
+        } else {
+          alert('تم رفض سماحية الإشعارات. يرجى تفعيلها من إعدادات المتصفح لموقعك.');
+        }
       } else {
-        alert('تم رفض سماحية الإشعارات. يرجى تفعيلها من إعدادات المتصفح لموقعك.');
+        alert('المتصفح الحالي لا يدعم إشعارات سطح المكتب أو تعمل في بيئة مقيدة.');
       }
-    } else {
-      alert('المتصفح الحالي لا يدعم إشعارات سطح المكتب.');
+    } catch (e) {
+      console.error('Failed to request notification permission:', e);
+      alert('⚠️ تعذر طلب سماحية الإشعارات بسبب قيود الحماية في متصفحك أو تشغيله داخل إطار iframe.');
     }
   };
 
@@ -182,7 +197,14 @@ export default function SettingsView({
   };
 
   const handleTestNotification = () => {
-    if ('Notification' in window && Notification.permission === 'granted') {
+    let isGranted = false;
+    try {
+      isGranted = typeof window !== 'undefined' && 'Notification' in window && typeof Notification === 'function' && Notification.permission === 'granted';
+    } catch (e) {
+      console.warn('Failed to read notification permission:', e);
+    }
+
+    if (isGranted) {
       try {
         new Notification('تجربة تنبيه المستودع اليومي 📦', {
           body: 'هذا إشعار تجريبي من نظام إدارة المستودعات الذكي. يعمل التنبيه تلقائياً إذا لم تسجل أي حركة اليوم.',
@@ -726,15 +748,15 @@ export default function SettingsView({
             </button>
             <button
               type="button"
-              onClick={() => setSubTab('backup')}
+              onClick={() => setSubTab('security')}
               className={`py-2 px-3 text-[11px] sm:text-xs font-black transition-all rounded-xl cursor-pointer flex items-center justify-center gap-1.5 ${
-                subTab === 'backup'
+                subTab === 'security'
                   ? 'bg-white dark:bg-slate-800 text-blue-700 dark:text-blue-400 shadow-sm border border-slate-200/50'
                   : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'
               }`}
             >
-              <Database size={14} />
-              <span>النسخ الاحتياطي</span>
+              <Shield size={14} className="text-rose-500" />
+              <span>الأمان والتصفير</span>
             </button>
           </div>
 
@@ -846,7 +868,7 @@ export default function SettingsView({
           )}
 
             {/* Cloud Sync Card */}
-            {subTab === 'backup' && (
+            {subTab === 'security' && (
               <div className="bg-white border border-slate-100 p-5 rounded-3xl shadow-xs space-y-4">
               <div className="flex items-center gap-2 border-b border-slate-50 pb-3">
                 <CloudLightning size={18} className="text-purple-600 shrink-0" />
@@ -1132,7 +1154,7 @@ export default function SettingsView({
           )}
 
             {/* Local Backup Card */}
-            {subTab === 'backup' && (
+            {subTab === 'security' && (
               <div className="bg-white border border-slate-100 p-5 rounded-3xl shadow-xs space-y-4">
               <div className="flex items-center gap-2 border-b border-slate-50 pb-3">
                 <Database size={18} className="text-emerald-600 shrink-0" />
@@ -1189,6 +1211,48 @@ export default function SettingsView({
                     return null;
                   })()}
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* Data Freeze/Lock Card */}
+          {subTab === 'security' && (
+            <div className="bg-white border border-slate-100 p-5 rounded-3xl shadow-xs space-y-4">
+              <div className="flex items-center gap-2 border-b border-slate-50 pb-3">
+                <Lock size={18} className="text-amber-500 shrink-0" />
+                <span className="text-xs font-black text-slate-800">تجميد وقفل الحركات المخزنية للأمان</span>
+              </div>
+
+              <div className="space-y-4">
+                <p className="text-[11px] text-slate-400 font-semibold leading-relaxed">
+                  عند تفعيل هذا الخيار، سيتم تجميد وقفل كافة العمليات التعديلية (مثل إضافة أصناف، تعديلها، طلبات التحويل، أو حركات الوارد والصرف اليدوية والتجارية) في المستودع بالكامل. يقتصر دور جميع المستخدمين على التصفح والطباعة فقط.
+                </p>
+
+                <div className={`p-3 rounded-2xl border ${isDataLocked ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-slate-50 border-slate-200 text-slate-500'} text-[11px] font-bold flex items-center gap-2`}>
+                  <span className="text-sm">{isDataLocked ? '🔒' : '🟢'}</span>
+                  <p className="leading-relaxed">
+                    حالة تجميد وقفل البيانات الحالية: <span className="font-extrabold">{isDataLocked ? 'تجميد نشط (للقراءة فقط)' : 'مفتوح ومتاح لإدخال البيانات'}</span>
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (currentUser.role !== 'Owner' && currentUser.role !== 'Admin') {
+                      alert('⚠️ عذراً، تفعيل أو إلغاء قفل البيانات يتطلب صلاحية المالك أو المدير!');
+                      return;
+                    }
+                    onToggleLock(!isDataLocked);
+                  }}
+                  className={`w-full py-3 rounded-2xl text-xs font-black transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer ${
+                    isDataLocked 
+                      ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-xs' 
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                  }`}
+                >
+                  {isDataLocked ? <Unlock size={14} /> : <Lock size={14} />}
+                  <span>{isDataLocked ? 'إلغاء تجميد البيانات وفتح النظام للتعديل' : 'تفعيل وضع القراءة فقط وتجميد الحركات'}</span>
+                </button>
               </div>
             </div>
           )}
@@ -1442,220 +1506,237 @@ export default function SettingsView({
                       </div>
                     </div>
 
-                    {/* Granular Permission Toggles (Edit) */}
+                    {/* Grouped Screen & Task Permissions (Compact Design) */}
                     <div className="space-y-4">
-                      {/* صلاحيات الشاشات */}
-                      <div className="space-y-2">
-                        <span className="text-[10px] font-black text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md inline-block">صلاحيات الشاشات (الوصول)</span>
-                        <div className="grid grid-cols-2 sm:grid-cols-7 gap-2.5 text-[10px]">
-                          {/* Items */}
-                          <div className="bg-white p-2.5 rounded-xl border border-slate-200 space-y-1.5">
-                            <span className="font-extrabold text-slate-500 block text-center">الأصناف</span>
-                            <select
-                              value={editPermissions.items}
-                              onChange={(e) => setEditPermissions({ ...editPermissions, items: e.target.value as any })}
-                              disabled={editingUser.username.toLowerCase() === 'owner' && currentUser.role !== 'Owner'}
-                              className="w-full bg-slate-50 text-[10px] p-1 rounded-md text-right border border-slate-200 cursor-pointer font-bold"
-                            >
-                              <option value="write">إدخال وتعديل</option>
-                              <option value="read">قراءة فقط</option>
-                              <option value="none">محجوب</option>
-                            </select>
+                      <span className="text-[11px] font-black text-blue-700 bg-blue-50/70 px-3 py-1 rounded-lg inline-block">
+                        تخصيص صلاحيات الوصول والمهام والعمليات (مجموعة حسب الشاشات الأساسية)
+                      </span>
+                      
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 text-[10px]">
+                        
+                        {/* 1. الأصناف */}
+                        <div className="bg-slate-50 border border-slate-200/60 p-3 rounded-2xl space-y-2">
+                          <div className="flex items-center justify-between border-b border-slate-200/40 pb-1.5">
+                            <span className="font-extrabold text-slate-800 text-[11px]">📦 شاشة الأصناف والمنتجات</span>
                           </div>
-
-                          {/* Movements */}
-                          <div className="bg-white p-2.5 rounded-xl border border-slate-200 space-y-1.5">
-                            <span className="font-extrabold text-slate-500 block text-center">الحركات (وارد/صرف)</span>
-                            <select
-                              value={editPermissions.movements}
-                              onChange={(e) => setEditPermissions({ ...editPermissions, movements: e.target.value as any })}
-                              disabled={editingUser.username.toLowerCase() === 'owner' && currentUser.role !== 'Owner'}
-                              className="w-full bg-slate-50 text-[10px] p-1 rounded-md text-right border border-slate-200 cursor-pointer font-bold"
-                            >
-                              <option value="write">إضافة وتوثيق</option>
-                              <option value="read">قراءة فقط</option>
-                              <option value="none">محجوب</option>
-                            </select>
-                          </div>
-
-                          {/* Suppliers */}
-                          <div className="bg-white p-2.5 rounded-xl border border-slate-200 space-y-1.5">
-                            <span className="font-extrabold text-slate-500 block text-center">الموردين</span>
-                            <select
-                              value={editPermissions.suppliers}
-                              onChange={(e) => setEditPermissions({ ...editPermissions, suppliers: e.target.value as any })}
-                              disabled={editingUser.username.toLowerCase() === 'owner' && currentUser.role !== 'Owner'}
-                              className="w-full bg-slate-50 text-[10px] p-1 rounded-md text-right border border-slate-200 cursor-pointer font-bold"
-                            >
-                              <option value="write">إدارة وتعديل</option>
-                              <option value="read">قراءة فقط</option>
-                              <option value="none">محجوب</option>
-                            </select>
-                          </div>
-
-                          {/* Reports */}
-                          <div className="bg-white p-2.5 rounded-xl border border-slate-200 space-y-1.5">
-                            <span className="font-extrabold text-slate-500 block text-center">التقارير</span>
-                            <select
-                              value={editPermissions.reports}
-                              onChange={(e) => setEditPermissions({ ...editPermissions, reports: e.target.value as any })}
-                              disabled={editingUser.username.toLowerCase() === 'owner' && currentUser.role !== 'Owner'}
-                              className="w-full bg-slate-50 text-[10px] p-1 rounded-md text-right border border-slate-200 cursor-pointer font-bold"
-                            >
-                              <option value="read">متاحة</option>
-                              <option value="none">محجوبة</option>
-                            </select>
-                          </div>
-
-                          {/* Settings */}
-                          <div className="bg-white p-2.5 rounded-xl border border-slate-200 space-y-1.5">
-                            <span className="font-extrabold text-slate-500 block text-center">الحسابات والأمان</span>
-                            <select
-                              value={editPermissions.settings}
-                              onChange={(e) => setEditPermissions({ ...editPermissions, settings: e.target.value as any })}
-                              disabled={editingUser.username.toLowerCase() === 'owner' && currentUser.role !== 'Owner'}
-                              className="w-full bg-slate-50 text-[10px] p-1 rounded-md text-right border border-slate-200 cursor-pointer font-bold"
-                            >
-                              <option value="write">إدارة كاملة</option>
-                              <option value="read">قراءة فقط</option>
-                              <option value="none">محجوب</option>
-                            </select>
-                          </div>
-
-                          {/* Warehouses */}
-                          <div className="bg-white p-2.5 rounded-xl border border-slate-200 space-y-1.5">
-                            <span className="font-extrabold text-slate-500 block text-center">المستودعات</span>
-                            <select
-                              value={editPermissions.warehouses}
-                              onChange={(e) => setEditPermissions({ ...editPermissions, warehouses: e.target.value as any })}
-                              disabled={editingUser.username.toLowerCase() === 'owner' && currentUser.role !== 'Owner'}
-                              className="w-full bg-slate-50 text-[10px] p-1 rounded-md text-right border border-slate-200 cursor-pointer font-bold"
-                            >
-                              <option value="write">إدارة كاملة</option>
-                              <option value="read">عرض فقط</option>
-                              <option value="none">محجوب</option>
-                            </select>
-                          </div>
-
-                          {/* Transfers */}
-                          <div className="bg-white p-2.5 rounded-xl border border-slate-200 space-y-1.5">
-                            <span className="font-extrabold text-slate-500 block text-center">التحويلات المخزنية</span>
-                            <select
-                              value={editPermissions.transfers}
-                              onChange={(e) => setEditPermissions({ ...editPermissions, transfers: e.target.value as any })}
-                              disabled={editingUser.username.toLowerCase() === 'owner' && currentUser.role !== 'Owner'}
-                              className="w-full bg-slate-50 text-[10px] p-1 rounded-md text-right border border-slate-200 cursor-pointer font-bold"
-                            >
-                              <option value="write">إنشاء وقبول/رفض</option>
-                              <option value="read">عرض فقط</option>
-                              <option value="none">محجوب</option>
-                            </select>
+                          <div className="space-y-2">
+                            <div>
+                              <label className="block text-slate-500 font-bold mb-1">صلاحية الوصول:</label>
+                              <select
+                                value={editPermissions.items}
+                                onChange={(e) => setEditPermissions({ ...editPermissions, items: e.target.value as any })}
+                                disabled={editingUser.username.toLowerCase() === 'owner' && currentUser.role !== 'Owner'}
+                                className="w-full bg-white text-[10px] p-2 rounded-xl text-right border border-slate-200 cursor-pointer font-bold animate-transition"
+                              >
+                                <option value="write">إدخال وتعديل</option>
+                                <option value="read">قراءة فقط</option>
+                                <option value="none">محجوب</option>
+                              </select>
+                            </div>
+                            <div className="flex items-center justify-between bg-white px-2.5 py-1.5 rounded-lg border border-slate-100">
+                              <span className="text-slate-600 font-bold">تعديل الأسعار والعملة:</span>
+                              <input
+                                type="checkbox"
+                                checked={editPermissions.canEditPrices}
+                                onChange={(e) => setEditPermissions({ ...editPermissions, canEditPrices: e.target.checked })}
+                                disabled={editingUser.username.toLowerCase() === 'owner' && currentUser.role !== 'Owner'}
+                                className="rounded text-blue-600 border-slate-300 focus:ring-blue-500 h-3.5 w-3.5 cursor-pointer"
+                              />
+                            </div>
                           </div>
                         </div>
-                      </div>
 
-                      {/* صلاحيات العمليات */}
-                      <div className="space-y-2">
-                        <span className="text-[10px] font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md inline-block">صلاحيات العمليات (المهام)</span>
-                        <div className="grid grid-cols-2 sm:grid-cols-6 gap-2.5 text-[10px]">
-                          {/* canAddIncoming */}
-                          <div className="bg-white p-2.5 rounded-xl border border-slate-200 space-y-1.5">
-                            <span className="font-extrabold text-slate-500 block text-center">تسجيل حركة وارد</span>
-                            <select
-                              value={editPermissions.canAddIncoming ? "true" : "false"}
-                              onChange={(e) => setEditPermissions({ ...editPermissions, canAddIncoming: e.target.value === "true" })}
-                              disabled={editingUser.username.toLowerCase() === 'owner' && currentUser.role !== 'Owner'}
-                              className="w-full bg-slate-50 text-[10px] p-1 rounded-md text-right border border-slate-200 cursor-pointer font-bold text-slate-700"
-                            >
-                              <option value="true">مسموح</option>
-                              <option value="false">تعطيل</option>
-                            </select>
+                        {/* 2. الحركات */}
+                        <div className="bg-slate-50 border border-slate-200/60 p-3 rounded-2xl space-y-2">
+                          <div className="flex items-center justify-between border-b border-slate-200/40 pb-1.5">
+                            <span className="font-extrabold text-slate-800 text-[11px]">🔄 شاشة الحركات (وارد / صرف)</span>
                           </div>
-
-                          {/* canAddOutgoing */}
-                          <div className="bg-white p-2.5 rounded-xl border border-slate-200 space-y-1.5">
-                            <span className="font-extrabold text-slate-500 block text-center">تسجيل حركة صرف</span>
-                            <select
-                              value={editPermissions.canAddOutgoing ? "true" : "false"}
-                              onChange={(e) => setEditPermissions({ ...editPermissions, canAddOutgoing: e.target.value === "true" })}
-                              disabled={editingUser.username.toLowerCase() === 'owner' && currentUser.role !== 'Owner'}
-                              className="w-full bg-slate-50 text-[10px] p-1 rounded-md text-right border border-slate-200 cursor-pointer font-bold text-slate-700"
-                            >
-                              <option value="true">مسموح</option>
-                              <option value="false">تعطيل</option>
-                            </select>
-                          </div>
-
-                          {/* canApproveTransfer */}
-                          <div className="bg-white p-2.5 rounded-xl border border-slate-200 space-y-1.5">
-                            <span className="font-extrabold text-slate-500 block text-center">اعتماد التحويلات</span>
-                            <select
-                              value={editPermissions.canApproveTransfer ? "true" : "false"}
-                              onChange={(e) => setEditPermissions({ ...editPermissions, canApproveTransfer: e.target.value === "true" })}
-                              disabled={editingUser.username.toLowerCase() === 'owner' && currentUser.role !== 'Owner'}
-                              className="w-full bg-slate-50 text-[10px] p-1 rounded-md text-right border border-slate-200 cursor-pointer font-bold text-slate-700"
-                            >
-                              <option value="true">مسموح</option>
-                              <option value="false">تعطيل</option>
-                            </select>
-                          </div>
-
-                          {/* canEditPrices */}
-                          <div className="bg-white p-2.5 rounded-xl border border-slate-200 space-y-1.5">
-                            <span className="font-extrabold text-slate-500 block text-center">تعديل الأسعار والعملة</span>
-                            <select
-                              value={editPermissions.canEditPrices ? "true" : "false"}
-                              onChange={(e) => setEditPermissions({ ...editPermissions, canEditPrices: e.target.value === "true" })}
-                              disabled={editingUser.username.toLowerCase() === 'owner' && currentUser.role !== 'Owner'}
-                              className="w-full bg-slate-50 text-[10px] p-1 rounded-md text-right border border-slate-200 cursor-pointer font-bold text-slate-700"
-                            >
-                              <option value="true">مسموح</option>
-                              <option value="false">تعطيل</option>
-                            </select>
-                          </div>
-
-                          {/* canImportExportCSV */}
-                          <div className="bg-white p-2.5 rounded-xl border border-slate-200 space-y-1.5">
-                            <span className="font-extrabold text-slate-500 block text-center">استيراد CSV وتصدير</span>
-                            <select
-                              value={editPermissions.canImportExportCSV ? "true" : "false"}
-                              onChange={(e) => setEditPermissions({ ...editPermissions, canImportExportCSV: e.target.value === "true" })}
-                              disabled={editingUser.username.toLowerCase() === 'owner' && currentUser.role !== 'Owner'}
-                              className="w-full bg-slate-50 text-[10px] p-1 rounded-md text-right border border-slate-200 cursor-pointer font-bold text-slate-700"
-                            >
-                              <option value="true">مسموح</option>
-                              <option value="false">تعطيل</option>
-                            </select>
-                          </div>
-
-                          {/* canResetSystem */}
-                          <div className="bg-white p-2.5 rounded-xl border border-slate-200 space-y-1.5">
-                            <span className="font-extrabold text-slate-500 block text-center">تصفير قاعدة البيانات</span>
-                            <select
-                              value={editPermissions.canResetSystem ? "true" : "false"}
-                              onChange={(e) => setEditPermissions({ ...editPermissions, canResetSystem: e.target.value === "true" })}
-                              disabled={editingUser.username.toLowerCase() === 'owner' && currentUser.role !== 'Owner'}
-                              className="w-full bg-slate-50 text-[10px] p-1 rounded-md text-right border border-slate-200 cursor-pointer font-bold text-slate-700"
-                            >
-                              <option value="true">مسموح</option>
-                              <option value="false">تعطيل</option>
-                            </select>
-                          </div>
-
-                          {/* canEditInvoiceSettings */}
-                          <div className="bg-white p-2.5 rounded-xl border border-slate-200 space-y-1.5">
-                            <span className="font-extrabold text-blue-700 block text-center">إعدادات الفواتير</span>
-                            <select
-                              value={editPermissions.canEditInvoiceSettings ? "true" : "false"}
-                              onChange={(e) => setEditPermissions({ ...editPermissions, canEditInvoiceSettings: e.target.value === "true" })}
-                              disabled={editingUser.username.toLowerCase() === 'owner' && currentUser.role !== 'Owner'}
-                              className="w-full bg-slate-50 text-[10px] p-1 rounded-md text-right border border-slate-200 cursor-pointer font-bold text-slate-700"
-                            >
-                              <option value="true">مسموح</option>
-                              <option value="false">تعطيل</option>
-                            </select>
+                          <div className="space-y-2">
+                            <div>
+                              <label className="block text-slate-500 font-bold mb-1">صلاحية الوصول:</label>
+                              <select
+                                value={editPermissions.movements}
+                                onChange={(e) => setEditPermissions({ ...editPermissions, movements: e.target.value as any })}
+                                disabled={editingUser.username.toLowerCase() === 'owner' && currentUser.role !== 'Owner'}
+                                className="w-full bg-white text-[10px] p-2 rounded-xl text-right border border-slate-200 cursor-pointer font-bold animate-transition"
+                              >
+                                <option value="write">إضافة وتوثيق</option>
+                                <option value="read">قراءة فقط</option>
+                                <option value="none">محجوب</option>
+                              </select>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 bg-white p-2 rounded-xl border border-slate-100">
+                              <label className="flex items-center gap-1.5 justify-center cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={editPermissions.canAddIncoming}
+                                  onChange={(e) => setEditPermissions({ ...editPermissions, canAddIncoming: e.target.checked })}
+                                  disabled={editingUser.username.toLowerCase() === 'owner' && currentUser.role !== 'Owner'}
+                                  className="rounded text-blue-600 border-slate-300 focus:ring-blue-500 h-3.5 w-3.5"
+                                />
+                                <span className="text-slate-600 font-bold">تسجيل وارد</span>
+                              </label>
+                              <label className="flex items-center gap-1.5 justify-center cursor-pointer border-r border-slate-100 pr-1.5">
+                                <input
+                                  type="checkbox"
+                                  checked={editPermissions.canAddOutgoing}
+                                  onChange={(e) => setEditPermissions({ ...editPermissions, canAddOutgoing: e.target.checked })}
+                                  disabled={editingUser.username.toLowerCase() === 'owner' && currentUser.role !== 'Owner'}
+                                  className="rounded text-blue-600 border-slate-300 focus:ring-blue-500 h-3.5 w-3.5"
+                                />
+                                <span className="text-slate-600 font-bold">تسجيل صرف</span>
+                              </label>
+                            </div>
                           </div>
                         </div>
+
+                        {/* 3. التحويلات */}
+                        <div className="bg-slate-50 border border-slate-200/60 p-3 rounded-2xl space-y-2">
+                          <div className="flex items-center justify-between border-b border-slate-200/40 pb-1.5">
+                            <span className="font-extrabold text-slate-800 text-[11px]">🚛 التحويلات المخزنية</span>
+                          </div>
+                          <div className="space-y-2">
+                            <div>
+                              <label className="block text-slate-500 font-bold mb-1">صلاحية الوصول:</label>
+                              <select
+                                value={editPermissions.transfers}
+                                onChange={(e) => setEditPermissions({ ...editPermissions, transfers: e.target.value as any })}
+                                disabled={editingUser.username.toLowerCase() === 'owner' && currentUser.role !== 'Owner'}
+                                className="w-full bg-white text-[10px] p-2 rounded-xl text-right border border-slate-200 cursor-pointer font-bold animate-transition"
+                              >
+                                <option value="write">إنشاء وقبول/رفض</option>
+                                <option value="read">عرض فقط</option>
+                                <option value="none">محجوب</option>
+                              </select>
+                            </div>
+                            <div className="flex items-center justify-between bg-white px-2.5 py-1.5 rounded-lg border border-slate-100">
+                              <span className="text-slate-600 font-bold">اعتماد وقبول التحويلات:</span>
+                              <input
+                                type="checkbox"
+                                checked={editPermissions.canApproveTransfer}
+                                onChange={(e) => setEditPermissions({ ...editPermissions, canApproveTransfer: e.target.checked })}
+                                disabled={editingUser.username.toLowerCase() === 'owner' && currentUser.role !== 'Owner'}
+                                className="rounded text-blue-600 border-slate-300 focus:ring-blue-500 h-3.5 w-3.5 cursor-pointer"
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* 4. الحسابات والأمان */}
+                        <div className="bg-slate-50 border border-slate-200/60 p-3 rounded-2xl space-y-2">
+                          <div className="flex items-center justify-between border-b border-slate-200/40 pb-1.5">
+                            <span className="font-extrabold text-slate-800 text-[11px]">🛡️ الحسابات والأمان</span>
+                          </div>
+                          <div className="space-y-2">
+                            <div>
+                              <label className="block text-slate-500 font-bold mb-1">صلاحية الوصول:</label>
+                              <select
+                                value={editPermissions.settings}
+                                onChange={(e) => setEditPermissions({ ...editPermissions, settings: e.target.value as any })}
+                                disabled={editingUser.username.toLowerCase() === 'owner' && currentUser.role !== 'Owner'}
+                                className="w-full bg-white text-[10px] p-2 rounded-xl text-right border border-slate-200 cursor-pointer font-bold animate-transition"
+                              >
+                                <option value="write">إدارة كاملة</option>
+                                <option value="read">قراءة فقط</option>
+                                <option value="none">محجوب</option>
+                              </select>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 bg-white p-2 rounded-xl border border-slate-100">
+                              <label className="flex items-center gap-1.5 justify-center cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={editPermissions.canEditInvoiceSettings}
+                                  onChange={(e) => setEditPermissions({ ...editPermissions, canEditInvoiceSettings: e.target.checked })}
+                                  disabled={editingUser.username.toLowerCase() === 'owner' && currentUser.role !== 'Owner'}
+                                  className="rounded text-blue-600 border-slate-300 focus:ring-blue-500 h-3.5 w-3.5"
+                                />
+                                <span className="text-slate-600 font-bold">إعدادات الفواتير</span>
+                              </label>
+                              <label className="flex items-center gap-1.5 justify-center cursor-pointer border-r border-slate-100 pr-1.5">
+                                <input
+                                  type="checkbox"
+                                  checked={editPermissions.canResetSystem}
+                                  onChange={(e) => setEditPermissions({ ...editPermissions, canResetSystem: e.target.checked })}
+                                  disabled={editingUser.username.toLowerCase() === 'owner' && currentUser.role !== 'Owner'}
+                                  className="rounded text-blue-600 border-slate-300 focus:ring-blue-500 h-3.5 w-3.5"
+                                />
+                                <span className="text-slate-600 font-bold text-rose-600">تصفير النظام</span>
+                              </label>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* 5. التقارير والبيانات */}
+                        <div className="bg-slate-50 border border-slate-200/60 p-3 rounded-2xl space-y-2">
+                          <div className="flex items-center justify-between border-b border-slate-200/40 pb-1.5">
+                            <span className="font-extrabold text-slate-800 text-[11px]">📊 التقارير والبيانات</span>
+                          </div>
+                          <div className="space-y-2">
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <label className="block text-slate-500 font-bold mb-1">التقارير:</label>
+                                <select
+                                  value={editPermissions.reports}
+                                  onChange={(e) => setEditPermissions({ ...editPermissions, reports: e.target.value as any })}
+                                  disabled={editingUser.username.toLowerCase() === 'owner' && currentUser.role !== 'Owner'}
+                                  className="w-full bg-white text-[10px] p-2 rounded-xl text-right border border-slate-200 cursor-pointer font-bold animate-transition"
+                                >
+                                  <option value="read">متاحة</option>
+                                  <option value="none">محجوبة</option>
+                                </select>
+                              </div>
+                              <div>
+                                <label className="block text-slate-500 font-bold mb-1">الموردين:</label>
+                                <select
+                                  value={editPermissions.suppliers}
+                                  onChange={(e) => setEditPermissions({ ...editPermissions, suppliers: e.target.value as any })}
+                                  disabled={editingUser.username.toLowerCase() === 'owner' && currentUser.role !== 'Owner'}
+                                  className="w-full bg-white text-[10px] p-2 rounded-xl text-right border border-slate-200 cursor-pointer font-bold animate-transition"
+                                >
+                                  <option value="write">إدارة وتعديل</option>
+                                  <option value="read">قراءة فقط</option>
+                                  <option value="none">محجوب</option>
+                                </select>
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-between bg-white px-2.5 py-1.5 rounded-lg border border-slate-100">
+                              <span className="text-slate-600 font-bold">استيراد وتصدير CSV:</span>
+                              <input
+                                type="checkbox"
+                                checked={editPermissions.canImportExportCSV}
+                                onChange={(e) => setEditPermissions({ ...editPermissions, canImportExportCSV: e.target.checked })}
+                                disabled={editingUser.username.toLowerCase() === 'owner' && currentUser.role !== 'Owner'}
+                                className="rounded text-blue-600 border-slate-300 focus:ring-blue-500 h-3.5 w-3.5 cursor-pointer"
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* 6. المستودعات */}
+                        <div className="bg-slate-50 border border-slate-200/60 p-3 rounded-2xl space-y-2">
+                          <div className="flex items-center justify-between border-b border-slate-200/40 pb-1.5">
+                            <span className="font-extrabold text-slate-800 text-[11px]">🏢 شاشة المستودعات</span>
+                          </div>
+                          <div className="space-y-2">
+                            <div>
+                              <label className="block text-slate-500 font-bold mb-1">صلاحية الوصول:</label>
+                              <select
+                                value={editPermissions.warehouses}
+                                onChange={(e) => setEditPermissions({ ...editPermissions, warehouses: e.target.value as any })}
+                                disabled={editingUser.username.toLowerCase() === 'owner' && currentUser.role !== 'Owner'}
+                                className="w-full bg-white text-[10px] p-2 rounded-xl text-right border border-slate-200 cursor-pointer font-bold animate-transition"
+                              >
+                                <option value="write">إدارة كاملة</option>
+                                <option value="read">عرض فقط</option>
+                                <option value="none">محجوب</option>
+                              </select>
+                            </div>
+                            <p className="text-[9px] text-slate-400 font-bold bg-white p-1.5 rounded-lg border border-slate-100 text-center">
+                              تتحكم في صلاحية تعريف المستودعات الجديدة وجردها.
+                            </p>
+                          </div>
+                        </div>
+
                       </div>
                     </div>
 
@@ -1846,7 +1927,7 @@ export default function SettingsView({
           )}
 
           {/* Cloud Master Reset Section (Owner Only) */}
-          {subTab === 'backup' && currentUser.role === 'Owner' && (
+          {subTab === 'security' && currentUser.role === 'Owner' && (
             <div className="bg-rose-50/50 border border-rose-100 rounded-3xl p-5 space-y-3 text-right">
               <div className="flex items-center gap-2 text-rose-700">
                 <Database size={18} className="stroke-[2]" />

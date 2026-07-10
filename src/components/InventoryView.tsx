@@ -568,9 +568,21 @@ export default function InventoryView({ items, movements, warehouses = [], invoi
               </div>
 
               {/* Item Name */}
-              <h3 className="font-bold text-slate-800 text-base mb-5 pr-1">
-                {item.name}
-              </h3>
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-5 pr-1">
+                <h3 className="font-bold text-slate-800 text-base">
+                  {item.name}
+                </h3>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-lg font-bold">
+                    الوحدة: {item.unit || 'حبة'}
+                  </span>
+                  {item.unitMajor && item.unitMinor && item.unitConversion && (
+                    <span className="text-[10px] bg-teal-50 text-teal-700 border border-teal-100/60 px-2 py-0.5 rounded-lg font-bold">
+                      📦 {item.unitMajor} = {item.unitConversion} {item.unitMinor}
+                    </span>
+                  )}
+                </div>
+              </div>
 
               {/* Grid of values (4 columns with separators) */}
               <div className="grid grid-cols-4 gap-2 border-t border-slate-50 pt-4 text-center">

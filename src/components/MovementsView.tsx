@@ -51,6 +51,8 @@ export default function MovementsView({
     warehouseId: currentUser.warehouseId || (warehouses[0]?.id || ''),
     expirationDate: '',
     alertBeforeMonths: '',
+    paymentType: 'credit' as 'cash' | 'credit',
+    financialApproval: 'approved' as 'pending' | 'approved',
   });
 
   // Filter movements by selected type and search
@@ -103,6 +105,8 @@ export default function MovementsView({
       warehouseId: formData.warehouseId,
       expirationDate: formData.type === 'in' && formData.expirationDate ? formData.expirationDate : undefined,
       alertBeforeMonths: formData.type === 'in' && formData.alertBeforeMonths ? Number(formData.alertBeforeMonths) : undefined,
+      paymentType: formData.paymentType,
+      financialApproval: formData.financialApproval,
     });
 
     setIsFormOpen(false);
@@ -120,12 +124,9 @@ export default function MovementsView({
         {!isDataLocked && (
           <button
             onClick={() => {
-              if (activeType === 'in' && currentUser.permissions?.canAddIncoming === false) {
-                alert('🔒 عذراً، لا تمتلك صلاحية إضافة حركة وارد.');
-                return;
-              }
-              if (activeType === 'out' && currentUser.permissions?.canAddOutgoing === false) {
-                alert('🔒 عذراً، لا تمتلك صلاحية إضافة حركة صرف.');
+              const isAuthorized = ['Owner', 'Admin', 'Storekeeper'].includes(currentUser.role);
+              if (!isAuthorized) {
+                alert('🔒 عذراً، تسجيل الحركات اليدوية مقتصر فقط على مدير النظام أو أمين المخزن الرئيسي وبموافقة الإدارة.');
                 return;
               }
               setFormData({
@@ -138,6 +139,8 @@ export default function MovementsView({
                 warehouseId: currentUser.warehouseId || (warehouses[0]?.id || ''),
                 expirationDate: '',
                 alertBeforeMonths: '',
+                paymentType: 'credit',
+                financialApproval: 'approved',
               });
               setIsFormOpen(true);
             }}
@@ -602,43 +605,28 @@ export default function MovementsView({
               </div>
 
               {/* Partner (Supplier / Client) */}
+              {/* Mandatory Reason for Manual Movement */}
               <div>
                 <label className="block text-xs font-bold text-slate-500 mb-1.5">
-                  {formData.type === 'in' ? 'المورد (جهة التوريد) *' : 'العميل (جهة الصرف) *'}
+                  سبب الإجراء (الحركة اليدوية) *
                 </label>
-                
-                {formData.type === 'in' ? (
-                  <div className="space-y-2">
-                    <select
-                      value={formData.partner}
-                      onChange={(e) => setFormData({ ...formData, partner: e.target.value })}
-                      className="w-full bg-white border border-slate-200 focus:border-blue-500 text-sm px-4 py-2.5 rounded-xl outline-hidden text-slate-700"
-                    >
-                      <option value="">اختر مورد مسجل أو اكتب يدوياً...</option>
-                      {suppliers.map((sup) => (
-                        <option key={sup.id} value={sup.name}>
-                          {sup.name}
-                        </option>
-                      ))}
-                    </select>
-                    <input
-                      type="text"
-                      placeholder="أو اكتب جهة التوريد يدوياً هنا..."
-                      value={formData.partner}
-                      onChange={(e) => setFormData({ ...formData, partner: e.target.value })}
-                      className="w-full bg-white border border-slate-200 focus:border-blue-500 text-sm px-4 py-2.5 rounded-xl outline-hidden text-slate-700"
-                    />
-                  </div>
-                ) : (
-                  <input
-                    type="text"
+                <div className="space-y-1.5">
+                  <select
                     required
-                    placeholder="اسم العميل أو الجهة المستلمة..."
                     value={formData.partner}
                     onChange={(e) => setFormData({ ...formData, partner: e.target.value })}
-                    className="w-full bg-white border border-slate-200 focus:border-blue-500 text-sm px-4 py-2.5 rounded-xl outline-hidden text-slate-700"
-                  />
-                )}
+                    className="w-full bg-white border border-slate-200 focus:border-blue-500 text-xs px-4 py-2.5 rounded-xl outline-hidden text-slate-700 font-bold cursor-pointer"
+                  >
+                    <option value="">-- اختر سبب الحركة الإلزامية --</option>
+                    <option value="تالف">تالف (Damaged Goods / Spoilage)</option>
+                    <option value="استهلاك داخلي">استهلاك داخلي (Internal Consumption)</option>
+                    <option value="عينات">عينات (Samples / Promos)</option>
+                    <option value="تسوية جردية">تسوية جردية (Inventory Adjustment / Reconciliation)</option>
+                  </select>
+                  <p className="text-[10px] text-slate-400 font-bold leading-relaxed">
+                    💡 إلزامية اختيار سبب الحركة اليدوية ضرورية لكي يتم ترجمتها مالياً في الحسابات بشكل صحيح وسليم.
+                  </p>
+                </div>
               </div>
 
               {/* Date */}
@@ -702,6 +690,32 @@ export default function MovementsView({
                   photo={formData.photo}
                   onChange={(photoBase64) => setFormData({ ...formData, photo: photoBase64 })}
                 />
+              </div>
+
+              {/* Payment Type & Financial Approval */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-1.5">نوع الدفع</label>
+                  <select
+                    value={formData.paymentType}
+                    onChange={(e) => setFormData({ ...formData, paymentType: e.target.value as 'cash' | 'credit' })}
+                    className="w-full bg-white border border-slate-200 focus:border-blue-500 text-xs px-3.5 py-2.5 rounded-xl outline-hidden text-slate-700 font-bold cursor-pointer"
+                  >
+                    <option value="credit">آجل (Credit)</option>
+                    <option value="cash">نقدي (Cash)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-1.5">الاعتماد المالي</label>
+                  <select
+                    value={formData.financialApproval}
+                    onChange={(e) => setFormData({ ...formData, financialApproval: e.target.value as 'pending' | 'approved' })}
+                    className="w-full bg-white border border-slate-200 focus:border-blue-500 text-xs px-3.5 py-2.5 rounded-xl outline-hidden text-slate-700 font-bold cursor-pointer"
+                  >
+                    <option value="approved">معتمد مالياً</option>
+                    <option value="pending">قيد المراجعة</option>
+                  </select>
+                </div>
               </div>
 
               {/* Action Buttons */}
