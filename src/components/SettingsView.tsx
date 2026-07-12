@@ -26,7 +26,11 @@ import {
   UploadCloud,
   Download,
   Bell,
-  Receipt
+  Receipt,
+  Landmark,
+  Percent,
+  Plus,
+  Trash
 } from 'lucide-react';
 import { User, RoleType, UserPermissions, Warehouse, AuditLogEntry, Item, Movement, Supplier, WarehouseTransfer, InvoiceSettings } from '../types';
 import { t } from '../utils/i18n';
@@ -234,6 +238,24 @@ export default function SettingsView({
   const [compFooter, setCompFooter] = useState(invoiceSettings?.footerNote || '');
   const [compLogo, setCompLogo] = useState(invoiceSettings?.logo || '');
 
+  // New features local states
+  const [taxEnabled, setTaxEnabled] = useState(invoiceSettings?.taxEnabled ?? false);
+  const [taxRate, setTaxRate] = useState(invoiceSettings?.taxRate ?? 15);
+  const [commercialRegistryNumber, setCommercialRegistryNumber] = useState(invoiceSettings?.commercialRegistryNumber || '');
+  const [commercialRegistryFileUrl, setCommercialRegistryFileUrl] = useState(invoiceSettings?.commercialRegistryFileUrl || '');
+  const [commercialRegistryFileName, setCommercialRegistryFileName] = useState(invoiceSettings?.commercialRegistryFileName || '');
+  
+  const [bankAccounts, setBankAccounts] = useState<any[]>(() => invoiceSettings?.bankAccounts || [
+    { id: 'bank-1', name: 'بنك التضامن الإسلامي', accountNumber: '100200300', balance: 300000, minimumBalance: 5000, isDefault: true },
+    { id: 'bank-2', name: 'بنك اليمن والكويت', accountNumber: '400500600', balance: 200000, minimumBalance: 1000, isDefault: false }
+  ]);
+
+  // Mini-form state for bank accounts
+  const [newBankName, setNewBankName] = useState('');
+  const [newBankAccountNumber, setNewBankAccountNumber] = useState('');
+  const [newBankBalance, setNewBankBalance] = useState<number>(0);
+  const [newBankMinBalance, setNewBankMinBalance] = useState<number>(0);
+
   useEffect(() => {
     if (invoiceSettings) {
       setCompName(invoiceSettings.name);
@@ -242,6 +264,15 @@ export default function SettingsView({
       setCompEmail(invoiceSettings.email || '');
       setCompFooter(invoiceSettings.footerNote || '');
       setCompLogo(invoiceSettings.logo || '');
+      setTaxEnabled(invoiceSettings.taxEnabled ?? false);
+      setTaxRate(invoiceSettings.taxRate ?? 15);
+      setCommercialRegistryNumber(invoiceSettings.commercialRegistryNumber || '');
+      setCommercialRegistryFileUrl(invoiceSettings.commercialRegistryFileUrl || '');
+      setCommercialRegistryFileName(invoiceSettings.commercialRegistryFileName || '');
+      setBankAccounts(invoiceSettings.bankAccounts || [
+        { id: 'bank-1', name: 'بنك التضامن الإسلامي', accountNumber: '100200300', balance: 300000, minimumBalance: 5000, isDefault: true },
+        { id: 'bank-2', name: 'بنك اليمن والكويت', accountNumber: '400500600', balance: 200000, minimumBalance: 1000, isDefault: false }
+      ]);
     }
   }, [invoiceSettings]);
 
@@ -260,6 +291,76 @@ export default function SettingsView({
     }
   };
 
+  const handleCommercialRegistryUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 2000000) { // Limit to 2MB
+        alert('حجم الملف كبير جداً! الرجاء اختيار ملف أقل من 2 ميغابايت.');
+        return;
+      }
+      setCommercialRegistryFileName(file.name);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setCommercialRegistryFileUrl(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleDownloadCommercialRegistry = () => {
+    if (!commercialRegistryFileUrl) return;
+    const downloadAnchor = document.createElement('a');
+    downloadAnchor.setAttribute("href", commercialRegistryFileUrl);
+    downloadAnchor.setAttribute("download", commercialRegistryFileName || "commercial_registry");
+    document.body.appendChild(downloadAnchor);
+    downloadAnchor.click();
+    downloadAnchor.remove();
+  };
+
+  const handleAddBankAccount = () => {
+    if (!newBankName.trim() || !newBankAccountNumber.trim()) {
+      alert('الرجاء إدخال اسم البنك ورقم الحساب البنكي!');
+      return;
+    }
+    const newAccount = {
+      id: `bank-${Date.now()}`,
+      name: newBankName.trim(),
+      accountNumber: newBankAccountNumber.trim(),
+      balance: Number(newBankBalance) || 0,
+      minimumBalance: Number(newBankMinBalance) || 0,
+      isDefault: bankAccounts.length === 0
+    };
+    const updatedAccounts = [...bankAccounts, newAccount];
+    setBankAccounts(updatedAccounts);
+    setNewBankName('');
+    setNewBankAccountNumber('');
+    setNewBankBalance(0);
+    setNewBankMinBalance(0);
+  };
+
+  const handleDeleteBankAccount = (id: string) => {
+    if (bankAccounts.length <= 1) {
+      alert('يجب أن تملك حساباً بنكياً واحداً على الأقل للمطابقة المالية ومبيعات الشبكة.');
+      return;
+    }
+    const target = bankAccounts.find(b => b.id === id);
+    if (target?.isDefault) {
+      alert('لا يمكن حذف الحساب البنكي الافتراضي. يرجى تعيين حساب آخر كافتراضي أولاً.');
+      return;
+    }
+    if (confirm(`هل أنت متأكد من حذف الحساب البنكي "${target?.name}"؟`)) {
+      setBankAccounts(bankAccounts.filter(b => b.id !== id));
+    }
+  };
+
+  const handleSetDefaultBankAccount = (id: string) => {
+    const updated = bankAccounts.map(b => ({
+      ...b,
+      isDefault: b.id === id
+    }));
+    setBankAccounts(updated);
+  };
+
   const handleSaveInvoiceSettings = (e: React.FormEvent) => {
     e.preventDefault();
     if (!compName || !compAddress || !compPhone) {
@@ -273,9 +374,15 @@ export default function SettingsView({
         phone: compPhone,
         email: compEmail,
         footerNote: compFooter,
-        logo: compLogo
+        logo: compLogo,
+        taxEnabled,
+        taxRate: Number(taxRate) || 0,
+        commercialRegistryNumber,
+        commercialRegistryFileUrl,
+        commercialRegistryFileName,
+        bankAccounts
       });
-      alert('تم حفظ وتحديث إعدادات الفاتورة والترويسة بنجاح وسيتم مزامنتها مع السحابة!');
+      alert('تم حفظ وتحديث إعدادات الشركة والفواتير والحسابات البنكية والضرائب بنجاح!');
     }
   };
 
@@ -966,146 +1073,394 @@ export default function SettingsView({
             </div>
           )}
 
-            {/* Invoice Header/Footer Settings Card */}
+            {/* Invoice Header/Footer & Company settings Card */}
             {subTab === 'general' && (
-              <div className="bg-white border border-slate-100 p-5 rounded-3xl shadow-xs space-y-4 col-span-1 md:col-span-2">
-              <div className="flex items-center justify-between border-b border-slate-50 pb-3">
-                <div className="flex items-center gap-2">
-                  <Receipt size={18} className="text-blue-600 shrink-0" />
-                  <span className="text-xs font-black text-slate-800">إعدادات ترويسة وتذييل الفواتير والتقارير المطبوعة</span>
+              <div className="bg-white border border-slate-100 p-6 rounded-3xl shadow-xs space-y-6 col-span-1 md:col-span-2">
+                <div className="flex items-center justify-between border-b border-slate-50 pb-3">
+                  <div className="flex items-center gap-2">
+                    <Receipt size={18} className="text-blue-600 shrink-0" />
+                    <span className="text-xs font-black text-slate-800">إعدادات ملف الشركة، الضرائب، والحسابات البنكية الرسمية</span>
+                  </div>
+                  {!(currentUser.role === 'Owner' || currentUser.role === 'Admin' || currentUser.permissions.canEditInvoiceSettings === true) && (
+                    <span className="bg-amber-50 text-amber-700 text-[9px] font-black px-2.5 py-1 rounded-full flex items-center gap-1 border border-amber-100">
+                      🔒 عرض فقط (لا تملك الصلاحية)
+                    </span>
+                  )}
                 </div>
-                {!(currentUser.role === 'Owner' || currentUser.role === 'Admin' || currentUser.permissions.canEditInvoiceSettings === true) && (
-                  <span className="bg-amber-50 text-amber-700 text-[9px] font-black px-2.5 py-1 rounded-full flex items-center gap-1 border border-amber-100">
-                    🔒 عرض فقط (لا تملك الصلاحية)
-                  </span>
-                )}
-              </div>
 
-              <form onSubmit={handleSaveInvoiceSettings} className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {/* Left Column: Logo Selector & Preview */}
-                  <div className="bg-slate-50/50 p-4 rounded-2xl border border-slate-100 flex flex-col items-center justify-center gap-3">
-                    <span className="text-[10px] text-slate-400 font-extrabold block text-center w-full">شعار المؤسسة / الشركة</span>
+                <form onSubmit={handleSaveInvoiceSettings} className="space-y-6">
+                  {/* Part 1: Company Profile and Contact info */}
+                  <div className="bg-slate-50/30 p-4 rounded-2xl border border-slate-100/50 space-y-4">
+                    <h4 className="text-xs font-black text-slate-700 flex items-center gap-1.5 border-b border-slate-100 pb-2">
+                      <span>💼 بيانات الاتصال والهوية التجارية</span>
+                    </h4>
                     
-                    <div className="w-24 h-24 rounded-2xl bg-white border border-slate-200 flex items-center justify-center overflow-hidden shadow-3xs relative">
-                      {compLogo ? (
-                        <img src={compLogo} alt="Logo" className="w-full h-full object-contain p-1" referrerPolicy="no-referrer" />
-                      ) : (
-                        <div className="text-center p-2">
-                          <Receipt size={24} className="text-slate-300 mx-auto mb-1" />
-                          <span className="text-[8px] text-slate-400 font-bold block">لا يوجد شعار</span>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {/* Left Column: Logo Selector & Preview */}
+                      <div className="bg-white p-4 rounded-2xl border border-slate-100 flex flex-col items-center justify-center gap-3 shadow-3xs">
+                        <span className="text-[10px] text-slate-400 font-extrabold block text-center w-full">شعار المؤسسة / الشركة</span>
+                        
+                        <div className="w-24 h-24 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-center overflow-hidden shadow-3xs relative">
+                          {compLogo ? (
+                            <img src={compLogo} alt="Logo" className="w-full h-full object-contain p-1" referrerPolicy="no-referrer" />
+                          ) : (
+                            <div className="text-center p-2">
+                              <Receipt size={24} className="text-slate-300 mx-auto mb-1" />
+                              <span className="text-[8px] text-slate-400 font-bold block">لا يوجد شعار</span>
+                            </div>
+                          )}
                         </div>
-                      )}
+
+                        {(currentUser.role === 'Owner' || currentUser.role === 'Admin' || currentUser.permissions.canEditInvoiceSettings === true) && (
+                          <div className="w-full">
+                            <label className="block text-center bg-blue-50 text-blue-700 hover:bg-blue-100 text-[10px] font-black py-2 rounded-xl cursor-pointer transition-all border border-blue-200">
+                              <span>اختر صورة الشعار</span>
+                              <input 
+                                type="file" 
+                                accept="image/*" 
+                                onChange={handleLogoUpload} 
+                                className="hidden" 
+                              />
+                            </label>
+                            {compLogo && (
+                              <button
+                                type="button"
+                                onClick={() => setCompLogo('')}
+                                className="w-full mt-1.5 text-center text-[9px] text-rose-500 hover:text-rose-600 font-bold block"
+                              >
+                                إزالة الشعار الحالي
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Right Columns: Details Fields */}
+                      <div className="md:col-span-2 space-y-3">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-slate-400 font-extrabold">اسم الجهة / المؤسسة <span className="text-rose-500">*</span></label>
+                            <input
+                              type="text"
+                              value={compName}
+                              onChange={(e) => setCompName(e.target.value)}
+                              disabled={!(currentUser.role === 'Owner' || currentUser.role === 'Admin' || currentUser.permissions.canEditInvoiceSettings === true)}
+                              className="w-full bg-white text-xs font-bold p-2.5 rounded-xl border border-slate-200/80 focus:border-blue-500 outline-hidden disabled:bg-slate-100/50 shadow-3xs"
+                              placeholder="مثال: مؤسسة المدى الذكي للتجارة"
+                              required
+                            />
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-slate-400 font-extrabold">رقم الهاتف والتواصل <span className="text-rose-500">*</span></label>
+                            <input
+                              type="text"
+                              value={compPhone}
+                              onChange={(e) => setCompPhone(e.target.value)}
+                              disabled={!(currentUser.role === 'Owner' || currentUser.role === 'Admin' || currentUser.permissions.canEditInvoiceSettings === true)}
+                              className="w-full bg-white text-xs font-bold p-2.5 rounded-xl border border-slate-200/80 focus:border-blue-500 outline-hidden disabled:bg-slate-100/50 shadow-3xs"
+                              placeholder="مثال: +967775104368"
+                              required
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-slate-400 font-extrabold">العنوان والموقع <span className="text-rose-500">*</span></label>
+                            <input
+                              type="text"
+                              value={compAddress}
+                              onChange={(e) => setCompAddress(e.target.value)}
+                              disabled={!(currentUser.role === 'Owner' || currentUser.role === 'Admin' || currentUser.permissions.canEditInvoiceSettings === true)}
+                              className="w-full bg-white text-xs font-bold p-2.5 rounded-xl border border-slate-200/80 focus:border-blue-500 outline-hidden disabled:bg-slate-100/50 shadow-3xs"
+                              placeholder="مثال: صنعاء - شارع الستين"
+                              required
+                            />
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-slate-400 font-extrabold">البريد الإلكتروني (اختياري)</label>
+                            <input
+                              type="email"
+                              value={compEmail}
+                              onChange={(e) => setCompEmail(e.target.value)}
+                              disabled={!(currentUser.role === 'Owner' || currentUser.role === 'Admin' || currentUser.permissions.canEditInvoiceSettings === true)}
+                              className="w-full bg-white text-xs font-bold p-2.5 rounded-xl border border-slate-200/80 focus:border-blue-500 outline-hidden disabled:bg-slate-100/50 shadow-3xs"
+                              placeholder="مثال: info@company.com"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-slate-400 font-extrabold">الملاحظة التذييلية للفاتورة / التقرير (Footer Note)</label>
+                          <textarea
+                            value={compFooter}
+                            onChange={(e) => setCompFooter(e.target.value)}
+                            disabled={!(currentUser.role === 'Owner' || currentUser.role === 'Admin' || currentUser.permissions.canEditInvoiceSettings === true)}
+                            rows={2}
+                            className="w-full bg-white text-xs font-bold p-2.5 rounded-xl border border-slate-200/80 focus:border-blue-500 outline-hidden disabled:bg-slate-100/50 resize-none shadow-3xs"
+                            placeholder="أدخل نص التذييل الذي يظهر أسفل الفواتير والتقارير المطبوعة"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Part 2: Commercial Registry (السجل التجاري) */}
+                  <div className="bg-slate-50/30 p-4 rounded-2xl border border-slate-100/50 space-y-4">
+                    <h4 className="text-xs font-black text-slate-700 flex items-center gap-1.5 border-b border-slate-100 pb-2">
+                      <span>📄 وثائق السجل التجاري والمطابقة القانونية</span>
+                    </h4>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-slate-400 font-extrabold">رقم السجل التجاري (Commercial Registry No.)</label>
+                        <input
+                          type="text"
+                          value={commercialRegistryNumber}
+                          onChange={(e) => setCommercialRegistryNumber(e.target.value)}
+                          disabled={!(currentUser.role === 'Owner' || currentUser.role === 'Admin' || currentUser.permissions.canEditInvoiceSettings === true)}
+                          className="w-full bg-white text-xs font-bold p-2.5 rounded-xl border border-slate-200/80 focus:border-blue-500 outline-hidden disabled:bg-slate-100/50 shadow-3xs"
+                          placeholder="أدخل رقم السجل التجاري المعتمد"
+                        />
+                        <p className="text-[9px] text-slate-400 font-semibold leading-relaxed">
+                          * يتم طباعة هذا الرقم تلقائياً أسفل تذييل أو ترويسة جميع الفواتير للحصول على طابع رسمي معتمد.
+                        </p>
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-[10px] text-slate-400 font-extrabold block">ملف السجل التجاري المعتمد (PDF / Image)</label>
+                        
+                        <div className="flex flex-col sm:flex-row gap-2">
+                          {(currentUser.role === 'Owner' || currentUser.role === 'Admin' || currentUser.permissions.canEditInvoiceSettings === true) && (
+                            <label className="flex-1 block text-center bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 text-[10px] font-black py-2.5 px-3 rounded-xl cursor-pointer transition-all">
+                              <span>📂 رفع ملف السجل التجاري (أقل من 2MB)</span>
+                              <input 
+                                type="file" 
+                                accept="application/pdf,image/*" 
+                                onChange={handleCommercialRegistryUpload} 
+                                className="hidden" 
+                              />
+                            </label>
+                          )}
+
+                          {commercialRegistryFileUrl && (
+                            <button
+                              type="button"
+                              onClick={handleDownloadCommercialRegistry}
+                              className="flex items-center justify-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-[10px] font-black py-2 px-3 rounded-xl transition-all cursor-pointer"
+                            >
+                              <Download size={12} />
+                              <span>تنزيل الملف المرفوع ({commercialRegistryFileName || 'Registry'})</span>
+                            </button>
+                          )}
+                        </div>
+
+                        {commercialRegistryFileUrl && (
+                          <div className="text-[9px] text-emerald-600 font-bold">
+                            ✓ يوجد ملف مؤرشف حالياً: {commercialRegistryFileName}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Part 3: Tax Configuration (نظام أتمتة الضرائب) */}
+                  <div className="bg-slate-50/30 p-4 rounded-2xl border border-slate-100/50 space-y-4">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                      <h4 className="text-xs font-black text-slate-700 flex items-center gap-1.5">
+                        <Percent size={14} className="text-indigo-600 shrink-0" />
+                        <span>📊 نظام أتمتة حساب الضرائب (VAT Config)</span>
+                      </h4>
+                      
+                      <label className="inline-flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={taxEnabled}
+                          onChange={(e) => setTaxEnabled(e.target.checked)}
+                          disabled={!(currentUser.role === 'Owner' || currentUser.role === 'Admin' || currentUser.permissions.canEditInvoiceSettings === true)}
+                          className="rounded-sm border-slate-300 text-blue-600 focus:ring-blue-500 h-4 w-4"
+                        />
+                        <span className="text-xs font-black text-slate-700">تفعيل حساب الضرائب</span>
+                      </label>
                     </div>
 
-                    {(currentUser.role === 'Owner' || currentUser.role === 'Admin' || currentUser.permissions.canEditInvoiceSettings === true) && (
-                      <div className="w-full">
-                        <label className="block text-center bg-blue-50 text-blue-700 hover:bg-blue-100 text-[10px] font-black py-2 rounded-xl cursor-pointer transition-all border border-blue-200">
-                          <span>اختر صورة الشعار</span>
-                          <input 
-                            type="file" 
-                            accept="image/*" 
-                            onChange={handleLogoUpload} 
-                            className="hidden" 
-                          />
-                        </label>
-                        {compLogo && (
-                          <button
-                            type="button"
-                            onClick={() => setCompLogo('')}
-                            className="w-full mt-1.5 text-center text-[9px] text-rose-500 hover:text-rose-600 font-bold block"
-                          >
-                            إزالة الشعار الحالي
-                          </button>
-                        )}
+                    {taxEnabled ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-slide-down">
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-slate-400 font-extrabold">نسبة الضريبة المضافة المعتمدة (%) <span className="text-rose-500">*</span></label>
+                          <div className="relative">
+                            <input
+                              type="number"
+                              value={taxRate}
+                              onChange={(e) => setTaxRate(Number(e.target.value))}
+                              min="0"
+                              max="100"
+                              disabled={!(currentUser.role === 'Owner' || currentUser.role === 'Admin' || currentUser.permissions.canEditInvoiceSettings === true)}
+                              className="w-full bg-white text-xs font-black p-2.5 pr-8 rounded-xl border border-slate-200/80 focus:border-blue-500 outline-hidden disabled:bg-slate-100/50 shadow-3xs"
+                              placeholder="مثال: 15"
+                              required
+                            />
+                            <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                              <span className="text-xs font-bold text-slate-400">%</span>
+                            </div>
+                          </div>
+                          <p className="text-[9px] text-slate-400 font-semibold leading-relaxed">
+                            * عند التفعيل، سيقوم النظام باحتساب الضريبة آلياً بنسبة {taxRate}% في جميع فواتير المبيعات والمشتريات وتفصيلها حسابياً.
+                          </p>
+                        </div>
+                        <div className="bg-indigo-50/50 p-3.5 rounded-2xl border border-indigo-100 text-[10px] text-indigo-800 space-y-1 font-bold flex flex-col justify-center">
+                          <p>💡 معادلة الاحتساب المعتمدة:</p>
+                          <p>الضريبة = إجمالي بنود الفاتورة × ({taxRate} / 100)</p>
+                          <p>صافي الفاتورة الكلي = الإجمالي + الضريبة - الخصم</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-[10px] text-slate-400 font-bold p-2 bg-slate-100/50 rounded-xl">
+                        💡 تم تعطيل الضرائب. المعادلات البسيطة مطبقة في فواتير البيع والشراء: (الصافي = الإجمالي - الخصم) والضريبة تساوي صفر.
                       </div>
                     )}
                   </div>
 
-                  {/* Center & Right Column: Details Fields */}
-                  <div className="md:col-span-2 space-y-3">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <label className="text-[10px] text-slate-400 font-extrabold">اسم الجهة / المؤسسة <span className="text-rose-500">*</span></label>
-                        <input
-                          type="text"
-                          value={compName}
-                          onChange={(e) => setCompName(e.target.value)}
-                          disabled={!(currentUser.role === 'Owner' || currentUser.role === 'Admin' || currentUser.permissions.canEditInvoiceSettings === true)}
-                          className="w-full bg-slate-50 text-xs font-bold p-2.5 rounded-xl border border-slate-200/80 focus:border-blue-500 outline-hidden disabled:bg-slate-100/50"
-                          placeholder="مثال: مؤسسة المدى الذكي للتجارة"
-                          required
-                        />
-                      </div>
+                  {/* Part 4: Multiple Bank Accounts Manager (إدارة الحسابات البنكية المتعددة) */}
+                  <div className="bg-slate-50/30 p-4 rounded-2xl border border-slate-100/50 space-y-4">
+                    <h4 className="text-xs font-black text-slate-700 flex items-center gap-1.5 border-b border-slate-100 pb-2">
+                      <Landmark size={14} className="text-blue-600 shrink-0" />
+                      <span>🏦 خزائن الحسابات البنكية ومطابقة شجرة الحسابات</span>
+                    </h4>
 
-                      <div className="space-y-1">
-                        <label className="text-[10px] text-slate-400 font-extrabold">رقم الهاتف والتواصل <span className="text-rose-500">*</span></label>
-                        <input
-                          type="text"
-                          value={compPhone}
-                          onChange={(e) => setCompPhone(e.target.value)}
-                          disabled={!(currentUser.role === 'Owner' || currentUser.role === 'Admin' || currentUser.permissions.canEditInvoiceSettings === true)}
-                          className="w-full bg-slate-50 text-xs font-bold p-2.5 rounded-xl border border-slate-200/80 focus:border-blue-500 outline-hidden disabled:bg-slate-100/50"
-                          placeholder="مثال: +967775104368"
-                          required
-                        />
+                    {/* Add new Account inline form */}
+                    {(currentUser.role === 'Owner' || currentUser.role === 'Admin' || currentUser.permissions.canEditInvoiceSettings === true) && (
+                      <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-3xs space-y-3">
+                        <span className="text-[10px] font-black text-blue-700 block">➕ إضافة حساب بنكي رسمي جديد</span>
+                        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                          <div className="space-y-1">
+                            <label className="text-[9px] text-slate-400 font-extrabold">اسم البنك / المصرف</label>
+                            <input
+                              type="text"
+                              value={newBankName}
+                              onChange={(e) => setNewBankName(e.target.value)}
+                              className="w-full bg-slate-50 text-[11px] font-bold p-2 rounded-lg border border-slate-200 outline-hidden focus:border-blue-500"
+                              placeholder="مثال: بنك التضامن الإسلامي"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[9px] text-slate-400 font-extrabold">رقم الحساب أو الآيبان (IBAN)</label>
+                            <input
+                              type="text"
+                              value={newBankAccountNumber}
+                              onChange={(e) => setNewBankAccountNumber(e.target.value)}
+                              className="w-full bg-slate-50 text-[11px] font-bold p-2 rounded-lg border border-slate-200 outline-hidden focus:border-blue-500"
+                              placeholder="مثال: 100200300"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[9px] text-slate-400 font-extrabold">الرصيد الافتتاحي (ر.ي)</label>
+                            <input
+                              type="number"
+                              value={newBankBalance || ''}
+                              onChange={(e) => setNewBankBalance(Number(e.target.value))}
+                              className="w-full bg-slate-50 text-[11px] font-bold p-2 rounded-lg border border-slate-200 outline-hidden focus:border-blue-500"
+                              placeholder="مثال: 300000"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[9px] text-slate-400 font-extrabold">الحد الأدنى للرصيد (ر.ي)</label>
+                            <div className="flex gap-1.5">
+                              <input
+                                type="number"
+                                value={newBankMinBalance || ''}
+                                onChange={(e) => setNewBankMinBalance(Number(e.target.value))}
+                                className="flex-1 bg-slate-50 text-[11px] font-bold p-2 rounded-lg border border-slate-200 outline-hidden focus:border-blue-500"
+                                placeholder="مثال: 5000"
+                              />
+                              <button
+                                type="button"
+                                onClick={handleAddBankAccount}
+                                className="bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-black px-4 py-2 rounded-lg transition-all cursor-pointer shadow-xs shrink-0"
+                              >
+                                إضافة
+                              </button>
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                    </div>
+                    )}
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <label className="text-[10px] text-slate-400 font-extrabold">العنوان والموقع <span className="text-rose-500">*</span></label>
-                        <input
-                          type="text"
-                          value={compAddress}
-                          onChange={(e) => setCompAddress(e.target.value)}
-                          disabled={!(currentUser.role === 'Owner' || currentUser.role === 'Admin' || currentUser.permissions.canEditInvoiceSettings === true)}
-                          className="w-full bg-slate-50 text-xs font-bold p-2.5 rounded-xl border border-slate-200/80 focus:border-blue-500 outline-hidden disabled:bg-slate-100/50"
-                          placeholder="مثال: صنعاء - شارع الستين"
-                          required
-                        />
+                    {/* Bank Accounts Table/Grid */}
+                    <div className="space-y-2">
+                      <span className="text-[10px] text-slate-400 font-extrabold block">الحسابات البنكية المفتوحة حالياً:</span>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {bankAccounts.map((account) => {
+                          const isBelowMin = account.minimumBalance !== undefined && account.balance < account.minimumBalance;
+                          return (
+                            <div key={account.id} className={`bg-white border p-3.5 rounded-2xl flex items-center justify-between gap-4 shadow-3xs transition-all ${isBelowMin ? 'border-rose-300 bg-rose-50/10' : 'border-slate-100'}`}>
+                              <div className="space-y-1 text-right">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="font-extrabold text-xs text-slate-800">{account.name}</span>
+                                  {account.isDefault && (
+                                    <span className="bg-blue-50 text-blue-600 border border-blue-100 text-[8px] font-black px-1.5 py-0.5 rounded-md">
+                                      الافتراضي
+                                    </span>
+                                  )}
+                                  {isBelowMin && (
+                                    <span className="bg-rose-100 text-rose-700 border border-rose-200 text-[8px] font-black px-1.5 py-0.5 rounded-md animate-pulse">
+                                      ⚠️ رصيد منخفض عن الحد الأدنى ({account.minimumBalance?.toLocaleString()})
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-[10px] text-slate-400 font-mono font-bold">رقم الحساب: {account.accountNumber}</p>
+                                <p className="text-[10px] text-slate-500 font-extrabold">الرصيد: <span className="font-mono text-xs text-slate-700 font-black">{account.balance.toLocaleString()}</span> ر.ي</p>
+                                <div className="flex gap-2 text-[8px] text-slate-400 font-extrabold">
+                                  <span>الحد الأدنى: <span className="font-mono text-slate-600">{account.minimumBalance?.toLocaleString() || 0} ر.ي</span></span>
+                                  <span className="text-indigo-500">حساب فرعي: حـ/ البنك - {account.name}</span>
+                                </div>
+                              </div>
+
+                              {(currentUser.role === 'Owner' || currentUser.role === 'Admin' || currentUser.permissions.canEditInvoiceSettings === true) && (
+                                <div className="flex flex-col gap-1.5">
+                                  {!account.isDefault && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSetDefaultBankAccount(account.id)}
+                                      className="bg-slate-50 hover:bg-blue-50 text-slate-500 hover:text-blue-600 border border-slate-100 hover:border-blue-100 text-[8px] font-black px-2 py-1 rounded-lg transition-all cursor-pointer"
+                                    >
+                                      تعيين كافتراضي
+                                    </button>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteBankAccount(account.id)}
+                                    className="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-100 text-[8px] font-black px-2 py-1 rounded-lg transition-all cursor-pointer"
+                                  >
+                                    حذف الحساب
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
-
-                      <div className="space-y-1">
-                        <label className="text-[10px] text-slate-400 font-extrabold">البريد الإلكتروني (اختياري)</label>
-                        <input
-                          type="email"
-                          value={compEmail}
-                          onChange={(e) => setCompEmail(e.target.value)}
-                          disabled={!(currentUser.role === 'Owner' || currentUser.role === 'Admin' || currentUser.permissions.canEditInvoiceSettings === true)}
-                          className="w-full bg-slate-50 text-xs font-bold p-2.5 rounded-xl border border-slate-200/80 focus:border-blue-500 outline-hidden disabled:bg-slate-100/50"
-                          placeholder="مثال: info@company.com"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-[10px] text-slate-400 font-extrabold">الملاحظة التذييلية للفاتورة / التقرير (Footer Note)</label>
-                      <textarea
-                        value={compFooter}
-                        onChange={(e) => setCompFooter(e.target.value)}
-                        disabled={!(currentUser.role === 'Owner' || currentUser.role === 'Admin' || currentUser.permissions.canEditInvoiceSettings === true)}
-                        rows={2}
-                        className="w-full bg-slate-50 text-xs font-bold p-2.5 rounded-xl border border-slate-200/80 focus:border-blue-500 outline-hidden disabled:bg-slate-100/50 resize-none"
-                        placeholder="أدخل نص التذييل الذي يظهر أسفل الفواتير والتقارير المطبوعة"
-                      />
+                      <p className="text-[9px] text-slate-400 font-semibold leading-relaxed pt-1.5">
+                        * محاسبياً: يقوم النظام تلقائياً بإنشاء حساب فرعي مستقل لكل مصرف (على سبيل المثال: حـ/ البنك - {bankAccounts[0]?.name || 'البنك الأول'}) لتتبع تدفقات النقد بدقة.
+                      </p>
                     </div>
                   </div>
-                </div>
 
-                {(currentUser.role === 'Owner' || currentUser.role === 'Admin' || currentUser.permissions.canEditInvoiceSettings === true) && (
-                  <div className="flex justify-end pt-2 border-t border-slate-50">
-                    <button
-                      type="submit"
-                      className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-black py-2.5 px-6 rounded-xl transition-all shadow-md shadow-blue-600/10 cursor-pointer"
-                    >
-                      حفظ إعدادات الفاتورة والترويسة
-                    </button>
-                  </div>
-                )}
-              </form>
-            </div>
-          )}
+                  {(currentUser.role === 'Owner' || currentUser.role === 'Admin' || currentUser.permissions.canEditInvoiceSettings === true) && (
+                    <div className="flex justify-end pt-3 border-t border-slate-50">
+                      <button
+                        type="submit"
+                        className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-black py-3 px-8 rounded-xl transition-all shadow-md shadow-blue-600/10 cursor-pointer"
+                      >
+                        حفظ وتطبيق إعدادات المؤسسة بالكامل ✓
+                      </button>
+                    </div>
+                  )}
+                </form>
+              </div>
+            )}
 
             {/* Dashboard Customization Card */}
             {subTab === 'general' && (

@@ -182,6 +182,7 @@ function readDB() {
         { id: 'CUST-003', name: 'مكتبة الفجر الحديثة', phone: '0545556667', email: 'fajr@example.com', balance: 3400 }
       ],
       treasuryBalance: 250000,
+      bankBalance: 500000,
       financialVouchers: [] as any[],
       employees: [
         { id: 'EMP-001', name: 'أحمد الشمري', role: 'محاسب', salary: 12000, balance: 0, advances: 0, custody: 5000, phone: '0501112223', email: 'ahmad@example.com', history: [] },
@@ -249,6 +250,9 @@ function readDB() {
     }
     if (db.warehouseData.treasuryBalance === undefined) {
       db.warehouseData.treasuryBalance = 250000;
+    }
+    if (db.warehouseData.bankBalance === undefined) {
+      db.warehouseData.bankBalance = 500000;
     }
     if (!db.warehouseData.financialVouchers) {
       db.warehouseData.financialVouchers = [];
@@ -540,7 +544,7 @@ app.get("/api/sync/pull", (req, res) => {
 
 // Data Push / Sync
 app.post("/api/sync/push", (req, res) => {
-  const { items, movements, suppliers, warehouses, transfers, auditLogs, groups, invoiceSettings, customers, treasuryBalance, financialVouchers, employees, journalEntries } = req.body;
+  const { items, movements, suppliers, warehouses, transfers, auditLogs, groups, invoiceSettings, customers, treasuryBalance, bankBalance, financialVouchers, employees, journalEntries } = req.body;
   if (!items || !movements || !suppliers) {
     return res.status(400).json({ success: false, error: "بيانات المزامنة غير مكتملة" });
   }
@@ -559,6 +563,7 @@ app.post("/api/sync/push", (req, res) => {
     invoiceSettings: invoiceSettings || db.warehouseData.invoiceSettings || null,
     customers: customers || db.warehouseData.customers || [],
     treasuryBalance: treasuryBalance !== undefined ? treasuryBalance : db.warehouseData.treasuryBalance || 250000,
+    bankBalance: bankBalance !== undefined ? bankBalance : db.warehouseData.bankBalance || 500000,
     financialVouchers: financialVouchers || db.warehouseData.financialVouchers || [],
     employees: employees || db.warehouseData.employees || [],
     journalEntries: journalEntries || db.warehouseData.journalEntries || []

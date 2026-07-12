@@ -20,16 +20,21 @@ import {
   FileText,
   Briefcase,
   ArrowLeftRight,
-  RefreshCcw
+  RefreshCcw,
+  CheckSquare,
+  ChevronDown
 } from 'lucide-react';
 import { Supplier, User as UserType } from '../types';
+import { exportToPDF } from '../utils/pdfExport';
 
 interface SuppliersViewProps {
   suppliers: Supplier[];
   customers: any[];
   treasuryBalance: number;
+  bankBalance?: number;
   onUpdateCustomers: (customers: any[]) => void;
   onUpdateTreasuryBalance: (balance: number) => void;
+  onUpdateBankBalance?: (balance: number) => void;
   onLogAction?: (
     action: 'add' | 'edit' | 'delete' | 'sync' | 'import' | 'other',
     entityType: 'items' | 'movements' | 'suppliers' | 'warehouses' | 'transfers' | 'system',
@@ -49,14 +54,18 @@ interface SuppliersViewProps {
   onUpdateEmployees?: (employees: any[]) => void;
   journalEntries?: any[];
   onUpdateJournalEntries?: (entries: any[]) => void;
+  invoiceSettings?: any;
+  onUpdateInvoiceSettings?: (settings: any) => void;
 }
 
 export default function SuppliersView({
   suppliers,
   customers,
   treasuryBalance,
+  bankBalance = 500000,
   onUpdateCustomers,
   onUpdateTreasuryBalance,
+  onUpdateBankBalance = () => {},
   onLogAction,
   currentUser,
   isDataLocked,
@@ -72,6 +81,8 @@ export default function SuppliersView({
   onUpdateEmployees = () => {},
   journalEntries = [],
   onUpdateJournalEntries = () => {},
+  invoiceSettings,
+  onUpdateInvoiceSettings = () => {},
 }: SuppliersViewProps) {
   // Navigation between suppliers, customers, vouchers, employees, journal_entries
   const [localSubTab, setLocalSubTab] = useState<'suppliers' | 'customers' | 'vouchers' | 'employees' | 'journal_entries'>('suppliers');
@@ -102,6 +113,16 @@ export default function SuppliersView({
   const [showVoucherReceipt, setShowVoucherReceipt] = useState(false);
   const [lastCreatedVoucher, setLastCreatedVoucher] = useState<any | null>(null);
 
+  // Unified Account Statement Print/PDF states
+  const [isStatementModalOpen, setIsStatementModalOpen] = useState(false);
+  const [statementPartner, setStatementPartner] = useState<any | null>(null);
+  const [statementPartnerType, setStatementPartnerType] = useState<'supplier' | 'customer' | 'employee'>('supplier');
+  const [statementStartDate, setStatementStartDate] = useState<string>(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-01-01`;
+  });
+  const [statementEndDate, setStatementEndDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+
   // Vouchers state
   const [localFinancialVouchers, setLocalFinancialVouchers] = useState<any[]>(() => {
     const saved = localStorage.getItem('wms_financial_vouchers');
@@ -120,9 +141,97 @@ export default function SuppliersView({
   const receiptVouchers = vouchers.filter((v: any) => v.isReceipt);
   const paymentVouchers = vouchers.filter((v: any) => !v.isReceipt);
 
+  const getStatementEntries = () => {
+    if (!statementPartner) return [];
+
+    let entries: any[] = [];
+
+    if (statementPartnerType === 'supplier' || statementPartnerType === 'customer') {
+      // Find all vouchers for this partner
+      const partnerVouchers = vouchers.filter(v => 
+        (v.partnerId === statementPartner.id || v.partnerName === statementPartner.name) &&
+        v.partnerType === (statementPartnerType === 'supplier' ? 'مورد' : 'عميل')
+      );
+
+      partnerVouchers.forEach(v => {
+        const isSupplier = statementPartnerType === 'supplier';
+        const isReceiptVoucher = v.isReceipt;
+        const isPaymentToSupplier = !isReceiptVoucher && v.title.includes('صرف');
+
+        let debit = 0;
+        let credit = 0;
+
+        if (isSupplier) {
+          if (isPaymentToSupplier) {
+            debit = v.amount;
+          } else {
+            credit = v.amount;
+          }
+        } else {
+          const isReceiptFromCustomer = isReceiptVoucher && v.title.includes('قبض');
+
+          if (isReceiptFromCustomer) {
+            credit = v.amount;
+          } else {
+            debit = v.amount;
+          }
+        }
+
+        entries.push({
+          id: v.id,
+          date: v.date,
+          title: v.title,
+          notes: v.notes,
+          debit,
+          credit,
+          amount: v.amount,
+          createdBy: v.createdBy || 'النظام'
+        });
+      });
+    } else if (statementPartnerType === 'employee') {
+      const employeeVouchers = vouchers.filter(v => 
+        (v.partnerId === statementPartner.id || v.partnerName === statementPartner.name) &&
+        v.partnerType === 'موظف'
+      );
+
+      employeeVouchers.forEach(v => {
+        entries.push({
+          id: v.id,
+          date: v.date,
+          title: v.title,
+          notes: v.notes,
+          debit: v.title.includes('صرف') ? v.amount : 0,
+          credit: v.title.includes('قبض') ? v.amount : 0,
+          amount: v.amount,
+          createdBy: v.createdBy || 'النظام'
+        });
+      });
+
+      if (statementPartner.history) {
+        statementPartner.history.forEach((h: any) => {
+          const isDuplicate = entries.some(e => e.date === h.date && Math.abs(e.amount - h.amount) < 2);
+          if (!isDuplicate) {
+            entries.push({
+              id: h.id || `TX-${h.date}`,
+              date: h.date,
+              title: h.notes || 'حركة مالية بسجل الموظف',
+              notes: h.notes || '',
+              debit: (h.type === 'salary' || h.type === 'advance' || h.type === 'custody_grant') ? h.amount : 0,
+              credit: (h.type === 'deduction' || h.type === 'repayment') ? h.amount : 0,
+              amount: h.amount,
+              createdBy: 'النظام'
+            });
+          }
+        });
+      }
+    }
+
+    return entries.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  };
+
   // New Smart Voucher Form State
   const [isVoucherModalOpen, setIsVoucherModalOpen] = useState(false);
-  const [vType, setVType] = useState<'pay' | 'receive' | 'transfer'>('pay'); // pay = صرف, receive = قبض, transfer = تحويل
+  const [vType, setVType] = useState<'pay' | 'receive' | 'transfer' | 'internal_transfer'>('pay'); // pay = صرف, receive = قبض, transfer = تحويل, internal_transfer = تحويل داخلي
   const [vTargetGroup, setVTargetGroup] = useState<'supplier' | 'customer' | 'employee' | 'expense'>('supplier');
   const [vSelectedTargetId, setVSelectedTargetId] = useState<string>('');
   const [vCostCenter, setVCostCenter] = useState<string>('مصاريف كهرباء / إنترنت');
@@ -131,8 +240,62 @@ export default function SuppliersView({
   const [vDate, setVDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
   const [vManualExpenseRecipient, setVManualExpenseRecipient] = useState('');
 
-  // Transfer Fields
-  const [vTransferFlow, setVTransferFlow] = useState<'cust_to_supp' | 'supp_to_emp' | 'emp_cust_to_supp'>('cust_to_supp');
+  // Bank selection state
+  const [vSelectedBankAccountId, setVSelectedBankAccountId] = useState<string>('');
+  const [vInternalFrom, setVInternalFrom] = useState<string>('cash'); // 'cash' or bank account ID
+  const [vInternalTo, setVInternalTo] = useState<string>(''); // 'cash' or bank account ID
+  const [vBankSearchQuery, setVBankSearchQuery] = useState<string>('');
+  const [isVBankDropdownOpen, setIsVBankDropdownOpen] = useState(false);
+  const [isVInternalFromDropdownOpen, setIsVInternalFromDropdownOpen] = useState(false);
+  const [vInternalFromSearchQuery, setVInternalFromSearchQuery] = useState('');
+  const [isVInternalToDropdownOpen, setIsVInternalToDropdownOpen] = useState(false);
+  const [vInternalToSearchQuery, setVInternalToSearchQuery] = useState('');
+
+  // Automatically initialize bank account selections when settings are loaded or updated
+  React.useEffect(() => {
+    if (invoiceSettings?.bankAccounts && invoiceSettings.bankAccounts.length > 0) {
+      const defaultBank = invoiceSettings.bankAccounts.find((b: any) => b.isDefault) || invoiceSettings.bankAccounts[0];
+      if (!vSelectedBankAccountId) {
+        setVSelectedBankAccountId(defaultBank.id);
+      }
+      if (!vInternalTo) {
+        const otherBank = invoiceSettings.bankAccounts.find((b: any) => !b.isDefault) || invoiceSettings.bankAccounts[0];
+        setVInternalTo(otherBank.id);
+      }
+    }
+  }, [invoiceSettings, vSelectedBankAccountId, vInternalTo]);
+
+  // Reconciliation Modal States
+  const [isReconModalOpen, setIsReconModalOpen] = useState(false);
+  const [isBankTreasuryModalOpen, setIsBankTreasuryModalOpen] = useState(false);
+  const [reconAccountId, setReconAccountId] = useState<string>('cash');
+  const [reconStartDate, setReconStartDate] = useState<string>('');
+  const [reconEndDate, setReconEndDate] = useState<string>('');
+  const [reconSearchText, setReconSearchText] = useState<string>('');
+  const [reconciledLines, setReconciledLines] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('wms_reconciled_lines');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const toggleReconcileLine = (lineId: string) => {
+    let next;
+    if (reconciledLines.includes(lineId)) {
+      next = reconciledLines.filter(id => id !== lineId);
+    } else {
+      next = [...reconciledLines, lineId];
+    }
+    setReconciledLines(next);
+    localStorage.setItem('wms_reconciled_lines', JSON.stringify(next));
+  };
+
+  // Transfer Fields & Payment Method
+  const [vPaymentMethod, setVPaymentMethod] = useState<'cash' | 'bank'>('cash'); // cash = كاش, bank = تحويل بنكي / شبكة
+  const [vTransferFromType, setVTransferFromType] = useState<'supplier' | 'customer' | 'employee'>('customer');
+  const [vTransferToType, setVTransferToType] = useState<'supplier' | 'customer' | 'employee'>('supplier');
   const [vTransferFromId, setVTransferFromId] = useState<string>('');
   const [vTransferToId, setVTransferToId] = useState<string>('');
 
@@ -149,6 +312,127 @@ export default function SuppliersView({
     advances: 0,
     custody: 0
   });
+
+  // Monthly Variations (Estihqaqat & Istiqta'at) state
+  const [isAddVariationModalOpen, setIsAddVariationModalOpen] = useState(false);
+  const [expandedEmpId, setExpandedEmpId] = useState<string | null>(null);
+  const [variationForm, setVariationForm] = useState({
+    employeeId: '',
+    type: 'bonus' as 'overtime' | 'bonus' | 'deduction',
+    amountType: 'flat' as 'flat' | 'hourly',
+    hours: '' as number | '',
+    hourlyRate: '' as number | '',
+    flatAmount: '' as number | '',
+    reason: '',
+    date: new Date().toISOString().split('T')[0]
+  });
+
+  const getEmployeeSalaryDetails = (emp: any) => {
+    const basic = emp.salary || 0;
+    const activeVariations = emp.monthlyVariations || [];
+    const unapplied = activeVariations.filter((v: any) => !v.isApplied);
+
+    const overtime = unapplied.filter((v: any) => v.type === 'overtime').reduce((sum: number, v: any) => sum + (v.amount || 0), 0);
+    const bonus = unapplied.filter((v: any) => v.type === 'bonus').reduce((sum: number, v: any) => sum + (v.amount || 0), 0);
+    const deductions = unapplied.filter((v: any) => v.type === 'deduction').reduce((sum: number, v: any) => sum + (v.amount || 0), 0);
+    const advances = emp.advances || 0;
+    const net = basic + overtime + bonus - deductions - advances;
+
+    return {
+      basic,
+      overtime,
+      bonus,
+      deductions,
+      advances,
+      net
+    };
+  };
+
+  const handleAddVariationSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const { employeeId, type, amountType, hours, hourlyRate, flatAmount, reason, date } = variationForm;
+    if (!employeeId) {
+      alert('الرجاء اختيار الموظف');
+      return;
+    }
+
+    let calculatedAmount = 0;
+    if (type === 'overtime' && amountType === 'hourly') {
+      calculatedAmount = Number(hours || 0) * Number(hourlyRate || 0);
+    } else {
+      calculatedAmount = Number(flatAmount || 0);
+    }
+
+    if (calculatedAmount <= 0) {
+      alert('الرجاء إدخال مبلغ صحيح أكبر من الصفر');
+      return;
+    }
+
+    const targetEmp = employees.find(emp => emp.id === employeeId);
+    if (!targetEmp) return;
+
+    const newVariation = {
+      id: `VAR-${Date.now().toString().slice(-6)}`,
+      type,
+      amount: calculatedAmount,
+      reason: reason || 'حركة شهرية عامة',
+      date,
+      isApplied: false,
+      amountType,
+      hours: type === 'overtime' && amountType === 'hourly' ? Number(hours) : undefined,
+      hourlyRate: type === 'overtime' && amountType === 'hourly' ? Number(hourlyRate) : undefined,
+    };
+
+    const updatedEmployees = employees.map(emp => {
+      if (emp.id === employeeId) {
+        return {
+          ...emp,
+          monthlyVariations: [...(emp.monthlyVariations || []), newVariation]
+        };
+      }
+      return emp;
+    });
+
+    onUpdateEmployees(updatedEmployees);
+
+    if (onLogAction) {
+      const typeAr = type === 'overtime' ? 'ساعات إضافية' : type === 'bonus' ? 'إكرامية / مكافأة' : 'خصم / جزاء';
+      onLogAction('edit', 'suppliers', `تم تسجيل حركة شهرية (${typeAr}) للموظف ${targetEmp.name} بقيمة ${calculatedAmount.toLocaleString()} ر.ي`);
+    }
+
+    // Reset Form
+    setVariationForm({
+      employeeId: '',
+      type: 'bonus',
+      amountType: 'flat',
+      hours: '',
+      hourlyRate: '',
+      flatAmount: '',
+      reason: '',
+      date: new Date().toISOString().split('T')[0]
+    });
+    setIsAddVariationModalOpen(false);
+  };
+
+  const handleDeleteVariation = (empId: string, varId: string) => {
+    if (!confirm('هل أنت متأكد من حذف هذه الحركة الشهرية من سجل الانتظار؟')) return;
+
+    const updatedEmployees = employees.map(emp => {
+      if (emp.id === empId) {
+        return {
+          ...emp,
+          monthlyVariations: (emp.monthlyVariations || []).filter((v: any) => v.id !== varId)
+        };
+      }
+      return emp;
+    });
+
+    onUpdateEmployees(updatedEmployees);
+
+    if (onLogAction) {
+      onLogAction('edit', 'suppliers', `تم حذف حركة شهرية معلقة من حساب الموظف.`);
+    }
+  };
 
   // Journal Entries Sub-tab State
   const [isJournalModalOpen, setIsJournalModalOpen] = useState(false);
@@ -220,6 +504,7 @@ export default function SuppliersView({
 
     // 3. Revert financial impacts in the local states!
     let tempTreasury = treasuryBalance;
+    let tempBank = bankBalance || 7500000;
     let tempCustomers = [...customers];
     let tempSuppliers = [...suppliers];
     let tempEmployees = [...employees];
@@ -228,11 +513,17 @@ export default function SuppliersView({
       const isDebit = line.debit > 0;
       const amount = isDebit ? line.debit : line.credit;
 
-      if (line.account === 'الخزينة العامة') {
+      if (line.account === 'الخزينة العامة' || line.account === 'حـ/ الصندوق (الخزينة العامة)') {
         if (isDebit) {
           tempTreasury -= amount;
         } else {
           tempTreasury += amount;
+        }
+      } else if (line.account === 'حساب البنك الرئيسي' || line.account === 'حـ/ البنك (حساب البنك الرئيسي)') {
+        if (isDebit) {
+          tempBank -= amount;
+        } else {
+          tempBank += amount;
         }
       } else if (line.account.startsWith('حساب العميل: ')) {
         const cName = line.account.replace('حساب العميل: ', '');
@@ -301,6 +592,9 @@ export default function SuppliersView({
 
     // Save states
     onUpdateTreasuryBalance(tempTreasury);
+    if (onUpdateBankBalance) {
+      onUpdateBankBalance(tempBank);
+    }
     onUpdateCustomers(tempCustomers);
     tempSuppliers.forEach(s => {
       const orig = suppliers.find(o => o.id === s.id);
@@ -318,7 +612,41 @@ export default function SuppliersView({
     }
   };
 
-  const [vEmployeePaymentReason, setVEmployeePaymentReason] = useState<'salary' | 'advance' | 'custody'>('salary');
+  const [vEmployeePaymentReason, setVEmployeePaymentReason] = useState<'salary' | 'advance' | 'custody' | 'overtime' | 'bonus'>('salary');
+  const [vAdvanceDeductionMethod, setVAdvanceDeductionMethod] = useState<'full' | 'installments'>('full');
+
+  // Custody Settlement Modal State
+  const [isSettlementModalOpen, setIsSettlementModalOpen] = useState(false);
+  const [settlementForm, setSettlementForm] = useState<{
+    employeeId: string;
+    custodyAmount: number;
+    invoices: { id: string; category: string; amount: number | '' }[];
+    date: string;
+    notes: string;
+    paymentMethod: 'cash' | 'bank';
+  }>({
+    employeeId: '',
+    custodyAmount: 0,
+    invoices: [{ id: 'inv-1', category: 'أدوات مكتبية ومطبوعات', amount: '' }],
+    date: new Date().toISOString().split('T')[0],
+    notes: '',
+    paymentMethod: 'cash'
+  });
+
+  // Auto-prefill voucher amount on salary selection
+  React.useEffect(() => {
+    if (vTargetGroup === 'employee' && vSelectedTargetId) {
+      const emp = employees.find(e => e.id === vSelectedTargetId);
+      if (emp) {
+        if (vEmployeePaymentReason === 'salary') {
+          const { net } = getEmployeeSalaryDetails(emp);
+          setVAmount(net > 0 ? net : 0);
+        } else {
+          setVAmount('');
+        }
+      }
+    }
+  }, [vTargetGroup, vSelectedTargetId, vEmployeePaymentReason, employees]);
 
   const handleCreateVoucherSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -347,20 +675,50 @@ export default function SuppliersView({
       partnerType = 'عميل';
       previousBalance = customer.balance || 0;
       newBalance = previousBalance - amount;
-      newTreasuryBalance = treasuryBalance + amount;
-      voucherTitle = 'سند قبض نقدي (عميل)';
+
+      let fundAccount = '';
+      if (vPaymentMethod === 'cash') {
+        newTreasuryBalance = treasuryBalance + amount;
+        onUpdateTreasuryBalance(newTreasuryBalance);
+        fundAccount = 'الخزينة العامة';
+        voucherTitle = 'سند قبض نقدي (عميل)';
+      } else {
+        const bankAccountsList = invoiceSettings?.bankAccounts || [];
+        const targetBank = bankAccountsList.find((b: any) => b.id === vSelectedBankAccountId) || bankAccountsList.find((b: any) => b.isDefault) || bankAccountsList[0];
+        if (targetBank) {
+          const updatedAccounts = bankAccountsList.map((b: any) => {
+            if (b.id === targetBank.id) {
+              return { ...b, balance: b.balance + amount };
+            }
+            return b;
+          });
+          onUpdateInvoiceSettings({
+            ...invoiceSettings,
+            bankAccounts: updatedAccounts
+          });
+          const newBankBalance = bankBalance + amount;
+          onUpdateBankBalance(newBankBalance);
+          fundAccount = `حـ/ البنك - ${targetBank.name}`;
+          voucherTitle = `سند قبض بنكي (عميل) - ${targetBank.name}`;
+        } else {
+          const newBankBalance = bankBalance + amount;
+          onUpdateBankBalance(newBankBalance);
+          fundAccount = 'حساب البنك الرئيسي';
+          voucherTitle = 'سند قبض بنكي (عميل)';
+        }
+      }
+
       journalNotes = `تحصيل دفعة حساب - سند قبض رقم ${voucherId}`;
 
       // Update customer balance
       const updatedCustomers = customers.map(c => 
-        c.id === customer.id ? { ...c, balance: newBalance } : c
+         c.id === customer.id ? { ...c, balance: newBalance } : c
       );
       onUpdateCustomers(updatedCustomers);
-      onUpdateTreasuryBalance(newTreasuryBalance);
 
-      // Ledger: Debit Cash (الخزينة العامة), Credit Customer (حساب العميل)
+      // Ledger: Debit Fund Account, Credit Customer (حساب العميل)
       journalLines = [
-        { account: 'الخزينة العامة', debit: amount, credit: 0 },
+        { account: fundAccount, debit: amount, credit: 0 },
         { account: `حساب العميل: ${customer.name}`, debit: 0, credit: amount }
       ];
 
@@ -373,20 +731,49 @@ export default function SuppliersView({
         partnerType = 'مورد';
         previousBalance = supplier.balance || 0;
         newBalance = previousBalance - amount;
-        newTreasuryBalance = treasuryBalance - amount;
-        voucherTitle = 'سند صرف نقدي (مورد)';
+
+        let fundAccount = '';
+        if (vPaymentMethod === 'cash') {
+          newTreasuryBalance = treasuryBalance - amount;
+          onUpdateTreasuryBalance(newTreasuryBalance);
+          fundAccount = 'الخزينة العامة';
+          voucherTitle = 'سند صرف نقدي (مورد)';
+        } else {
+          const bankAccountsList = invoiceSettings?.bankAccounts || [];
+          const targetBank = bankAccountsList.find((b: any) => b.id === vSelectedBankAccountId) || bankAccountsList.find((b: any) => b.isDefault) || bankAccountsList[0];
+          if (targetBank) {
+            const updatedAccounts = bankAccountsList.map((b: any) => {
+              if (b.id === targetBank.id) {
+                return { ...b, balance: b.balance - amount };
+              }
+              return b;
+            });
+            onUpdateInvoiceSettings({
+              ...invoiceSettings,
+              bankAccounts: updatedAccounts
+            });
+            const newBankBalance = bankBalance - amount;
+            onUpdateBankBalance(newBankBalance);
+            fundAccount = `حـ/ البنك - ${targetBank.name}`;
+            voucherTitle = `سند صرف بنكي للمورد - ${targetBank.name}`;
+          } else {
+            const newBankBalance = bankBalance - amount;
+            onUpdateBankBalance(newBankBalance);
+            fundAccount = 'حساب البنك الرئيسي';
+            voucherTitle = 'سند صرف بنكي (مورد)';
+          }
+        }
         journalNotes = `تسديد دفعة للمورد - سند صرف رقم ${voucherId}`;
 
         onEditSupplier({
           ...supplier,
           balance: newBalance
         });
-        onUpdateTreasuryBalance(newTreasuryBalance);
 
-        // Ledger: Debit Supplier, Credit Cash
+        // Ledger: Debit Supplier, Credit Fund Account
         journalLines = [
           { account: `حساب المورد: ${supplier.name}`, debit: amount, credit: 0 },
-          { account: 'الخزينة العامة', debit: 0, credit: amount }
+          { account: fundAccount, debit: 0, credit: amount }
         ];
 
       } else if (vTargetGroup === 'employee') {
@@ -397,7 +784,35 @@ export default function SuppliersView({
         partnerType = 'موظف';
         previousBalance = 0;
         newBalance = 0;
-        newTreasuryBalance = treasuryBalance - amount;
+
+        let fundAccount = '';
+        if (vPaymentMethod === 'cash') {
+          newTreasuryBalance = treasuryBalance - amount;
+          onUpdateTreasuryBalance(newTreasuryBalance);
+          fundAccount = 'الخزينة العامة';
+        } else {
+          const bankAccountsList = invoiceSettings?.bankAccounts || [];
+          const targetBank = bankAccountsList.find((b: any) => b.id === vSelectedBankAccountId) || bankAccountsList.find((b: any) => b.isDefault) || bankAccountsList[0];
+          if (targetBank) {
+            const updatedAccounts = bankAccountsList.map((b: any) => {
+              if (b.id === targetBank.id) {
+                return { ...b, balance: b.balance - amount };
+              }
+              return b;
+            });
+            onUpdateInvoiceSettings({
+              ...invoiceSettings,
+              bankAccounts: updatedAccounts
+            });
+            const newBankBalance = bankBalance - amount;
+            onUpdateBankBalance(newBankBalance);
+            fundAccount = `حـ/ البنك - ${targetBank.name}`;
+          } else {
+            const newBankBalance = bankBalance - amount;
+            onUpdateBankBalance(newBankBalance);
+            fundAccount = 'حساب البنك الرئيسي';
+          }
+        }
 
         // Clone current employees to modify
         const updatedEmployees = employees.map(e => {
@@ -408,20 +823,88 @@ export default function SuppliersView({
 
             let addedAdvance = 0;
             let addedCustody = 0;
-            let txType: 'salary' | 'advance' | 'custody_grant' = 'salary';
+            let txType: 'salary' | 'advance' | 'custody_grant' | 'overtime' | 'bonus' = 'salary';
             let txNotes = '';
+            let updatedVariations = e.monthlyVariations || [];
 
             if (vEmployeePaymentReason === 'advance') {
               addedAdvance = amount;
               txType = 'advance';
-              txNotes = `سلفة مالية مستردة - سند صرف رقم ${voucherId}`;
+              txNotes = `سلفة مالية مستردة (${vAdvanceDeductionMethod === 'full' ? 'تخصم كاملة من راتب الشهر القادم' : 'تقسط'}) - سند صرف رقم ${voucherId}`;
             } else if (vEmployeePaymentReason === 'custody') {
               addedCustody = amount;
               txType = 'custody_grant';
               txNotes = `صرف عهدة مالية للعمل - سند صرف رقم ${voucherId}`;
+            } else if (vEmployeePaymentReason === 'overtime') {
+              txType = 'overtime';
+              txNotes = `صرف مستحقات إضافي فورية - سند صرف رقم ${voucherId}`;
+              
+              // Deduct immediately from pending overtime monthly variations
+              let remainingToDeduct = amount;
+              updatedVariations = (e.monthlyVariations || []).map((v: any) => {
+                if (!v.isApplied && v.type === 'overtime') {
+                  if (remainingToDeduct > 0) {
+                    if (v.amount > remainingToDeduct) {
+                      const newAmount = v.amount - remainingToDeduct;
+                      remainingToDeduct = 0;
+                      return {
+                        ...v,
+                        amount: newAmount,
+                        notes: (v.notes || '') + ` (تم خصم جزء بقيمة ${amount.toLocaleString()} ر.ي بسند رقم ${voucherId})`
+                      };
+                    } else {
+                      remainingToDeduct -= v.amount;
+                      return {
+                        ...v,
+                        isApplied: true,
+                        voucherId: voucherId,
+                        notes: (v.notes || '') + ` (تم صرفها فورياً بسند رقم ${voucherId})`
+                      };
+                    }
+                  }
+                }
+                return v;
+              });
+            } else if (vEmployeePaymentReason === 'bonus') {
+              txType = 'bonus';
+              txNotes = `صرف إكرامية / مكافأة تشجيعية فورية - سند صرف رقم ${voucherId}`;
+              
+              // Deduct immediately from pending bonus monthly variations
+              let remainingToDeduct = amount;
+              updatedVariations = (e.monthlyVariations || []).map((v: any) => {
+                if (!v.isApplied && v.type === 'bonus') {
+                  if (remainingToDeduct > 0) {
+                    if (v.amount > remainingToDeduct) {
+                      const newAmount = v.amount - remainingToDeduct;
+                      remainingToDeduct = 0;
+                      return {
+                        ...v,
+                        amount: newAmount,
+                        notes: (v.notes || '') + ` (تم خصم جزء بقيمة ${amount.toLocaleString()} ر.ي بسند رقم ${voucherId})`
+                      };
+                    } else {
+                      remainingToDeduct -= v.amount;
+                      return {
+                        ...v,
+                        isApplied: true,
+                        voucherId: voucherId,
+                        notes: (v.notes || '') + ` (تم صرفها فورياً بسند رقم ${voucherId})`
+                      };
+                    }
+                  }
+                }
+                return v;
+              });
             } else {
               txType = 'salary';
-              txNotes = `تسليم الراتب الشهري - سند صرف رقم ${voucherId}`;
+              txNotes = `تسليم الراتب الشهري المتبقي - سند صرف رقم ${voucherId}`;
+              // Mark unapplied variations as applied
+              updatedVariations = (e.monthlyVariations || []).map((v: any) => {
+                if (!v.isApplied) {
+                  return { ...v, isApplied: true, voucherId: voucherId };
+                }
+                return v;
+              });
             }
 
             const newTx = {
@@ -434,8 +917,9 @@ export default function SuppliersView({
 
             return {
               ...e,
-              advances: currentAdvances + addedAdvance,
+              advances: txType === 'salary' ? 0 : currentAdvances + addedAdvance,
               custody: currentCustody + addedCustody,
+              monthlyVariations: updatedVariations,
               history: [newTx, ...(e.history || [])]
             };
           }
@@ -443,30 +927,62 @@ export default function SuppliersView({
         });
 
         if (vEmployeePaymentReason === 'advance') {
-          voucherTitle = 'سند صرف سلفة موظف';
-          journalNotes = `صرف سلفة موظف ${emp.name} - سند رقم ${voucherId}`;
+          voucherTitle = vPaymentMethod === 'cash' ? 'سند صرف سلفة موظف (نقدي)' : 'سند صرف سلفة موظف (بنكي)';
+          journalNotes = `صرف سلفة موظف ${emp.name} (${vAdvanceDeductionMethod === 'full' ? 'تخصم كاملة' : 'تقسط'}) - سند رقم ${voucherId}`;
           journalLines = [
-            { account: `رواتب وأجور / سلف موظفين: ${emp.name}`, debit: amount, credit: 0 },
-            { account: 'الخزينة العامة', debit: 0, credit: amount }
+            { account: `حـ/ سلف الموظفين (سند سلفة) - ${emp.name}`, debit: amount, credit: 0 },
+            { account: fundAccount === 'الخزينة العامة' ? 'حـ/ الصندوق (الخزينة العامة)' : fundAccount, debit: 0, credit: amount }
           ];
         } else if (vEmployeePaymentReason === 'custody') {
-          voucherTitle = 'سند صرف عهدة مالية';
-          journalNotes = `صرف عهدة مالية للموظف ${emp.name} - سند رقم ${voucherId}`;
+          voucherTitle = vPaymentMethod === 'cash' ? 'سند صرف عهدة مالية (نقدي)' : 'سند صرف عهدة مالية (بنكي)';
+          journalNotes = `صرف عهدة مالية للموظف ${emp.name} لشراء مستلزمات - سند رقم ${voucherId}`;
           journalLines = [
-            { account: `عهد موظفين: ${emp.name}`, debit: amount, credit: 0 },
-            { account: 'الخزينة العامة', debit: 0, credit: amount }
+            { account: `حـ/ عهد الموظفين (عهدة معلقة) - ${emp.name}`, debit: amount, credit: 0 },
+            { account: fundAccount === 'الخزينة العامة' ? 'حـ/ الصندوق (الخزينة العامة)' : fundAccount, debit: 0, credit: amount }
+          ];
+        } else if (vEmployeePaymentReason === 'overtime') {
+          voucherTitle = vPaymentMethod === 'cash' ? 'سند صرف مستحقات إضافي (نقدي)' : 'سند صرف مستحقات إضافي (بنكي)';
+          journalNotes = `صرف مستحقات إضافي للموظف ${emp.name} - سند رقم ${voucherId}`;
+          journalLines = [
+            { account: `حـ/ مصاريف العمل الإضافي - ${emp.name}`, debit: amount, credit: 0 },
+            { account: fundAccount === 'الخزينة العامة' ? 'حـ/ الصندوق (الخزينة العامة)' : fundAccount, debit: 0, credit: amount }
+          ];
+        } else if (vEmployeePaymentReason === 'bonus') {
+          voucherTitle = vPaymentMethod === 'cash' ? 'سند صرف مكافأة تشجيعية (نقدي)' : 'سند صرف مكافأة تشجيعية (بنكي)';
+          journalNotes = `صرف إكرامية ومكافأة للموظف ${emp.name} - سند رقم ${voucherId}`;
+          journalLines = [
+            { account: `حـ/ مصاريف المكافآت والإكراميات - ${emp.name}`, debit: amount, credit: 0 },
+            { account: fundAccount === 'الخزينة العامة' ? 'حـ/ الصندوق (الخزينة العامة)' : fundAccount, debit: 0, credit: amount }
           ];
         } else {
-          voucherTitle = 'سند صرف راتب موظف';
-          journalNotes = `تسليم راتب الموظف ${emp.name} - سند رقم ${voucherId}`;
+          // Salary payment with full compound double-entry post
+          const { basic, overtime, bonus, deductions, advances, net } = getEmployeeSalaryDetails(emp);
+          voucherTitle = vPaymentMethod === 'cash' ? 'سند صرف راتب موظف (نقدي)' : 'سند صرف راتب موظف (بنكي)';
+          journalNotes = `صرف راتب شهر الموظف ${emp.name} - سند رقم ${voucherId}`;
+
+          // If they changed the paid amount, adjust the basic salary line to balance perfectly
+          const difference = amount - net;
+          const adjustedBasic = basic + difference;
+
           journalLines = [
-            { account: `رواتب وأجور / سلف موظفين: ${emp.name}`, debit: amount, credit: 0 },
-            { account: 'الخزينة العامة', debit: 0, credit: amount }
+            { account: `حـ/ رواتب الموظفين (الراتب الأساسي) - ${emp.name}`, debit: adjustedBasic, credit: 0 }
           ];
+          if (overtime > 0) {
+            journalLines.push({ account: `حـ/ مصاريف الإضافي (قيمة الساعات الإضافية) - ${emp.name}`, debit: overtime, credit: 0 });
+          }
+          if (bonus > 0) {
+            journalLines.push({ account: `حـ/ مصاريف المكافآت والإكراميات - ${emp.name}`, debit: bonus, credit: 0 });
+          }
+          if (deductions > 0) {
+            journalLines.push({ account: `حـ/ إيرادات الخصومات والجزاءات (مبلغ الخصم المستقطع) - ${emp.name}`, debit: 0, credit: deductions });
+          }
+          if (advances > 0) {
+            journalLines.push({ account: `حـ/ سلف الموظفين (استقطاع سلفة) - ${emp.name}`, debit: 0, credit: advances });
+          }
+          journalLines.push({ account: fundAccount === 'الخزينة العامة' ? 'حـ/ الصندوق (الخزينة العامة)' : fundAccount, debit: 0, credit: amount });
         }
 
         onUpdateEmployees(updatedEmployees);
-        onUpdateTreasuryBalance(newTreasuryBalance);
 
       } else {
         partnerName = vManualExpenseRecipient || vCostCenter;
@@ -474,133 +990,241 @@ export default function SuppliersView({
         partnerType = 'مصروف تشغيلي';
         previousBalance = 0;
         newBalance = 0;
-        newTreasuryBalance = treasuryBalance - amount;
-        voucherTitle = `سند صرف مصروفات - ${vCostCenter}`;
+
+        let fundAccount = '';
+        if (vPaymentMethod === 'cash') {
+          newTreasuryBalance = treasuryBalance - amount;
+          onUpdateTreasuryBalance(newTreasuryBalance);
+          fundAccount = 'الخزينة العامة';
+          voucherTitle = `سند صرف مصروفات - ${vCostCenter}`;
+        } else {
+          const bankAccountsList = invoiceSettings?.bankAccounts || [];
+          const targetBank = bankAccountsList.find((b: any) => b.id === vSelectedBankAccountId) || bankAccountsList.find((b: any) => b.isDefault) || bankAccountsList[0];
+          if (targetBank) {
+            const updatedAccounts = bankAccountsList.map((b: any) => {
+              if (b.id === targetBank.id) {
+                return { ...b, balance: b.balance - amount };
+              }
+              return b;
+            });
+            onUpdateInvoiceSettings({
+              ...invoiceSettings,
+              bankAccounts: updatedAccounts
+            });
+            const newBankBalance = bankBalance - amount;
+            onUpdateBankBalance(newBankBalance);
+            fundAccount = `حـ/ البنك - ${targetBank.name}`;
+            voucherTitle = `سند صرف بنكي مصروفات - ${vCostCenter} - ${targetBank.name}`;
+          } else {
+            const newBankBalance = bankBalance - amount;
+            onUpdateBankBalance(newBankBalance);
+            fundAccount = 'حساب البنك الرئيسي';
+            voucherTitle = `سند صرف بنكي مصروفات - ${vCostCenter}`;
+          }
+        }
         journalNotes = `صرف مصروف تشغيلي - ${vCostCenter} - سند رقم ${voucherId}`;
 
-        onUpdateTreasuryBalance(newTreasuryBalance);
-
-        // Ledger: Debit Operational Expense, Credit Cash
+        // Ledger: Debit Operational Expense, Credit Fund Account
         journalLines = [
           { account: `المصروفات التشغيلية: ${vCostCenter}`, debit: amount, credit: 0 },
-          { account: 'الخزينة العامة', debit: 0, credit: amount }
+          { account: fundAccount, debit: 0, credit: amount }
         ];
       }
+
+    } else if (vType === 'internal_transfer') {
+      let fromLabel = '';
+      let toLabel = '';
+      let nextTreasury = treasuryBalance;
+      let nextBank = bankBalance;
+      const bankAccountsList = invoiceSettings?.bankAccounts || [];
+      let updatedAccounts = [...bankAccountsList];
+
+      // 1. Process Source (المصدر - المحول منه)
+      if (vInternalFrom === 'cash') {
+        nextTreasury = treasuryBalance - amount;
+        onUpdateTreasuryBalance(nextTreasury);
+        fromLabel = 'الخزينة النقدية (الكاش)';
+      } else {
+        const srcBank = bankAccountsList.find((b: any) => b.id === vInternalFrom);
+        if (srcBank) {
+          updatedAccounts = updatedAccounts.map((b: any) => {
+            if (b.id === srcBank.id) {
+              return { ...b, balance: b.balance - amount };
+            }
+            return b;
+          });
+          nextBank = bankBalance - amount;
+          onUpdateBankBalance(nextBank);
+          fromLabel = `حساب البنك: ${srcBank.name}`;
+        } else {
+          fromLabel = 'حساب بنكي مجهول';
+        }
+      }
+
+      // 2. Process Destination (الوجهة - المحول إليه)
+      if (vInternalTo === 'cash') {
+        nextTreasury = nextTreasury + amount;
+        onUpdateTreasuryBalance(nextTreasury);
+        toLabel = 'الخزينة النقدية (الكاش)';
+      } else {
+        const destBank = bankAccountsList.find((b: any) => b.id === vInternalTo);
+        if (destBank) {
+          updatedAccounts = updatedAccounts.map((b: any) => {
+            if (b.id === destBank.id) {
+              return { ...b, balance: b.balance + amount };
+            }
+            return b;
+          });
+          nextBank = nextBank + amount;
+          onUpdateBankBalance(nextBank);
+          toLabel = `حساب البنك: ${destBank.name}`;
+        } else {
+          toLabel = 'حساب بنكي مجهول';
+        }
+      }
+
+      // Save bank account list updates to settings
+      onUpdateInvoiceSettings({
+        ...invoiceSettings,
+        bankAccounts: updatedAccounts
+      });
+
+      partnerName = `${fromLabel} ➔ ${toLabel}`;
+      partnerId = `INTERNAL::${vInternalFrom}::${vInternalTo}`;
+      partnerType = 'تحويل مالي داخلي';
+      voucherTitle = `سند تحويل داخلي 🔄 (${fromLabel === 'الخزينة النقدية (الكاش)' ? 'كاش' : 'بنك'} ➔ ${toLabel === 'الخزينة النقدية (الكاش)' ? 'كاش' : 'بنك'})`;
+      journalNotes = `تحويل داخلي من ${fromLabel} إلى ${toLabel}`;
+
+      // Balanced ledger entry: Debit Destination, Credit Source
+      const debitAccount = toLabel === 'الخزينة النقدية (الكاش)' ? 'حـ/ الصندوق (الخزينة العامة)' : `حـ/ البنك - ${toLabel.replace('حساب البنك: ', '')}`;
+      const creditAccount = fromLabel === 'الخزينة النقدية (الكاش)' ? 'حـ/ الصندوق (الخزينة العامة)' : `حـ/ البنك - ${fromLabel.replace('حساب البنك: ', '')}`;
+
+      journalLines = [
+        { account: debitAccount, debit: amount, credit: 0 },
+        { account: creditAccount, debit: 0, credit: amount }
+      ];
 
     } else if (vType === 'transfer') {
-      // Internal accounting transfers (no cash effect on treasury)
-      if (vTransferFlow === 'cust_to_supp') {
+      // General Financial Transfer Vouchers
+      let fromName = '';
+      let fromAccountLabel = '';
+      if (vTransferFromType === 'customer') {
         const customer = customers.find(c => c.id === vTransferFromId);
-        const supplier = suppliers.find(s => s.id === vTransferToId);
-        if (!customer || !supplier) return;
+        if (!customer) return;
+        fromName = customer.name;
+        previousBalance = customer.balance || 0;
+        newBalance = previousBalance - amount;
+        fromAccountLabel = `حساب العميل: ${customer.name}`;
 
-        partnerName = `${customer.name} ➔ ${supplier.name}`;
-        partnerId = `${customer.id}::${supplier.id}`;
-        partnerType = 'تحويل مالي بين الحسابات';
-        voucherTitle = 'سند تحويل مالي (عميل إلى مورد)';
-        journalNotes = `تسوية حساب: تحويل مالي من العميل ${customer.name} للمورد ${supplier.name}`;
-
-        // Customer debt decreases (receivables drop)
         const updatedCustomers = customers.map(c => 
-          c.id === customer.id ? { ...c, balance: (c.balance || 0) - amount } : c
+          c.id === customer.id ? { ...c, balance: newBalance } : c
         );
         onUpdateCustomers(updatedCustomers);
-
-        // We owe the supplier less (liabilities drop)
-        onEditSupplier({
-          ...supplier,
-          balance: (supplier.balance || 0) - amount
-        });
-
-        // Ledger: Debit Supplier (Liability Decr), Credit Customer (Receivable Decr)
-        journalLines = [
-          { account: `حساب المورد: ${supplier.name}`, debit: amount, credit: 0 },
-          { account: `حساب العميل: ${customer.name}`, debit: 0, credit: amount }
-        ];
-
-      } else if (vTransferFlow === 'supp_to_emp') {
+      } else if (vTransferFromType === 'supplier') {
         const supplier = suppliers.find(s => s.id === vTransferFromId);
-        const emp = employees.find(e => e.id === vTransferToId);
-        if (!supplier || !emp) return;
+        if (!supplier) return;
+        fromName = supplier.name;
+        previousBalance = supplier.balance || 0;
+        newBalance = previousBalance + amount; // we owe them more
+        fromAccountLabel = `حساب المورد: ${supplier.name}`;
 
-        partnerName = `${supplier.name} ➔ ${emp.name}`;
-        partnerId = `${supplier.id}::${emp.id}`;
-        partnerType = 'تحويل مالي بين الحسابات';
-        voucherTitle = 'سند تحويل مالي (مورد إلى موظف)';
-        journalNotes = `تحويل من المورد ${supplier.name} إلى حساب الموظف ${emp.name}`;
-
-        // We owe supplier MORE because they paid employee on our behalf (liability rises)
         onEditSupplier({
           ...supplier,
-          balance: (supplier.balance || 0) + amount
+          balance: newBalance
         });
-
-        // Add history log to employee
-        const updatedEmployees = employees.map(e => {
-          if (e.id === emp.id) {
-            return {
-              ...e,
-              history: [{
-                id: `TX-${Date.now().toString().slice(-5)}`,
-                date: vDate,
-                type: 'salary',
-                amount: amount,
-                notes: `تحويل مالي وارد من المورد: ${supplier.name}`
-              }, ...(e.history || [])]
-            };
-          }
-          return e;
-        });
-        onUpdateEmployees(updatedEmployees);
-
-        // Ledger: Debit Salary Expense, Credit Supplier Liability
-        journalLines = [
-          { account: `رواتب وأجور / سلف موظفين: ${emp.name}`, debit: amount, credit: 0 },
-          { account: `حساب المورد: ${supplier.name}`, debit: 0, credit: amount }
-        ];
-
-      } else if (vTransferFlow === 'emp_cust_to_supp') {
+      } else if (vTransferFromType === 'employee') {
         const emp = employees.find(e => e.id === vTransferFromId);
-        const supplier = suppliers.find(s => s.id === vTransferToId);
-        if (!emp || !supplier) return;
+        if (!emp) return;
+        fromName = emp.name;
+        previousBalance = emp.advances || 0;
+        fromAccountLabel = `رواتب وأجور / سلف موظفين: ${emp.name}`;
 
-        partnerName = `${emp.name} ➔ ${supplier.name}`;
-        partnerId = `${emp.id}::${supplier.id}`;
-        partnerType = 'تسوية عهدة موظف لغرض توريد';
-        voucherTitle = 'سند تسوية عهدة وتحويل لمورد';
-        journalNotes = `تسوية عهدة الموظف ${emp.name} لصالح المورد ${supplier.name}`;
-
-        // Employee custody drops
+        // Deduct from employee advances / custody
         const updatedEmployees = employees.map(e => {
           if (e.id === emp.id) {
+            const currentAdvances = e.advances || 0;
+            const updatedAdvances = Math.max(0, currentAdvances - amount);
+            const remainder = amount - (currentAdvances - updatedAdvances);
+            const currentCustody = e.custody || 0;
+            const updatedCustody = Math.max(0, currentCustody - remainder);
+
             return {
               ...e,
-              custody: Math.max(0, (e.custody || 0) - amount),
+              advances: updatedAdvances,
+              custody: updatedCustody,
               history: [{
                 id: `TX-${Date.now().toString().slice(-5)}`,
                 date: vDate,
-                type: 'custody_return',
+                type: 'advance_return',
                 amount: amount,
-                notes: `تسوية عهدة مستندية للمورد: ${supplier.name}`
+                notes: `تحويل مالي (مخصوم منه) - سند رقم ${voucherId}`
               }, ...(e.history || [])]
             };
           }
           return e;
         });
         onUpdateEmployees(updatedEmployees);
+      }
 
-        // We owe the supplier less (liabilities drop)
+      // Resolve Destination (المحول إليه)
+      let toName = '';
+      let toAccountLabel = '';
+      if (vTransferToType === 'customer') {
+        const customer = customers.find(c => c.id === vTransferToId);
+        if (!customer) return;
+        toName = customer.name;
+        toAccountLabel = `حساب العميل: ${customer.name}`;
+
+        const updatedCustomers = customers.map(c => 
+          c.id === customer.id ? { ...c, balance: (c.balance || 0) + amount } : c
+        );
+        onUpdateCustomers(updatedCustomers);
+      } else if (vTransferToType === 'supplier') {
+        const supplier = suppliers.find(s => s.id === vTransferToId);
+        if (!supplier) return;
+        toName = supplier.name;
+        toAccountLabel = `حساب المورد: ${supplier.name}`;
+
         onEditSupplier({
           ...supplier,
-          balance: (supplier.balance || 0) - amount
+          balance: (supplier.balance || 0) - amount // we owe them less
         });
+      } else if (vTransferToType === 'employee') {
+        const emp = employees.find(e => e.id === vTransferToId);
+        if (!emp) return;
+        toName = emp.name;
+        toAccountLabel = `رواتب وأجور / سلف موظفين: ${emp.name}`;
 
-        // Ledger: Debit Supplier, Credit Custody Account
-        journalLines = [
-          { account: `حساب المورد: ${supplier.name}`, debit: amount, credit: 0 },
-          { account: `عهد موظفين: ${emp.name}`, debit: 0, credit: amount }
-        ];
+        const updatedEmployees = employees.map(e => {
+          if (e.id === emp.id) {
+            return {
+              ...e,
+              advances: (e.advances || 0) + amount,
+              history: [{
+                id: `TX-${Date.now().toString().slice(-5)}`,
+                date: vDate,
+                type: 'advance',
+                amount: amount,
+                notes: `تحويل مالي (وارد إليه) - سند رقم ${voucherId}`
+              }, ...(e.history || [])]
+            };
+          }
+          return e;
+        });
+        onUpdateEmployees(updatedEmployees);
       }
+
+      partnerName = `${fromName} ➔ ${toName}`;
+      partnerId = `${vTransferFromId}::${vTransferToId}`;
+      partnerType = 'تحويل مالي بين الحسابات';
+      voucherTitle = `سند تحويل مالي (${vTransferFromType === 'customer' ? 'عميل' : vTransferFromType === 'supplier' ? 'مورد' : 'موظف'} ➔ ${vTransferToType === 'customer' ? 'عميل' : vTransferToType === 'supplier' ? 'مورد' : 'موظف'})`;
+      journalNotes = `تسوية حساب: تحويل من ${fromName} إلى ${toName}`;
+
+      // Balanced ledger entry for this transfer: Debit Destination, Credit Source
+      journalLines = [
+        { account: toAccountLabel, debit: amount, credit: 0 },
+        { account: fromAccountLabel, debit: 0, credit: amount }
+      ];
     }
 
     const newVoucher = {
@@ -617,7 +1241,11 @@ export default function SuppliersView({
       time: new Date().toLocaleTimeString('ar-YE', { hour: '2-digit', minute: '2-digit' }),
       createdBy: currentUser.username,
       isReceipt,
-      costCenter: vType === 'pay' && vTargetGroup === 'expense' ? vCostCenter : undefined
+      costCenter: vType === 'pay' && vTargetGroup === 'expense' ? vCostCenter : undefined,
+      paymentMethod: vType === 'internal_transfer' ? 'bank' : vPaymentMethod,
+      bankAccountId: vType === 'internal_transfer' ? undefined : (vPaymentMethod === 'bank' ? vSelectedBankAccountId : undefined),
+      internalFrom: vType === 'internal_transfer' ? vInternalFrom : undefined,
+      internalTo: vType === 'internal_transfer' ? vInternalTo : undefined
     };
 
     const updatedVouchers = [newVoucher, ...vouchers];
@@ -649,6 +1277,138 @@ export default function SuppliersView({
     setVNotes('');
     setVManualExpenseRecipient('');
     setVDate(new Date().toISOString().split('T')[0]);
+  };
+
+  const handleSettlementSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!settlementForm.employeeId) return;
+
+    const emp = employees.find(e => e.id === settlementForm.employeeId);
+    if (!emp) return;
+
+    const originalCustody = emp.custody || 0;
+    const totalExpenses = settlementForm.invoices.reduce((sum, inv) => sum + (Number(inv.amount) || 0), 0);
+    const difference = originalCustody - totalExpenses; // الفارق = العهدة الأصلية - إجمالي الفواتير المقدمة
+
+    const voucherId = getNextVoucherId();
+    let newTreasuryBalance = treasuryBalance;
+    let newBankBalance = bankBalance;
+    const fundAccount = settlementForm.paymentMethod === 'cash' ? 'الخزينة العامة' : 'حساب البنك الرئيسي';
+
+    // Handle fund adjustments based on difference
+    if (difference > 0) {
+      if (settlementForm.paymentMethod === 'cash') {
+        newTreasuryBalance = treasuryBalance + difference;
+        onUpdateTreasuryBalance(newTreasuryBalance);
+      } else {
+        newBankBalance = bankBalance + difference;
+        onUpdateBankBalance(newBankBalance);
+      }
+    } else if (difference < 0) {
+      const reimburseAmount = Math.abs(difference);
+      if (settlementForm.paymentMethod === 'cash') {
+        newTreasuryBalance = treasuryBalance - reimburseAmount;
+        onUpdateTreasuryBalance(newTreasuryBalance);
+      } else {
+        newBankBalance = bankBalance - reimburseAmount;
+        onUpdateBankBalance(newBankBalance);
+      }
+    }
+
+    // Bookkeeping Entry
+    const debitLines: { account: string; debit: number; credit: number }[] = [];
+    const creditLines: { account: string; debit: number; credit: number }[] = [];
+
+    // Debits: Operating Expenses
+    settlementForm.invoices.forEach(inv => {
+      if (Number(inv.amount) > 0) {
+        debitLines.push({
+          account: `المصروفات التشغيلية: ${inv.category}`,
+          debit: Number(inv.amount),
+          credit: 0
+        });
+      }
+    });
+
+    // Credits: Employee custody credited by full original amount
+    creditLines.push({
+      account: `حـ/ عهد الموظفين - ${emp.name}`,
+      debit: 0,
+      credit: originalCustody
+    });
+
+    // Cash Adjustment line in ledger
+    if (difference > 0) {
+      debitLines.push({
+        account: fundAccount === 'الخزينة العامة' ? 'حـ/ الصندوق (الخزينة العامة)' : 'حـ/ البنك (حساب البنك الرئيسي)',
+        debit: difference,
+        credit: 0
+      });
+    } else if (difference < 0) {
+      creditLines.push({
+        account: fundAccount === 'الخزينة العامة' ? 'حـ/ الصندوق (الخزينة العامة)' : 'حـ/ البنك (حساب البنك الرئيسي)',
+        debit: 0,
+        credit: Math.abs(difference)
+      });
+    }
+
+    const journalLines = [...debitLines, ...creditLines];
+
+    // Create Voucher Entry
+    const isReceipt = difference > 0;
+    const newVoucher = {
+      id: voucherId,
+      title: difference === 0 ? `سند تسوية عهدة (مصفاة بالكامل)` : difference > 0 ? `سند تصفية واسترداد باق عهدة` : `سند تصفية وتعويض مصروف عهدة`,
+      partnerName: emp.name,
+      partnerId: emp.id,
+      partnerType: 'تصفية عهدة موظف',
+      amount: Math.abs(difference),
+      previousBalance: originalCustody,
+      newBalance: 0,
+      notes: settlementForm.notes || `تصفية العهدة المعلقة بقيمة ${originalCustody.toLocaleString()} ر.ي ومستندات المصروف بقيمة ${totalExpenses.toLocaleString()} ر.ي`,
+      date: settlementForm.date,
+      time: new Date().toLocaleTimeString('ar-YE', { hour: '2-digit', minute: '2-digit' }),
+      createdBy: currentUser.username,
+      isReceipt,
+    };
+
+    // Save
+    const updatedVouchers = [newVoucher, ...vouchers];
+    setVouchers(updatedVouchers);
+
+    createAutoJournalEntry({
+      notes: `تصفية عهدة الموظف ${emp.name} | فواتير: ${totalExpenses.toLocaleString()} ر.ي | الفارق: ${difference.toLocaleString()} ر.ي`,
+      reference: voucherId,
+      lines: journalLines,
+      date: settlementForm.date
+    });
+
+    // Update Employee
+    const updatedEmployees = employees.map(e => {
+      if (e.id === emp.id) {
+        return {
+          ...e,
+          custody: 0,
+          history: [{
+            id: `TX-${Date.now().toString().slice(-5)}`,
+            date: settlementForm.date,
+            type: 'custody_return',
+            amount: originalCustody,
+            notes: `تصفية العهدة بمصاريف قيمتها ${totalExpenses.toLocaleString()} ر.ي (الفارق: ${difference.toLocaleString()} ر.ي) - سند رقم ${voucherId}`
+          }, ...(e.history || [])]
+        };
+      }
+      return e;
+    });
+    onUpdateEmployees(updatedEmployees);
+
+    if (onLogAction) {
+      onLogAction('edit', 'suppliers', `تم اعتماد تصفية عهدة الموظف ${emp.name} بقيمة ${originalCustody.toLocaleString()} ر.ي بنجاح`);
+    }
+
+    setIsSettlementModalOpen(false);
+    setLastCreatedVoucher(newVoucher);
+    setShowVoucherReceipt(true);
   };
 
   const handleEmployeeSubmit = (e: React.FormEvent) => {
@@ -1091,15 +1851,56 @@ export default function SuppliersView({
               </button>
             )}
             {subTab === 'employees' && !isEmployeeModalOpen && (
-              <button
-                onClick={() => {
-                  setIsEmployeeModalOpen(true);
-                }}
-                className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold px-5 py-3 rounded-2xl transition-all shadow-md cursor-pointer hover:scale-[1.02]"
-              >
-                <Plus size={18} className="stroke-[3]" />
-                <span>إضافة موظف جديد 👤</span>
-              </button>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSettlementForm({
+                      employeeId: employees[0]?.id || '',
+                      custodyAmount: employees[0]?.custody || 0,
+                      invoices: [{ id: 'inv-1', category: 'أدوات مكتبية ومطبوعات', amount: '' }],
+                      date: new Date().toISOString().split('T')[0],
+                      notes: '',
+                      paymentMethod: 'cash'
+                    });
+                    setIsSettlementModalOpen(true);
+                  }}
+                  className="flex items-center justify-center gap-2 bg-amber-600 hover:bg-amber-700 text-white font-extrabold px-5 py-3 rounded-2xl transition-all shadow-md cursor-pointer hover:scale-[1.02]"
+                >
+                  <RefreshCcw size={18} className="stroke-[3]" />
+                  <span>تصفية العهد المالية 📦</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setVariationForm({
+                      employeeId: employees[0]?.id || '',
+                      type: 'bonus',
+                      amountType: 'flat',
+                      hours: '',
+                      hourlyRate: '',
+                      flatAmount: '',
+                      reason: '',
+                      date: new Date().toISOString().split('T')[0]
+                    });
+                    setIsAddVariationModalOpen(true);
+                  }}
+                  className="flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold px-5 py-3 rounded-2xl transition-all shadow-md cursor-pointer hover:scale-[1.02]"
+                >
+                  <Plus size={18} className="stroke-[3]" />
+                  <span>إضافة حركة شهرية ⚡</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsEmployeeModalOpen(true);
+                  }}
+                  className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold px-5 py-3 rounded-2xl transition-all shadow-md cursor-pointer hover:scale-[1.02]"
+                >
+                  <Plus size={18} className="stroke-[3]" />
+                  <span>إضافة موظف جديد 👤</span>
+                </button>
+              </div>
             )}
             {subTab === 'journal_entries' && !isJournalModalOpen && (
               <button
@@ -1117,29 +1918,84 @@ export default function SuppliersView({
       </div>
 
       {/* Unified Treasury and Liquidity Banner */}
-      <div className="bg-gradient-to-r from-blue-700 via-indigo-700 to-slate-900 text-white p-6 rounded-3xl shadow-lg relative overflow-hidden">
-        <div className="absolute top-0 left-0 w-40 h-40 bg-white/5 rounded-full blur-3xl -translate-x-10 -translate-y-10"></div>
-        <div className="relative z-10 flex flex-col md:flex-row justify-between items-center gap-6">
-          <div className="space-y-1.5 text-center md:text-right">
-            <span className="text-[10px] bg-blue-500/30 text-blue-100 font-black px-3 py-1 rounded-full border border-blue-400/20">
-              صندوق الخزينة والسيولة المالية المعتمد
-            </span>
-            <h3 className="text-3xl sm:text-4xl font-black font-mono pt-1 text-white">
-              {treasuryBalance.toLocaleString()} <span className="text-xs font-sans text-blue-200">ر.ي</span>
-            </h3>
-            <p className="text-[11px] text-blue-200 font-medium">
-              تتأثر الخزينة فورياً بسندات الصرف للموردين (نقداً) وسندات القبض من العملاء (نقداً).
-            </p>
-          </div>
-          
-          <div className="flex gap-4">
-            <div className="bg-white/10 px-4 py-3 rounded-2xl border border-white/5 text-right space-y-1">
-              <span className="text-[10px] text-blue-200 font-bold">مستحقات الموردين</span>
-              <p className="text-sm font-black font-mono text-amber-300">{totalSuppliersBalance.toLocaleString()} ر.ي</p>
+      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-blue-950 text-white p-6 rounded-3xl shadow-xl relative overflow-hidden border border-slate-800">
+        <div className="absolute top-0 left-0 w-60 h-60 bg-blue-500/10 rounded-full blur-3xl -translate-x-20 -translate-y-20 pointer-events-none"></div>
+        <div className="absolute bottom-0 right-0 w-60 h-60 bg-indigo-500/10 rounded-full blur-3xl translate-x-20 translate-y-20 pointer-events-none"></div>
+        
+        <div className="relative z-10 space-y-6">
+          {/* Header & Total Overall Liquidity */}
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-white/10 pb-5">
+            <div className="space-y-1 text-center lg:text-right animate-fade-in">
+              <div className="flex items-center justify-center lg:justify-start gap-2">
+                <span className="inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span className="text-[11px] bg-emerald-500/20 text-emerald-300 font-black px-3 py-0.5 rounded-full border border-emerald-400/20">
+                  إجمالي السيولة المالية الكلية بالخزائن والبنك
+                </span>
+              </div>
+              <h3 className="text-3xl sm:text-4xl font-black font-mono pt-1 text-transparent bg-clip-text bg-gradient-to-r from-white via-slate-100 to-blue-200">
+                {(treasuryBalance + (invoiceSettings?.bankAccounts || []).reduce((sum: number, b: any) => sum + (b.balance || 0), 0)).toLocaleString()} <span className="text-xs font-sans text-blue-300">ر.ي</span>
+              </h3>
             </div>
-            <div className="bg-white/10 px-4 py-3 rounded-2xl border border-white/5 text-right space-y-1">
-              <span className="text-[10px] text-blue-200 font-bold">مديونيات العملاء</span>
-              <p className="text-sm font-black font-mono text-emerald-300">{totalCustomersBalance.toLocaleString()} ر.ي</p>
+            
+            <div className="flex justify-center gap-3">
+              <div className="bg-slate-800/40 backdrop-blur-sm px-4 py-2.5 rounded-2xl border border-white/5 text-right min-w-[130px] space-y-0.5">
+                <span className="text-[10px] text-slate-400 font-bold">مستحقات الموردين</span>
+                <p className="text-sm font-black font-mono text-amber-400">{totalSuppliersBalance.toLocaleString()} ر.ي</p>
+              </div>
+              <div className="bg-slate-800/40 backdrop-blur-sm px-4 py-2.5 rounded-2xl border border-white/5 text-right min-w-[130px] space-y-0.5">
+                <span className="text-[10px] text-slate-400 font-bold">مديونيات العملاء</span>
+                <p className="text-sm font-black font-mono text-emerald-400">{totalCustomersBalance.toLocaleString()} ر.ي</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Divided Liquidity Sources: Cash vs Bank Treasury */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Cash Fund (الصندوق النقدي) */}
+            <div
+              onClick={() => {
+                setReconAccountId('cash');
+                setIsReconModalOpen(true);
+              }}
+              className="bg-white/5 hover:bg-white/10 hover:border-emerald-500/30 transition-all p-5 rounded-2xl border border-white/5 flex flex-col justify-between gap-4 shadow-xs cursor-pointer active:scale-98 group"
+            >
+              <div className="space-y-1">
+                <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-black px-2.5 py-0.5 rounded-full border border-emerald-400/10">
+                  💵 الخزينة النقدية (الكاش)
+                </span>
+                <h4 className="text-2xl sm:text-3xl font-black font-mono pt-1 text-white">
+                  {treasuryBalance.toLocaleString()} <span className="text-xs font-sans text-slate-300">ر.ي</span>
+                </h4>
+              </div>
+              <div className="flex items-center justify-between border-t border-white/5 pt-2 text-[10px] text-slate-300">
+                <span className="group-hover:text-emerald-400 transition-colors">🔎 اضغط للمطابقة والطباعة ➔</span>
+                <div className="bg-emerald-500/10 p-1.5 rounded-lg text-emerald-300 group-hover:bg-emerald-500/25 transition-all">
+                  <ArrowDownLeft size={14} className="stroke-[2.5]" />
+                </div>
+              </div>
+            </div>
+
+            {/* Bank Treasury (الخزينة البنكية الموحدة) */}
+            <div
+              onClick={() => {
+                setIsBankTreasuryModalOpen(true);
+              }}
+              className="bg-white/5 hover:bg-white/10 hover:border-blue-500/30 transition-all p-5 rounded-2xl border border-white/5 flex flex-col justify-between gap-4 shadow-xs cursor-pointer active:scale-98 group"
+            >
+              <div className="space-y-1">
+                <span className="text-[10px] bg-blue-500/20 text-blue-300 font-black px-2.5 py-0.5 rounded-full border border-blue-400/10">
+                  🏦 الخزينة البنكية (البنوك)
+                </span>
+                <h4 className="text-2xl sm:text-3xl font-black font-mono pt-1 text-white">
+                  {((invoiceSettings?.bankAccounts || []).reduce((sum: number, b: any) => sum + (b.balance || 0), 0)).toLocaleString()} <span className="text-xs font-sans text-slate-300">ر.ي</span>
+                </h4>
+              </div>
+              <div className="flex items-center justify-between border-t border-white/5 pt-2 text-[10px] text-slate-300">
+                <span className="group-hover:text-blue-400 transition-colors">🔎 اضغط لتفاصيل الحسابات والطباعة ➔</span>
+                <div className="bg-blue-500/10 p-1.5 rounded-lg text-blue-300 group-hover:bg-blue-500/25 transition-all">
+                  <ArrowDownLeft size={14} className="stroke-[2.5]" />
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -1690,68 +2546,45 @@ export default function SuppliersView({
               </button>
               <button
                 type="submit"
-                className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-5 py-2 rounded-xl transition-all"
+                className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2 rounded-xl transition-colors"
               >
-                تطبيق وحفظ السند
+                حفظ وإصدار السند 💾
               </button>
             </div>
           </form>
         </div>
       )}
 
-      {/* Voucher Print Preview Dialog */}
+      {/* showVoucherReceipt Modal */}
       {showVoucherReceipt && lastCreatedVoucher && (
-        <div className="fixed inset-0 bg-slate-900/75 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col text-right">
-            
             <div className="bg-slate-900 text-white p-5 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <FileText size={20} className="text-blue-500" />
-                <span className="font-extrabold text-sm sm:text-base">معاينة وإصدار السند المالي المعتمد</span>
+                <FileText size={20} />
+                <h3 className="font-extrabold text-base">معاينة وطباعة السند المالي</h3>
               </div>
               <button 
                 onClick={() => setShowVoucherReceipt(false)}
-                className="text-white/80 hover:text-white hover:bg-white/10 p-1 rounded-lg transition-colors"
+                className="text-white/80 hover:text-white p-1 rounded-lg transition-colors"
               >
                 <X size={18} />
               </button>
             </div>
 
-            {/* Print Section */}
-            <div className="p-8 space-y-6 bg-slate-50/50" id="voucher-print-area">
-              <div className="border-4 border-dashed border-slate-200 bg-white p-6 rounded-2xl relative">
-                
-                {/* Header info */}
-                <div className="flex justify-between items-start border-b border-slate-100 pb-4">
-                  <div className="space-y-1">
-                    <h3 className="font-black text-lg text-slate-800">شركة المدى للخدمات اللوجستية</h3>
-                    <p className="text-[10px] text-black font-extrabold">نظام المستودعات وسندات الحساب الذكي</p>
-                  </div>
-                  <div className="text-left space-y-0.5">
-                    <span className="text-xs bg-slate-100 text-slate-800 px-3 py-1 rounded-md font-mono font-black">
-                      {lastCreatedVoucher.id}
-                    </span>
-                    <p className="text-[10px] text-black font-black font-mono">{lastCreatedVoucher.date}</p>
-                    <p className="text-[10px] text-black font-black font-mono">{lastCreatedVoucher.time}</p>
-                  </div>
+            <div className="p-6 overflow-y-auto max-h-[70vh]" id="printable-voucher">
+              {/* Receipt Body */}
+              <div className="border-2 border-dashed border-slate-200 p-6 rounded-2xl space-y-4">
+                <div className="text-center space-y-1 pb-4 border-b border-slate-100">
+                  <h2 className="font-black text-lg text-slate-800">{lastCreatedVoucher.title}</h2>
+                  <p className="text-[10px] text-slate-400 font-mono">رقم السند: {lastCreatedVoucher.id}</p>
+                  <p className="text-[10px] text-slate-400 font-mono">التاريخ: {lastCreatedVoucher.date}</p>
                 </div>
 
-                {/* Title badge */}
-                <div className="text-center my-6">
-                  <span className={`text-sm font-black px-6 py-2 rounded-full border ${
-                    lastCreatedVoucher.isReceipt 
-                      ? 'bg-emerald-50 border-emerald-200 text-emerald-800' 
-                      : 'bg-amber-50 border-amber-200 text-amber-800'
-                  }`}>
-                    {lastCreatedVoucher.title}
-                  </span>
-                </div>
-
-                {/* Voucher details ledger */}
-                <div className="space-y-4 text-xs text-black font-black">
+                <div className="space-y-3 text-xs text-slate-600">
                   <div className="flex justify-between border-b border-slate-50 pb-2">
-                    <span>صرف/قبض لـ:</span>
-                    <strong className="text-slate-800 font-black">{lastCreatedVoucher.partnerName} ({lastCreatedVoucher.partnerType})</strong>
+                    <span>الجهة / المستلم:</span>
+                    <strong>{lastCreatedVoucher.partnerName} ({lastCreatedVoucher.partnerType})</strong>
                   </div>
                   <div className="flex justify-between border-b border-slate-50 pb-2">
                     <span>المبلغ المدفوع/المستلم:</span>
@@ -1793,7 +2626,6 @@ export default function SuppliersView({
                     </p>
                   </div>
                 )}
-
               </div>
             </div>
 
@@ -1817,6 +2649,298 @@ export default function SuppliersView({
             </div>
 
           </div>
+        </div>
+      )}
+
+      {/* Account Statement (كشف الحساب) Modal */}
+      {isStatementModalOpen && statementPartner && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl w-full max-w-4xl shadow-2xl overflow-hidden flex flex-col text-right">
+            {/* Header */}
+            <div className="bg-slate-900 text-white p-5 flex items-center justify-between no-print">
+              <div className="flex items-center gap-2">
+                <FileText className="text-blue-400" size={22} />
+                <h3 className="font-extrabold text-base sm:text-lg">
+                  كشف الحساب المالي التفصيلي 📄
+                </h3>
+              </div>
+              <button 
+                onClick={() => {
+                  setIsStatementModalOpen(false);
+                  setStatementPartner(null);
+                }}
+                className="text-white/80 hover:text-white hover:bg-white/10 p-1.5 rounded-lg transition-colors cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Date Filters (No-Print) */}
+            <div className="bg-slate-50 border-b border-slate-100 p-4 flex flex-wrap items-center justify-between gap-3 no-print">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-black text-slate-500">تصفية التاريخ:</span>
+                <div className="flex items-center gap-1.5" dir="rtl">
+                  <input 
+                    type="date"
+                    value={statementStartDate}
+                    onChange={(e) => setStatementStartDate(e.target.value)}
+                    className="bg-white border border-slate-200 text-xs font-bold px-2.5 py-1.5 rounded-lg focus:outline-hidden focus:border-blue-500"
+                  />
+                  <span className="text-xs text-slate-400">إلى</span>
+                  <input 
+                    type="date"
+                    value={statementEndDate}
+                    onChange={(e) => setStatementEndDate(e.target.value)}
+                    className="bg-white border border-slate-200 text-xs font-bold px-2.5 py-1.5 rounded-lg focus:outline-hidden focus:border-blue-500"
+                  />
+                  {(statementStartDate || statementEndDate) && (
+                    <button
+                      onClick={() => {
+                        setStatementStartDate('');
+                        setStatementEndDate('');
+                      }}
+                      className="text-[10px] text-red-600 hover:bg-red-50 font-bold px-2 py-1 rounded-md"
+                    >
+                      إعادة تعيين ✖
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => window.print()}
+                  className="bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs px-4 py-2 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                >
+                  <Printer size={13} />
+                  <span>طباعة وتصدير PDF 🖨️</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Printable Area */}
+            <div className="p-6 overflow-y-auto max-h-[75vh] bg-white text-slate-800" id="printable-statement" dir="rtl">
+              {/* Document Header */}
+              <div className="flex flex-col sm:flex-row justify-between items-center border-b-2 border-slate-900 pb-5 mb-6 gap-4">
+                <div className="text-right space-y-1">
+                  <h1 className="font-black text-xl sm:text-2xl text-slate-900 flex items-center gap-2">
+                    <span className="w-3 h-3 bg-blue-600 rounded-full inline-block"></span>
+                    مؤسسة الميناء للخدمات التجارية المحدودة
+                  </h1>
+                  <p className="text-xs text-slate-500 font-bold">قسم الحسابات المالية العامة • كشف حساب رسمي ومطابقة أرصدة</p>
+                  <p className="text-[10px] text-slate-400 font-mono font-bold">تاريخ الاستخراج: {new Date().toLocaleDateString('ar-YE')} • {new Date().toLocaleTimeString('ar-YE', {hour: '2-digit', minute: '2-digit'})}</p>
+                </div>
+                
+                <div className="text-center sm:text-left border border-slate-200 px-4 py-2.5 rounded-2xl bg-slate-50/50">
+                  <span className="text-[10px] text-slate-400 font-black block tracking-widest font-mono">WMS SYSTEM STATEMENT</span>
+                  <span className="text-xs text-slate-700 font-black font-mono">REF: STM-{statementPartner.id}-{Date.now().toString().slice(-4)}</span>
+                </div>
+              </div>
+
+              {/* Account Meta Info Card */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 bg-slate-50 border border-slate-100 p-5 rounded-2xl mb-6">
+                <div className="text-right space-y-0.5">
+                  <span className="text-[10px] text-slate-400 font-black block">صاحب الحساب / الاسم</span>
+                  <strong className="text-sm text-slate-900 font-extrabold">{statementPartner.name}</strong>
+                </div>
+                <div className="text-right space-y-0.5">
+                  <span className="text-[10px] text-slate-400 font-black block">الرقم المرجعي</span>
+                  <strong className="text-sm text-slate-800 font-mono font-bold">{statementPartner.id}</strong>
+                </div>
+                <div className="text-right space-y-0.5">
+                  <span className="text-[10px] text-slate-400 font-black block">فئة وطبيعة الحساب</span>
+                  <span className={`inline-block text-xs font-black px-2.5 py-0.5 rounded-md mt-0.5 ${
+                    statementPartnerType === 'supplier' ? 'bg-amber-100 text-amber-800' :
+                    statementPartnerType === 'customer' ? 'bg-emerald-100 text-emerald-800' : 'bg-indigo-100 text-indigo-800'
+                  }`}>
+                    {statementPartnerType === 'supplier' ? 'مورد (شريك توريد جهة دائنة)' :
+                     statementPartnerType === 'customer' ? 'عميل (ذمم تجارية جهة مدينة)' : 'موظف (كادر وظيفي)'}
+                  </span>
+                </div>
+                <div className="text-right space-y-0.5">
+                  <span className="text-[10px] text-slate-400 font-black block">الرصيد الختامي الحالي</span>
+                  <strong className="text-sm text-blue-800 font-mono font-black">
+                    {statementPartnerType === 'employee' 
+                      ? ((statementPartner.advances || 0) + (statementPartner.custody || 0)).toLocaleString()
+                      : (statementPartner.balance || 0).toLocaleString()} ر.ي
+                  </strong>
+                </div>
+              </div>
+
+              {/* Transactions Table */}
+              <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
+                <table className="w-full text-right border-collapse">
+                  <thead>
+                    <tr className="bg-slate-900 text-white text-[11px] font-black tracking-wide border-b border-slate-800">
+                      <th className="py-3 px-4 w-12 text-center">#</th>
+                      <th className="py-3 px-4 w-28 text-center">التاريخ</th>
+                      <th className="py-3 px-4">رقم الحركة/البيان</th>
+                      <th className="py-3 px-4 w-28 text-center">مدين (له)</th>
+                      <th className="py-3 px-4 w-28 text-center">دائن (عليه)</th>
+                      <th className="py-3 px-4 w-32 text-center">الرصيد الجاري</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-xs">
+                    {/* Opening Balance Row */}
+                    {(() => {
+                      const allEntries = getStatementEntries();
+                      // filter by date
+                      const filteredEntries = allEntries.filter(e => {
+                        if (statementStartDate && new Date(e.date) < new Date(statementStartDate)) return false;
+                        if (statementEndDate && new Date(e.date) > new Date(statementEndDate)) return false;
+                        return true;
+                      });
+
+                      // compute opening balance
+                      let finalBalance = statementPartnerType === 'employee'
+                        ? ((statementPartner.advances || 0) + (statementPartner.custody || 0))
+                        : (statementPartner.balance || 0);
+
+                      let cumulativeDiff = 0;
+                      allEntries.forEach(e => {
+                        if (statementPartnerType === 'supplier') {
+                          cumulativeDiff += (e.credit - e.debit);
+                        } else {
+                          cumulativeDiff += (e.debit - e.credit);
+                        }
+                      });
+
+                      const openingBalance = finalBalance - cumulativeDiff;
+                      let runningBalance = openingBalance;
+
+                      return (
+                        <>
+                          <tr className="bg-slate-50 font-black text-slate-600">
+                            <td className="py-3 px-4 text-center font-mono">-</td>
+                            <td className="py-3 px-4 text-center font-mono">{statementStartDate || 'تأسيس'}</td>
+                            <td className="py-3 px-4">رصيد افتتاحي سابق / مدور من فترات محاسبية سابقة</td>
+                            <td className="py-3 px-4 text-center font-mono">-</td>
+                            <td className="py-3 px-4 text-center font-mono">-</td>
+                            <td className="py-3 px-4 text-center font-mono font-black">{openingBalance.toLocaleString()} ر.ي</td>
+                          </tr>
+
+                          {filteredEntries.length === 0 ? (
+                            <tr>
+                              <td colSpan={6} className="py-8 px-4 text-center text-slate-400 font-bold">
+                                لا توجد حركات مالية أو سندات مسجلة ضمن هذه الفترة المحددة.
+                              </td>
+                            </tr>
+                          ) : (
+                            filteredEntries.map((e, index) => {
+                              if (statementPartnerType === 'supplier') {
+                                runningBalance += (e.credit - e.debit);
+                              } else {
+                                runningBalance += (e.debit - e.credit);
+                              }
+
+                              return (
+                                <tr key={e.id} className="hover:bg-slate-50/80 transition-colors">
+                                  <td className="py-3 px-4 text-center text-slate-400 font-mono font-bold">{index + 1}</td>
+                                  <td className="py-3 px-4 text-center font-mono font-bold text-slate-500">{e.date}</td>
+                                  <td className="py-3 px-4">
+                                    <div className="font-extrabold text-slate-900">{e.title}</div>
+                                    {e.notes && <div className="text-[10px] text-slate-400 mt-0.5">{e.notes}</div>}
+                                    <div className="text-[9px] text-slate-300 font-mono mt-0.5">بواسطة: {e.createdBy} | مرجع: {e.id}</div>
+                                  </td>
+                                  <td className="py-3 px-4 text-center font-mono font-black text-emerald-600">
+                                    {e.debit > 0 ? `${e.debit.toLocaleString()} ر.ي` : '-'}
+                                  </td>
+                                  <td className="py-3 px-4 text-center font-mono font-black text-rose-600">
+                                    {e.credit > 0 ? `${e.credit.toLocaleString()} ر.ي` : '-'}
+                                  </td>
+                                  <td className="py-3 px-4 text-center font-mono font-black text-slate-800">
+                                    {runningBalance.toLocaleString()} ر.ي
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          )}
+
+                          {/* Totals Summary Row */}
+                          <tr className="bg-slate-900 text-white font-black">
+                            <td colSpan={3} className="py-4 px-4 text-left text-xs uppercase font-black">إجمالي الحركة للرصيد الختامي المطابق آلياً:</td>
+                            <td className="py-4 px-4 text-center font-mono text-emerald-400 text-xs">
+                              {filteredEntries.reduce((sum, e) => sum + e.debit, 0).toLocaleString()} ر.ي
+                            </td>
+                            <td className="py-4 px-4 text-center font-mono text-rose-400 text-xs">
+                              {filteredEntries.reduce((sum, e) => sum + e.credit, 0).toLocaleString()} ر.ي
+                            </td>
+                            <td className="py-4 px-4 text-center font-mono text-white text-xs">
+                              {runningBalance.toLocaleString()} ر.ي
+                            </td>
+                          </tr>
+                        </>
+                      );
+                    })()}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Auditor & Approvals Footer */}
+              <div className="mt-12 pt-8 border-t border-slate-200 grid grid-cols-1 md:grid-cols-3 gap-6 text-center text-xs">
+                <div className="space-y-6">
+                  <span className="font-bold text-slate-400 block text-[10px] tracking-widest">إعداد ومراجعة</span>
+                  <strong className="text-slate-800 block">{currentUser.username} ({currentUser.role})</strong>
+                  <div className="border-b border-slate-200 w-36 mx-auto pt-4"></div>
+                </div>
+                <div className="space-y-6">
+                  <span className="font-bold text-slate-400 block text-[10px] tracking-widest">اعتماد المدير المالي</span>
+                  <strong className="text-slate-800 block">أ. خالد اليافعي</strong>
+                  <div className="border-b border-slate-200 w-36 mx-auto pt-4"></div>
+                </div>
+                <div className="space-y-6">
+                  <span className="font-bold text-slate-400 block text-[10px] tracking-widest">توقيع ومصادقة صاحب الحساب</span>
+                  <strong className="text-slate-800 block">{statementPartner.name}</strong>
+                  <div className="border-b border-slate-200 w-36 mx-auto pt-4"></div>
+                </div>
+              </div>
+
+              {/* Footer Notice */}
+              <div className="mt-12 text-center text-[10px] text-slate-400 border-t border-slate-100 pt-4 font-bold">
+                💡 يعتبر هذا الكشف الصادر من النظام وثيقة رسمية وصالحة لمطابقة الأرصدة التجارية والمحاسبية بين الطرفين في تاريخه.
+              </div>
+            </div>
+
+            {/* Print Styles and Modal Actions */}
+            <div className="bg-slate-50 border-t border-slate-100 p-5 flex justify-end gap-2 no-print">
+              <button
+                onClick={() => {
+                  setIsStatementModalOpen(false);
+                  setStatementPartner(null);
+                }}
+                className="bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs px-6 py-2.5 rounded-xl transition-all cursor-pointer"
+              >
+                إغلاق الكشف
+              </button>
+            </div>
+          </div>
+
+          {/* Embedded Custom CSS for Printing */}
+          <style>{`
+            @media print {
+              body * {
+                visibility: hidden !important;
+              }
+              #printable-statement, #printable-statement * {
+                visibility: visible !important;
+              }
+              #printable-statement {
+                position: absolute !important;
+                left: 0 !important;
+                top: 0 !important;
+                width: 100% !important;
+                background: white !important;
+                color: black !important;
+                padding: 30px !important;
+                margin: 0 !important;
+                box-shadow: none !important;
+                border: none !important;
+              }
+              .no-print {
+                display: none !important;
+              }
+            }
+          `}</style>
         </div>
       )}
 
@@ -1909,17 +3033,31 @@ export default function SuppliersView({
                         {(supplier.balance || 0).toLocaleString()} <span className="text-[10px] text-black font-black">ر.ي</span>
                       </p>
                     </div>
-                    {!isDataLocked && (
+                    <div className="flex gap-1.5 shrink-0">
                       <button
                         onClick={() => {
-                          setAdjustingPartner(supplier);
-                          setAdjustmentType('pay');
+                          setStatementPartner(supplier);
+                          setStatementPartnerType('supplier');
+                          setIsStatementModalOpen(true);
                         }}
-                        className="bg-white border border-slate-200/80 text-blue-600 hover:text-white hover:bg-blue-600 font-extrabold text-[10px] px-3 py-2 rounded-xl transition-all cursor-pointer shadow-2xs"
+                        className="bg-white hover:bg-slate-100 border border-slate-200/80 text-slate-700 font-extrabold text-[10px] px-2.5 py-2 rounded-xl transition-all cursor-pointer flex items-center gap-1 shadow-2xs"
+                        title="كشف حساب المورد"
                       >
-                        إصدار سند دفع 💸
+                        <FileText size={11} />
+                        <span>كشف الحساب 📄</span>
                       </button>
-                    )}
+                      {!isDataLocked && (
+                        <button
+                          onClick={() => {
+                            setAdjustingPartner(supplier);
+                            setAdjustmentType('pay');
+                          }}
+                          className="bg-white border border-slate-200/80 text-blue-600 hover:text-white hover:bg-blue-600 font-extrabold text-[10px] px-3 py-2 rounded-xl transition-all cursor-pointer shadow-2xs"
+                        >
+                          إصدار سند دفع 💸
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   {/* Contact list */}
@@ -1946,7 +3084,6 @@ export default function SuppliersView({
                       <div className="text-slate-300 italic text-[11px]">بدون بريد الكتروني مسجل</div>
                     )}
                   </div>
-
                   {/* Footer Buttons */}
                   <div className="flex items-center justify-between border-t border-slate-50 pt-3">
                     <div className="flex items-center gap-1.5">
@@ -2033,17 +3170,31 @@ export default function SuppliersView({
                         {(customer.balance || 0).toLocaleString()} <span className="text-[10px] text-black font-black">ر.ي</span>
                       </p>
                     </div>
-                    {!isDataLocked && (
+                    <div className="flex gap-1.5 shrink-0">
                       <button
                         onClick={() => {
-                          setAdjustingPartner(customer);
-                          setAdjustmentType('receive');
+                          setStatementPartner(customer);
+                          setStatementPartnerType('customer');
+                          setIsStatementModalOpen(true);
                         }}
-                        className="bg-white border border-slate-200/80 text-emerald-600 hover:text-white hover:bg-emerald-600 font-extrabold text-[10px] px-3 py-2 rounded-xl transition-all cursor-pointer shadow-2xs"
+                        className="bg-white hover:bg-slate-100 border border-slate-200/80 text-slate-700 font-extrabold text-[10px] px-2.5 py-2 rounded-xl transition-all cursor-pointer flex items-center gap-1 shadow-2xs"
+                        title="كشف حساب العميل"
                       >
-                        إصدار سند قبض 📥
+                        <FileText size={11} />
+                        <span>كشف الحساب 📄</span>
                       </button>
-                    )}
+                      {!isDataLocked && (
+                        <button
+                          onClick={() => {
+                            setAdjustingPartner(customer);
+                            setAdjustmentType('receive');
+                          }}
+                          className="bg-white border border-slate-200/80 text-emerald-600 hover:text-white hover:bg-emerald-600 font-extrabold text-[10px] px-3 py-2 rounded-xl transition-all cursor-pointer shadow-2xs"
+                        >
+                          إصدار سند قبض 📥
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   {/* Contact list */}
@@ -2280,6 +3431,42 @@ export default function SuppliersView({
                         <span className="text-black font-black">الراتب الأساسي:</span>
                         <span className="font-extrabold text-slate-800 font-mono">{(emp.salary || 0).toLocaleString()} ر.ي</span>
                       </div>
+                      
+                      {/* Live monthly variables display */}
+                      {(() => {
+                        const { overtime, bonus, deductions, net } = getEmployeeSalaryDetails(emp);
+                        return (
+                          <>
+                            {(overtime > 0 || bonus > 0 || deductions > 0) && (
+                              <div className="space-y-1 pt-2 border-t border-dashed border-slate-200 text-[11px]">
+                                {overtime > 0 && (
+                                  <div className="flex justify-between items-center text-amber-700 font-bold">
+                                    <span>العمل الإضافي (+):</span>
+                                    <span>{overtime.toLocaleString()} ر.ي</span>
+                                  </div>
+                                )}
+                                {bonus > 0 && (
+                                  <div className="flex justify-between items-center text-emerald-700 font-bold">
+                                    <span>الإكراميات والمكافآت (+):</span>
+                                    <span>{bonus.toLocaleString()} ر.ي</span>
+                                  </div>
+                                )}
+                                {deductions > 0 && (
+                                  <div className="flex justify-between items-center text-rose-700 font-bold">
+                                    <span>الاستقطاعات والخصم (-):</span>
+                                    <span>{deductions.toLocaleString()} ر.ي</span>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                            <div className="flex justify-between items-center text-xs pt-2 border-t border-slate-200 bg-emerald-50/50 -mx-4 px-4 py-2 text-emerald-900 font-black">
+                              <span>صافي المستحق الحالي:</span>
+                              <span className="text-emerald-800 font-mono text-sm">{net.toLocaleString()} ر.ي</span>
+                            </div>
+                          </>
+                        );
+                      })()}
+
                       <div className="grid grid-cols-2 gap-2 text-[11px] pt-2 border-t border-slate-200/50">
                         <div className="text-right">
                           <span className="text-black block font-black">إجمالي السلف:</span>
@@ -2290,6 +3477,95 @@ export default function SuppliersView({
                           <span className="font-black text-amber-700 font-mono">{(emp.custody || 0).toLocaleString()} ر.ي</span>
                         </div>
                       </div>
+                    </div>
+
+                    {/* Monthly Variations / Estihqaqat & Istiqta'at Collapsible Accordion */}
+                    <div className="space-y-2">
+                      <button
+                        type="button"
+                        onClick={() => setExpandedEmpId(expandedEmpId === emp.id ? null : emp.id)}
+                        className={`w-full py-2.5 px-3.5 rounded-xl border text-[11px] font-black transition-all flex items-center justify-between cursor-pointer ${
+                          expandedEmpId === emp.id 
+                            ? 'bg-slate-100 border-slate-300 text-slate-800 font-extrabold' 
+                            : 'bg-indigo-50/50 border-indigo-100 text-indigo-700 hover:bg-indigo-50'
+                        }`}
+                      >
+                        <span className="flex items-center gap-1.5">
+                          📋 المتغيرات الشهرية والخصومات ({(emp.monthlyVariations?.filter((v: any) => !v.isApplied) || []).length})
+                        </span>
+                        <span>{expandedEmpId === emp.id ? '▲ إغلاق' : '▼ إدارة وتحكم'}</span>
+                      </button>
+
+                      {expandedEmpId === emp.id && (
+                        <div className="bg-slate-50 border border-slate-200/80 p-3 rounded-2xl space-y-2.5 text-right">
+                          <div className="flex justify-between items-center pb-1.5 border-b border-slate-200/60">
+                            <span className="text-[10px] font-extrabold text-slate-500">حركات الشهر الجاري المعلقة</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setVariationForm({
+                                  employeeId: emp.id,
+                                  type: 'bonus',
+                                  amountType: 'flat',
+                                  hours: '',
+                                  hourlyRate: '',
+                                  flatAmount: '',
+                                  reason: '',
+                                  date: new Date().toISOString().split('T')[0]
+                                });
+                                setIsAddVariationModalOpen(true);
+                              }}
+                              className="text-[9px] bg-indigo-600 hover:bg-indigo-700 text-white font-black px-2.5 py-1 rounded-lg transition-all"
+                            >
+                              + إضافة حركة ⚡
+                            </button>
+                          </div>
+
+                          {(() => {
+                            const activeVars = emp.monthlyVariations?.filter((v: any) => !v.isApplied) || [];
+                            if (activeVars.length === 0) {
+                              return (
+                                <p className="text-[10px] text-slate-400 italic text-center py-2 font-bold">لا توجد حركات شهرية مسجلة</p>
+                              );
+                            }
+                            return (
+                              <div className="space-y-1.5 max-h-32 overflow-y-auto pr-1">
+                                {activeVars.map((v: any) => (
+                                  <div key={v.id} className="flex justify-between items-center bg-white border border-slate-200/60 p-2 rounded-xl text-[10px] shadow-2xs">
+                                    <div className="text-right space-y-0.5">
+                                      <div className="flex items-center gap-1.5">
+                                        <span className={`px-1.5 py-0.5 rounded-md text-[8px] font-black ${
+                                          v.type === 'overtime' ? 'bg-amber-100 text-amber-800' :
+                                          v.type === 'bonus' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                                        }`}>
+                                          {v.type === 'overtime' ? 'إضافي' : v.type === 'bonus' ? 'إكرامية' : 'خصم'}
+                                        </span>
+                                        <span className="font-bold text-slate-700">{v.reason}</span>
+                                      </div>
+                                      <div className="text-[8px] text-slate-400 font-bold font-mono">
+                                        {v.date} {v.hours ? `(${v.hours}س × ${v.hourlyRate}ر)` : ''}
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center gap-2 shrink-0">
+                                      <span className={`font-mono font-extrabold ${v.type === 'deduction' ? 'text-rose-600' : 'text-emerald-600'}`}>
+                                        {v.type === 'deduction' ? '-' : '+'}{(v.amount || 0).toLocaleString()} ر.ي
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteVariation(emp.id, v.id)}
+                                        className="text-slate-300 hover:text-red-500 hover:bg-red-50 p-1 rounded-md transition-colors cursor-pointer"
+                                        title="حذف الحركة"
+                                      >
+                                        <X size={10} className="stroke-[3]" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      )}
                     </div>
 
                     {/* History Collapsible Log */}
@@ -2331,6 +3607,18 @@ export default function SuppliersView({
                           title="صرف راتب / سلفة / عهدة"
                         >
                           صرف مالي 💸
+                        </button>
+                        <button
+                          onClick={() => {
+                            setStatementPartner(emp);
+                            setStatementPartnerType('employee');
+                            setIsStatementModalOpen(true);
+                          }}
+                          className="bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 font-extrabold text-[10px] px-2.5 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1 shadow-2xs"
+                          title="كشف حساب الموظف"
+                        >
+                          <FileText size={11} />
+                          <span>كشف الحساب 📄</span>
                         </button>
                         <button
                           onClick={() => {
@@ -2778,10 +4066,10 @@ export default function SuppliersView({
 
             <form onSubmit={handleCreateVoucherSubmit} className="p-6 space-y-5 overflow-y-auto max-h-[80vh]">
               
-              {/* Type: Pay vs Receive vs Transfer */}
+              {/* Type: Pay vs Receive vs Transfer vs Internal Transfer */}
               <div className="space-y-2">
                 <label className="block text-xs font-black text-slate-500">نوع السند المالي</label>
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                   <button
                     type="button"
                     onClick={() => {
@@ -2789,13 +4077,13 @@ export default function SuppliersView({
                       setVTargetGroup('supplier');
                       setVSelectedTargetId('');
                     }}
-                    className={`p-3.5 rounded-2xl border text-[11px] sm:text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                    className={`p-3 rounded-2xl border text-[11px] font-black transition-all flex items-center justify-center gap-2 cursor-pointer ${
                       vType === 'pay'
                         ? 'bg-rose-50 border-rose-300 text-rose-800 shadow-xs'
                         : 'bg-white border-slate-200 text-slate-500 hover:text-slate-800'
                     }`}
                   >
-                    <span>💸 سند صرف نقدي</span>
+                    <span>💸 صرف نقدي</span>
                   </button>
                   <button
                     type="button"
@@ -2804,29 +4092,45 @@ export default function SuppliersView({
                       setVTargetGroup('customer');
                       setVSelectedTargetId('');
                     }}
-                    className={`p-3.5 rounded-2xl border text-[11px] sm:text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                    className={`p-3 rounded-2xl border text-[11px] font-black transition-all flex items-center justify-center gap-2 cursor-pointer ${
                       vType === 'receive'
                         ? 'bg-emerald-50 border-emerald-300 text-emerald-800 shadow-xs'
                         : 'bg-white border-slate-200 text-slate-500 hover:text-slate-800'
                     }`}
                   >
-                    <span>📥 سند قبض نقدي</span>
+                    <span>📥 قبض نقدي</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => {
                       setVType('transfer');
-                      setVTransferFlow('cust_to_supp');
+                      setVTransferFromType('customer');
+                      setVTransferToType('supplier');
                       setVTransferFromId('');
                       setVTransferToId('');
                     }}
-                    className={`p-3.5 rounded-2xl border text-[11px] sm:text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                    className={`p-3 rounded-2xl border text-[11px] font-black transition-all flex items-center justify-center gap-2 cursor-pointer ${
                       vType === 'transfer'
                         ? 'bg-blue-50 border-blue-300 text-blue-800 shadow-xs'
                         : 'bg-white border-slate-200 text-slate-500 hover:text-slate-800'
                     }`}
                   >
-                    <span>🔄 سند تحويل مالي</span>
+                    <span>🔄 تحويل ذمم</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setVType('internal_transfer');
+                      setVInternalFrom('cash');
+                      setVInternalTo('');
+                    }}
+                    className={`p-3 rounded-2xl border text-[11px] font-black transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                      vType === 'internal_transfer'
+                        ? 'bg-indigo-50 border-indigo-300 text-indigo-800 shadow-xs'
+                        : 'bg-white border-slate-200 text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    <span>🔄 تحويل داخلي</span>
                   </button>
                 </div>
               </div>
@@ -2862,7 +4166,7 @@ export default function SuppliersView({
                           : 'bg-white border-slate-200 text-slate-500 hover:text-slate-800'
                       }`}
                     >
-                      👤 موظف / عهدة
+                      👤 الموظفين
                     </button>
                     <button
                       type="button"
@@ -2882,147 +4186,392 @@ export default function SuppliersView({
                 </div>
               )}
 
-              {/* Transfer Flow Selection (Only if Transfer) */}
+              {/* Payment Method Selector (Only for Pay / Receive) */}
+              {(vType === 'pay' || vType === 'receive') && (
+                <div className="space-y-3">
+                  <div className="space-y-2 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+                    <label className="block text-xs font-black text-slate-500">طريقة الدفع / التحصيل</label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setVPaymentMethod('cash')}
+                        className={`p-3 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                          vPaymentMethod === 'cash'
+                            ? 'bg-amber-50 border-amber-300 text-amber-800 shadow-xs font-black'
+                            : 'bg-white border-slate-200 text-slate-500 hover:text-slate-800'
+                        }`}
+                      >
+                        💵 كاش (الخزينة)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setVPaymentMethod('bank')}
+                        className={`p-3 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                          vPaymentMethod === 'bank'
+                            ? 'bg-indigo-50 border-indigo-300 text-indigo-800 shadow-xs font-black'
+                            : 'bg-white border-slate-200 text-slate-500 hover:text-slate-800'
+                        }`}
+                      >
+                        💳 تحويل بنكي / شبكة
+                      </button>
+                    </div>
+                  </div>
+
+                  {vPaymentMethod === 'bank' && (() => {
+                    const bankAccountsList = invoiceSettings?.bankAccounts || [];
+                    const selectedBank = bankAccountsList.find((b: any) => b.id === vSelectedBankAccountId);
+                    const filteredBanks = bankAccountsList.filter((b: any) => 
+                      b.name.toLowerCase().includes(vBankSearchQuery.toLowerCase()) ||
+                      b.accountNumber.toLowerCase().includes(vBankSearchQuery.toLowerCase())
+                    );
+                    return (
+                      <div className="space-y-1.5 bg-blue-50/40 p-3 rounded-2xl border border-blue-150 relative">
+                        <label className="block text-[10px] sm:text-xs font-extrabold text-blue-700">تحديد البنك / الحساب المالي المرتبط *</label>
+                        <div className="relative">
+                          <button
+                            type="button"
+                            onClick={() => setIsVBankDropdownOpen(!isVBankDropdownOpen)}
+                            className="w-full bg-white border border-blue-200 focus:border-blue-500 text-xs px-3.5 py-2.5 rounded-xl outline-hidden text-slate-700 font-bold shadow-3xs flex items-center justify-between gap-2"
+                          >
+                            <span className="flex items-center gap-1.5 truncate">
+                              🏦 {selectedBank ? `${selectedBank.name} (حساب: ${selectedBank.accountNumber})` : 'اختر البنك من القائمة...'}
+                            </span>
+                            <ChevronDown size={14} className="text-slate-400" />
+                          </button>
+
+                          {isVBankDropdownOpen && (
+                            <>
+                              <div className="fixed inset-0 z-40" onClick={() => setIsVBankDropdownOpen(false)}></div>
+                              <div className="absolute right-0 left-0 mt-1 bg-white border border-slate-150 rounded-2xl shadow-xl z-50 p-2 space-y-1.5 max-h-[220px] overflow-y-auto">
+                                <input
+                                  type="text"
+                                  autoFocus
+                                  placeholder="ابحث باسم البنك أو رقم الحساب..."
+                                  value={vBankSearchQuery}
+                                  onChange={(e) => setVBankSearchQuery(e.target.value)}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 font-bold focus:outline-hidden focus:border-blue-500 text-right"
+                                />
+                                <div className="space-y-0.5">
+                                  {filteredBanks.map((b: any) => (
+                                    <button
+                                      key={b.id}
+                                      type="button"
+                                      onClick={() => {
+                                        setVSelectedBankAccountId(b.id);
+                                        setIsVBankDropdownOpen(false);
+                                        setVBankSearchQuery('');
+                                      }}
+                                      className={`w-full text-right text-[11px] font-bold p-2 rounded-lg flex items-center justify-between gap-2 hover:bg-slate-50 transition-colors ${
+                                        vSelectedBankAccountId === b.id ? 'bg-blue-50/50 text-blue-800' : 'text-slate-600'
+                                      }`}
+                                    >
+                                      <span>🏦 {b.name}</span>
+                                      <span className="text-[10px] text-slate-400 font-mono">حساب: {b.accountNumber}</span>
+                                    </button>
+                                  ))}
+                                  {filteredBanks.length === 0 && (
+                                    <div className="text-center py-3 text-[10px] text-slate-400 font-bold">
+                                      لا توجد بنوك مطابقة للبحث
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+
+              {/* Dynamic General Transfer Section */}
               {vType === 'transfer' && (
-                <div className="space-y-4">
-                  <div className="space-y-1">
-                    <label className="block text-xs font-black text-slate-500">مسار التحويل المالي</label>
+                <div className="space-y-5 bg-slate-50 p-4 rounded-3xl border border-slate-200">
+                  <h4 className="text-xs font-extrabold text-slate-700 border-b pb-2 mb-3">تفاصيل التحويل المالي بين الحسابات</h4>
+                  
+                  {/* From Account Type and Target */}
+                  <div className="space-y-2">
+                    <label className="block text-xs font-black text-slate-600">حساب المصدر (المحول منه) 👇</label>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {(['customer', 'supplier', 'employee'] as const).map((t) => (
+                        <button
+                          key={t}
+                          type="button"
+                          onClick={() => {
+                            setVTransferFromType(t);
+                            setVTransferFromId('');
+                          }}
+                          className={`py-2 rounded-xl border text-[10px] font-black transition-all cursor-pointer ${
+                            vTransferFromType === t
+                              ? 'bg-rose-50 border-rose-300 text-rose-800 font-extrabold'
+                              : 'bg-white border-slate-200 text-slate-500 hover:text-slate-800'
+                          }`}
+                        >
+                          {t === 'customer' && '👤 عميل'}
+                          {t === 'supplier' && '🏢 مورد'}
+                          {t === 'employee' && '🧑‍💼 موظف'}
+                        </button>
+                      ))}
+                    </div>
+
                     <select
-                      value={vTransferFlow}
-                      onChange={(e) => {
-                        setVTransferFlow(e.target.value as any);
-                        setVTransferFromId('');
-                        setVTransferToId('');
-                      }}
+                      value={vTransferFromId}
+                      onChange={(e) => setVTransferFromId(e.target.value)}
                       required
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs font-bold text-slate-700 focus:outline-hidden focus:border-blue-500 text-right"
+                      className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-xs font-bold text-slate-700 text-right focus:outline-hidden focus:border-blue-500"
                     >
-                      <option value="cust_to_supp">🔄 من حساب عميل ➔ إلى حساب مورد</option>
-                      <option value="supp_to_emp">🔄 من حساب مورد ➔ إلى حساب موظف (راتب/سلفة)</option>
-                      <option value="emp_cust_to_supp">🔄 من عهدة موظف ➔ تسوية إلى حساب مورد</option>
+                      <option value="">-- اختر الحساب المصدر --</option>
+                      {vTransferFromType === 'customer' &&
+                        customers.map(c => (
+                          <option key={c.id} value={c.id}>
+                            {c.name} (الرصيد الحالي: {(c.balance || 0).toLocaleString()} ر.ي)
+                          </option>
+                        ))
+                      }
+                      {vTransferFromType === 'supplier' &&
+                        suppliers.map(s => (
+                          <option key={s.id} value={s.id}>
+                            {s.name} (المستحق له: {(s.balance || 0).toLocaleString()} ر.ي)
+                          </option>
+                        ))
+                      }
+                      {vTransferFromType === 'employee' &&
+                        employees.map(emp => (
+                          <option key={emp.id} value={emp.id}>
+                            {emp.name} (العهدة: {(emp.custody || 0).toLocaleString()} | السلف: {(emp.advances || 0).toLocaleString()} ر.ي)
+                          </option>
+                        ))
+                      }
                     </select>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    {/* Source selection */}
-                    <div className="space-y-1 text-right">
-                      <label className="block text-xs font-black text-slate-500">
-                        {vTransferFlow === 'cust_to_supp' && 'العميل (المحول منه)'}
-                        {vTransferFlow === 'supp_to_emp' && 'المورد (المحول منه)'}
-                        {vTransferFlow === 'emp_cust_to_supp' && 'الموظف (المحول من عهدته)'}
-                      </label>
-                      
-                      {vTransferFlow === 'cust_to_supp' && (
-                        <select
-                          value={vTransferFromId}
-                          onChange={(e) => setVTransferFromId(e.target.value)}
-                          required
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs font-bold text-slate-700 focus:outline-hidden focus:border-blue-500"
+                  {/* To Account Type and Target */}
+                  <div className="space-y-2">
+                    <label className="block text-xs font-black text-slate-600">حساب الوجهة (المحول إليه) 👈</label>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {(['customer', 'supplier', 'employee'] as const).map((t) => (
+                        <button
+                          key={t}
+                          type="button"
+                          onClick={() => {
+                            setVTransferToType(t);
+                            setVTransferToId('');
+                          }}
+                          className={`py-2 rounded-xl border text-[10px] font-black transition-all cursor-pointer ${
+                            vTransferToType === t
+                              ? 'bg-emerald-50 border-emerald-300 text-emerald-800 font-extrabold'
+                              : 'bg-white border-slate-200 text-slate-500 hover:text-slate-800'
+                          }`}
                         >
-                          <option value="">-- اختر العميل --</option>
-                          {customers.map(c => (
-                            <option key={c.id} value={c.id}>
-                              {c.name} (المديونية: {(c.balance || 0).toLocaleString()} ر.ي)
-                            </option>
-                          ))}
-                        </select>
-                      )}
-
-                      {vTransferFlow === 'supp_to_emp' && (
-                        <select
-                          value={vTransferFromId}
-                          onChange={(e) => setVTransferFromId(e.target.value)}
-                          required
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs font-bold text-slate-700 focus:outline-hidden focus:border-blue-500"
-                        >
-                          <option value="">-- اختر المورد --</option>
-                          {suppliers.map(s => (
-                            <option key={s.id} value={s.id}>
-                              {s.name} (المستحق له: {(s.balance || 0).toLocaleString()} ر.ي)
-                            </option>
-                          ))}
-                        </select>
-                      )}
-
-                      {vTransferFlow === 'emp_cust_to_supp' && (
-                        <select
-                          value={vTransferFromId}
-                          onChange={(e) => setVTransferFromId(e.target.value)}
-                          required
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs font-bold text-slate-700 focus:outline-hidden focus:border-blue-500"
-                        >
-                          <option value="">-- اختر الموظف --</option>
-                          {employees.map(emp => (
-                            <option key={emp.id} value={emp.id}>
-                              {emp.name} (العهدة الحالية: {(emp.custody || 0).toLocaleString()} ر.ي)
-                            </option>
-                          ))}
-                        </select>
-                      )}
+                          {t === 'customer' && '👤 عميل'}
+                          {t === 'supplier' && '🏢 مورد'}
+                          {t === 'employee' && '🧑‍💼 موظف'}
+                        </button>
+                      ))}
                     </div>
 
-                    {/* Destination selection */}
-                    <div className="space-y-1 text-right">
-                      <label className="block text-xs font-black text-slate-500">
-                        {vTransferFlow === 'cust_to_supp' && 'المورد (المحول إليه)'}
-                        {vTransferFlow === 'supp_to_emp' && 'الموظف (المحول إليه)'}
-                        {vTransferFlow === 'emp_cust_to_supp' && 'المورد (المحول إليه)'}
-                      </label>
-
-                      {vTransferFlow === 'cust_to_supp' && (
-                        <select
-                          value={vTransferToId}
-                          onChange={(e) => setVTransferToId(e.target.value)}
-                          required
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs font-bold text-slate-700 focus:outline-hidden focus:border-blue-500"
-                        >
-                          <option value="">-- اختر المورد --</option>
-                          {suppliers.map(s => (
-                            <option key={s.id} value={s.id}>
-                              {s.name} (المستحق له: {(s.balance || 0).toLocaleString()} ر.ي)
-                            </option>
-                          ))}
-                        </select>
-                      )}
-
-                      {vTransferFlow === 'supp_to_emp' && (
-                        <select
-                          value={vTransferToId}
-                          onChange={(e) => setVTransferToId(e.target.value)}
-                          required
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs font-bold text-slate-700 focus:outline-hidden focus:border-blue-500"
-                        >
-                          <option value="">-- اختر الموظف --</option>
-                          {employees.map(emp => (
-                            <option key={emp.id} value={emp.id}>
-                              {emp.name} ({emp.role} - الراتب: {(emp.salary || 0).toLocaleString()} ر.ي)
-                            </option>
-                          ))}
-                        </select>
-                      )}
-
-                      {vTransferFlow === 'emp_cust_to_supp' && (
-                        <select
-                          value={vTransferToId}
-                          onChange={(e) => setVTransferToId(e.target.value)}
-                          required
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs font-bold text-slate-700 focus:outline-hidden focus:border-blue-500"
-                        >
-                          <option value="">-- اختر المورد --</option>
-                          {suppliers.map(s => (
-                            <option key={s.id} value={s.id}>
-                              {s.name} (المستحق له: {(s.balance || 0).toLocaleString()} ر.ي)
-                            </option>
-                          ))}
-                        </select>
-                      )}
-                    </div>
+                    <select
+                      value={vTransferToId}
+                      onChange={(e) => setVTransferToId(e.target.value)}
+                      required
+                      className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-xs font-bold text-slate-700 text-right focus:outline-hidden focus:border-blue-500"
+                    >
+                      <option value="">-- اختر الحساب الوجهة --</option>
+                      {vTransferToType === 'customer' &&
+                        customers.map(c => (
+                          <option key={c.id} value={c.id}>
+                            {c.name} (الرصيد الحالي: {(c.balance || 0).toLocaleString()} ر.ي)
+                          </option>
+                        ))
+                      }
+                      {vTransferToType === 'supplier' &&
+                        suppliers.map(s => (
+                          <option key={s.id} value={s.id}>
+                            {s.name} (المستحق له: {(s.balance || 0).toLocaleString()} ر.ي)
+                          </option>
+                        ))
+                      }
+                      {vTransferToType === 'employee' &&
+                        employees.map(emp => (
+                          <option key={emp.id} value={emp.id}>
+                            {emp.name} (العهدة: {(emp.custody || 0) || 0} | السلف: {(emp.advances || 0) || 0} ر.ي)
+                          </option>
+                        ))
+                      }
+                    </select>
                   </div>
                 </div>
               )}
 
+              {/* Internal Cash/Bank Transfer Section */}
+              {vType === 'internal_transfer' && (() => {
+                const bankAccountsList = invoiceSettings?.bankAccounts || [];
+                
+                // 1. Source Account selection helper
+                const sourceLabel = vInternalFrom === 'cash' ? '💵 الخزينة النقدية (الكاش)' : (() => {
+                  const b = bankAccountsList.find((x: any) => x.id === vInternalFrom);
+                  return b ? `🏦 ${b.name} (حساب: ${b.accountNumber})` : 'اختر الحساب المصدر...';
+                })();
+                const filteredFromBanks = bankAccountsList.filter((b: any) =>
+                  b.name.toLowerCase().includes(vInternalFromSearchQuery.toLowerCase()) ||
+                  b.accountNumber.toLowerCase().includes(vInternalFromSearchQuery.toLowerCase())
+                );
+
+                // 2. Destination Account selection helper
+                const destLabel = vInternalTo === 'cash' ? '💵 الخزينة النقدية (الكاش)' : (() => {
+                  const b = bankAccountsList.find((x: any) => x.id === vInternalTo);
+                  return b ? `🏦 ${b.name} (حساب: ${b.accountNumber})` : 'اختر الحساب المستلم...';
+                })();
+                const filteredToBanks = bankAccountsList.filter((b: any) =>
+                  b.name.toLowerCase().includes(vInternalToSearchQuery.toLowerCase()) ||
+                  b.accountNumber.toLowerCase().includes(vInternalToSearchQuery.toLowerCase())
+                );
+
+                return (
+                  <div className="space-y-4 bg-slate-50 p-4 rounded-3xl border border-slate-200">
+                    <h4 className="text-xs font-black text-slate-700 border-b pb-2 mb-3">تفاصيل التحويل المالي الداخلي (الخزينة ↔ البنوك)</h4>
+                    
+                    {/* Source Account (المصدر) */}
+                    <div className="space-y-1.5 relative">
+                      <label className="block text-xs font-black text-slate-500">حساب المصدر (المخصوم منه) *</label>
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setIsVInternalFromDropdownOpen(!isVInternalFromDropdownOpen)}
+                          className="w-full bg-white border border-slate-200 text-xs px-3.5 py-3 rounded-xl text-slate-700 font-bold flex items-center justify-between gap-2 cursor-pointer shadow-3xs"
+                        >
+                          <span className="truncate">{sourceLabel}</span>
+                          <ChevronDown size={14} className="text-slate-400" />
+                        </button>
+
+                        {isVInternalFromDropdownOpen && (
+                          <>
+                            <div className="fixed inset-0 z-40" onClick={() => setIsVInternalFromDropdownOpen(false)}></div>
+                            <div className="absolute right-0 left-0 mt-1 bg-white border border-slate-150 rounded-2xl shadow-xl z-50 p-2 space-y-1.5 max-h-[220px] overflow-y-auto">
+                              <input
+                                type="text"
+                                autoFocus
+                                placeholder="ابحث باسم البنك أو رقم الحساب..."
+                                value={vInternalFromSearchQuery}
+                                onChange={(e) => setVInternalFromSearchQuery(e.target.value)}
+                                onClick={(e) => e.stopPropagation()}
+                                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 font-bold focus:outline-hidden focus:border-blue-500 text-right"
+                              />
+                              <div className="space-y-0.5">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setVInternalFrom('cash');
+                                    setIsVInternalFromDropdownOpen(false);
+                                    setVInternalFromSearchQuery('');
+                                    if (vInternalTo === 'cash') setVInternalTo('');
+                                  }}
+                                  className={`w-full text-right text-[11px] font-bold p-2 rounded-lg flex items-center justify-between gap-2 hover:bg-slate-50 transition-colors ${
+                                    vInternalFrom === 'cash' ? 'bg-amber-50 text-amber-800' : 'text-slate-600'
+                                  }`}
+                                >
+                                  <span>💵 الخزينة النقدية (الكاش)</span>
+                                  <span className="text-[10px] text-slate-400 font-bold">صندوق المحاسب</span>
+                                </button>
+                                {filteredFromBanks.map((b: any) => (
+                                  <button
+                                    key={b.id}
+                                    type="button"
+                                    onClick={() => {
+                                      setVInternalFrom(b.id);
+                                      setIsVInternalFromDropdownOpen(false);
+                                      setVInternalFromSearchQuery('');
+                                      if (vInternalTo === b.id) setVInternalTo('');
+                                    }}
+                                    className={`w-full text-right text-[11px] font-bold p-2 rounded-lg flex items-center justify-between gap-2 hover:bg-slate-50 transition-colors ${
+                                      vInternalFrom === b.id ? 'bg-blue-50/50 text-blue-800' : 'text-slate-600'
+                                    }`}
+                                  >
+                                    <span>🏦 {b.name}</span>
+                                    <span className="text-[10px] text-slate-400 font-mono">حساب: {b.accountNumber}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Destination Account (الوجهة) */}
+                    <div className="space-y-1.5 relative">
+                      <label className="block text-xs font-black text-slate-500">حساب المستلم (المودع إليه) *</label>
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setIsVInternalToDropdownOpen(!isVInternalToDropdownOpen)}
+                          className="w-full bg-white border border-slate-200 text-xs px-3.5 py-3 rounded-xl text-slate-700 font-bold flex items-center justify-between gap-2 cursor-pointer shadow-3xs"
+                        >
+                          <span className="truncate">{destLabel}</span>
+                          <ChevronDown size={14} className="text-slate-400" />
+                        </button>
+
+                        {isVInternalToDropdownOpen && (
+                          <>
+                            <div className="fixed inset-0 z-40" onClick={() => setIsVInternalToDropdownOpen(false)}></div>
+                            <div className="absolute right-0 left-0 mt-1 bg-white border border-slate-150 rounded-2xl shadow-xl z-50 p-2 space-y-1.5 max-h-[220px] overflow-y-auto">
+                              <input
+                                type="text"
+                                autoFocus
+                                placeholder="ابحث باسم البنك أو رقم الحساب..."
+                                value={vInternalToSearchQuery}
+                                onChange={(e) => setVInternalToSearchQuery(e.target.value)}
+                                onClick={(e) => e.stopPropagation()}
+                                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 font-bold focus:outline-hidden focus:border-blue-500 text-right"
+                              />
+                              <div className="space-y-0.5">
+                                <button
+                                  type="button"
+                                  disabled={vInternalFrom === 'cash'}
+                                  onClick={() => {
+                                    setVInternalTo('cash');
+                                    setIsVInternalToDropdownOpen(false);
+                                    setVInternalToSearchQuery('');
+                                  }}
+                                  className={`w-full text-right text-[11px] font-bold p-2 rounded-lg flex items-center justify-between gap-2 hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                                    vInternalTo === 'cash' ? 'bg-amber-50 text-amber-800' : 'text-slate-600'
+                                  }`}
+                                >
+                                  <span>💵 الخزينة النقدية (الكاش)</span>
+                                  <span className="text-[10px] text-slate-400 font-bold">صندوق المحاسب</span>
+                                </button>
+                                {filteredToBanks.map((b: any) => (
+                                  <button
+                                    key={b.id}
+                                    type="button"
+                                    disabled={vInternalFrom === b.id}
+                                    onClick={() => {
+                                      setVInternalTo(b.id);
+                                      setIsVInternalToDropdownOpen(false);
+                                      setVInternalToSearchQuery('');
+                                    }}
+                                    className={`w-full text-right text-[11px] font-bold p-2 rounded-lg flex items-center justify-between gap-2 hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                                      vInternalTo === b.id ? 'bg-blue-50/50 text-blue-800' : 'text-slate-600'
+                                    }`}
+                                  >
+                                    <span>🏦 {b.name}</span>
+                                    <span className="text-[10px] text-slate-400 font-mono">حساب: {b.accountNumber}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Dropdown/Selection based on selection */}
-              {vType !== 'transfer' && (
+              {vType !== 'transfer' && vType !== 'internal_transfer' && (
                 <div className="space-y-2">
                   <label className="block text-xs font-black text-slate-500">
                     {vTargetGroup === 'supplier' && 'اختر المورد المستحق'}
@@ -3064,19 +4613,152 @@ export default function SuppliersView({
                   )}
 
                   {vTargetGroup === 'employee' && (
-                    <select
-                      value={vSelectedTargetId}
-                      onChange={(e) => setVSelectedTargetId(e.target.value)}
-                      required
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs font-bold text-slate-700 focus:outline-hidden focus:border-blue-500"
-                    >
-                      <option value="">-- اختر الموظف من الكادر المسجل --</option>
-                      {employees.map(emp => (
-                        <option key={emp.id} value={emp.id}>
-                          {emp.name} ({emp.role} - الراتب: {(emp.salary || 0).toLocaleString()} ر.ي)
-                        </option>
-                      ))}
-                    </select>
+                    <div className="space-y-4 bg-slate-50 p-4 rounded-2xl border border-slate-200">
+                      <div>
+                        <label className="block text-xs font-black text-slate-500 mb-1">الموظف المعني</label>
+                        <select
+                          value={vSelectedTargetId}
+                          onChange={(e) => setVSelectedTargetId(e.target.value)}
+                          required
+                          className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-xs font-bold text-slate-700 focus:outline-hidden focus:border-blue-500"
+                        >
+                          <option value="">-- اختر الموظف من الكادر المسجل --</option>
+                          {employees.map(emp => (
+                            <option key={emp.id} value={emp.id}>
+                              {emp.name} ({emp.role} - الراتب: {(emp.salary || 0).toLocaleString()} ر.ي)
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {vSelectedTargetId && (() => {
+                        const emp = employees.find(e => e.id === vSelectedTargetId);
+                        if (!emp) return null;
+                        const { basic, overtime, bonus, deductions, advances, net } = getEmployeeSalaryDetails(emp);
+                        return (
+                          <div className="space-y-4 animate-scale-up">
+                            {/* Employee Ledger Summary Card */}
+                            <div className="bg-white border border-slate-100 p-3 rounded-xl text-xs space-y-1.5 font-bold text-slate-600 text-right" dir="rtl">
+                              <div className="flex justify-between border-b pb-1 mb-1.5 font-black text-slate-800">
+                                <span>الوضع المالي الحالي للموظف:</span>
+                                <span className="text-blue-700">{emp.name}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>الراتب الأساسي:</span>
+                                <span className="font-mono text-slate-700">{(basic).toLocaleString()} ر.ي</span>
+                              </div>
+                              <div className="flex justify-between text-emerald-600">
+                                <span>إجمالي الإضافي المستحق:</span>
+                                <span className="font-mono">+{overtime.toLocaleString()} ر.ي</span>
+                              </div>
+                              <div className="flex justify-between text-emerald-600">
+                                <span>إجمالي المكافآت / الإكراميات:</span>
+                                <span className="font-mono">+{bonus.toLocaleString()} ر.ي</span>
+                              </div>
+                              <div className="flex justify-between text-rose-600">
+                                <span>إجمالي الاستقطاعات والجزاءات:</span>
+                                <span className="font-mono">-{deductions.toLocaleString()} ر.ي</span>
+                              </div>
+                              <div className="flex justify-between text-amber-600">
+                                <span>السلف والمديونية المعلقة:</span>
+                                <span className="font-mono">-{advances.toLocaleString()} ر.ي</span>
+                              </div>
+                              <div className="flex justify-between border-t pt-1.5 font-black text-slate-800 bg-slate-50/50 p-1.5 rounded-lg">
+                                <span>صافي الراتب المستحق المتبقي:</span>
+                                <span className={`font-mono text-xs ${net > 0 ? 'text-emerald-700' : 'text-slate-500'}`}>
+                                  {net > 0 ? `${(net).toLocaleString()} ر.ي` : 'لا يوجد راتب مستحق (0 ريال)'}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Reason Selector */}
+                            <div className="space-y-1.5">
+                              <label className="block text-xs font-black text-slate-500">نوع البند المصروف له</label>
+                              <div className="grid grid-cols-2 gap-2">
+                                {[
+                                  { value: 'salary', label: '💵 صرف متبقي الراتب', desc: 'لتصفير مستحقات هذا الشهر' },
+                                  { value: 'advance', label: '💸 صرف سلفة مستردة', desc: 'تسجل مديونية على الموظف' },
+                                  { value: 'custody', label: '📦 صرف عهدة مالية للعمل', desc: 'ذمة معلقة لشراء مستلزمات' },
+                                  { value: 'overtime', label: '⚡ صرف ساعات إضافية', desc: 'أجور عمل إضافي فورية' },
+                                  { value: 'bonus', label: '🎁 صرف إكرامية ومكافأة', desc: 'مكافآت تشجيعية مقطوعة' }
+                                ].map((opt) => (
+                                  <button
+                                    key={opt.value}
+                                    type="button"
+                                    onClick={() => {
+                                      setVEmployeePaymentReason(opt.value as any);
+                                      if (opt.value === 'salary') {
+                                        setVAmount(net > 0 ? net : 0);
+                                      } else if (opt.value === 'overtime') {
+                                        setVAmount(overtime > 0 ? overtime : '');
+                                      } else if (opt.value === 'bonus') {
+                                        setVAmount(bonus > 0 ? bonus : '');
+                                      } else {
+                                        setVAmount('');
+                                      }
+                                    }}
+                                    className={`p-2.5 rounded-xl border text-right transition-all cursor-pointer flex flex-col justify-between ${
+                                      vEmployeePaymentReason === opt.value
+                                        ? 'bg-blue-50 border-blue-400 text-blue-900 ring-1 ring-blue-400/30'
+                                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                                    }`}
+                                  >
+                                    <span className="text-[11px] font-black">{opt.label}</span>
+                                    <span className="text-[9px] text-slate-400 font-bold leading-normal mt-0.5">{opt.desc}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Overtime Info Box */}
+                            {vEmployeePaymentReason === 'overtime' && (
+                              <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-2xl space-y-1 animate-scale-up text-right">
+                                <span className="block text-[11px] font-black text-emerald-950">⚡ صرف مستحقات إضافي ساعات العمل فورياً</span>
+                                <span className="block text-[10px] text-emerald-800 font-bold leading-relaxed">
+                                  سيتم صرف المبلغ من الخزينة/البنك ويُخصم فوراً من صافي مستحقات الموظف (المتغيرات الشهرية المعلقة من نوع ساعات إضافية بقيمة <span className="font-mono font-black">{overtime.toLocaleString()} ر.ي</span>) لمنع تكرار صرفه مع الراتب لاحقاً.
+                                </span>
+                              </div>
+                            )}
+
+                            {/* Bonus Info Box */}
+                            {vEmployeePaymentReason === 'bonus' && (
+                              <div className="bg-purple-50 border border-purple-250 p-3 rounded-2xl space-y-1 animate-scale-up text-right">
+                                <span className="block text-[11px] font-black text-purple-950">🎁 صرف المكافآت والإكراميات فورياً</span>
+                                <span className="block text-[10px] text-purple-800 font-bold leading-relaxed">
+                                  سيتم صرف المبلغ من الخزينة/البنك ويُخصم فوراً من صافي مستحقات الموظف (المتغيرات الشهرية المعلقة من نوع إكراميات/مكافآت بقيمة <span className="font-mono font-black">{bonus.toLocaleString()} ر.ي</span>) لمنع تكرار صرفه مع الراتب لاحقاً.
+                                </span>
+                              </div>
+                            )}
+
+                            {/* Deduction Method if Advance chosen */}
+                            {vEmployeePaymentReason === 'advance' && (
+                              <div className="bg-amber-50/50 border border-amber-200/50 p-3 rounded-2xl space-y-2 animate-scale-up">
+                                <label className="block text-[10px] font-black text-slate-700">طريقة استقطاع السلفة ⏱️</label>
+                                <div className="grid grid-cols-2 gap-2">
+                                  {[
+                                    { value: 'full', label: '🛑 تُخصم كاملة من راتب الشهر القادم' },
+                                    { value: 'installments', label: '🗓️ تقسيط على دفعات شهرية ميسرة' }
+                                  ].map((mode) => (
+                                    <button
+                                      key={mode.value}
+                                      type="button"
+                                      onClick={() => setVAdvanceDeductionMethod(mode.value as any)}
+                                      className={`p-2 rounded-xl border text-[10px] font-bold transition-all text-center cursor-pointer ${
+                                        vAdvanceDeductionMethod === mode.value
+                                          ? 'bg-amber-900 border-amber-950 text-white font-extrabold shadow-xs'
+                                          : 'bg-white border-slate-200 text-slate-500 hover:text-slate-800'
+                                      }`}
+                                    >
+                                      {mode.label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </div>
                   )}
 
                   {vTargetGroup === 'expense' && (
@@ -3190,6 +4872,1251 @@ export default function SuppliersView({
           </div>
         </div>
       )}
+
+      {/* Add Monthly Variation Modal */}
+      {isAddVariationModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4 overflow-y-auto">
+          <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-xl w-full max-w-lg space-y-4 text-right animate-scale-up" dir="rtl">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <h3 className="text-sm sm:text-base font-black text-slate-800">إضافة حركة شهرية كادرية (استحقاق / استقطاع) ⚡</h3>
+              <button
+                type="button"
+                onClick={() => setIsAddVariationModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-50 transition-colors cursor-pointer"
+              >
+                <X size={18} className="stroke-[3]" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddVariationSubmit} className="space-y-4">
+              {/* Target Employee */}
+              <div className="space-y-1">
+                <label className="block text-xs font-black text-slate-500">الموظف المعني</label>
+                <select
+                  value={variationForm.employeeId}
+                  onChange={(e) => setVariationForm({ ...variationForm, employeeId: e.target.value })}
+                  required
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs font-bold text-slate-700 focus:outline-hidden focus:border-blue-500"
+                >
+                  <option value="">-- اختر الموظف --</option>
+                  {employees.map(emp => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.name} ({emp.role} - الراتب: {(emp.salary || 0).toLocaleString()} ر.ي)
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Variation Type */}
+              <div className="space-y-1">
+                <label className="block text-xs font-black text-slate-500">نوع الحركة</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { value: 'bonus', label: '🎁 إكرامية / مكافأة', color: 'emerald' },
+                    { value: 'overtime', label: '⚡ عمل إضافي', color: 'amber' },
+                    { value: 'deduction', label: '🛑 خصم / جزاء', color: 'rose' }
+                  ].map((t) => (
+                    <button
+                      key={t.value}
+                      type="button"
+                      onClick={() => setVariationForm({ 
+                        ...variationForm, 
+                        type: t.value as any,
+                        amountType: t.value === 'overtime' ? 'hourly' : 'flat'
+                      })}
+                      className={`py-2.5 rounded-xl border text-[11px] font-black transition-all cursor-pointer ${
+                        variationForm.type === t.value
+                          ? t.color === 'emerald' ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                            : t.color === 'amber' ? 'bg-amber-50 border-amber-300 text-amber-800'
+                            : 'bg-rose-50 border-rose-300 text-rose-800'
+                          : 'bg-white border-slate-200 text-slate-500 hover:text-slate-700'
+                      }`}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Overtime Sub-Type Choice */}
+              {variationForm.type === 'overtime' && (
+                <div className="bg-slate-50 border border-slate-100 p-3 rounded-2xl space-y-2">
+                  <label className="block text-[10px] font-black text-slate-500">طريقة احتساب الإضافي</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { value: 'hourly', label: '⏱️ بالساعات (ساعات × قيمة الساعة)' },
+                      { value: 'flat', label: '💰 مبلغ مقطوع مباشرة' }
+                    ].map((mode) => (
+                      <button
+                        key={mode.value}
+                        type="button"
+                        onClick={() => setVariationForm({ ...variationForm, amountType: mode.value as any })}
+                        className={`py-2 rounded-lg border text-[10px] font-bold transition-all cursor-pointer ${
+                          variationForm.amountType === mode.value
+                            ? 'bg-slate-900 border-slate-900 text-white font-extrabold'
+                            : 'bg-white border-slate-200 text-slate-500 hover:text-slate-700'
+                        }`}
+                      >
+                        {mode.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Numeric Inputs depending on choice */}
+              {variationForm.type === 'overtime' && variationForm.amountType === 'hourly' ? (
+                <div className="grid grid-cols-2 gap-3 bg-amber-50/20 border border-amber-100/50 p-4 rounded-2xl">
+                  <div className="space-y-1">
+                    <label className="block text-[11px] font-black text-slate-500">عدد الساعات الإضافية</label>
+                    <input
+                      type="number"
+                      required
+                      min="0.5"
+                      step="0.5"
+                      placeholder="مثال: 4 ساعات"
+                      value={variationForm.hours}
+                      onChange={(e) => setVariationForm({ ...variationForm, hours: e.target.value === '' ? '' : Number(e.target.value) })}
+                      className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-mono font-bold text-slate-700 focus:outline-hidden"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-[11px] font-black text-slate-500">قيمة ساعة الإضافي (ر.ي)</label>
+                    <input
+                      type="number"
+                      required
+                      min="1"
+                      placeholder="مثال: 1500 ريال"
+                      value={variationForm.hourlyRate}
+                      onChange={(e) => setVariationForm({ ...variationForm, hourlyRate: e.target.value === '' ? '' : Number(e.target.value) })}
+                      className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-mono font-bold text-slate-700 focus:outline-hidden"
+                    />
+                  </div>
+                  <div className="col-span-2 text-center pt-2 border-t border-amber-100 text-xs font-black text-amber-900 bg-amber-50 rounded-lg py-1.5">
+                    إجمالي المستحق للإضافي: {((Number(variationForm.hours || 0)) * (Number(variationForm.hourlyRate || 0))).toLocaleString()} ر.ي
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  <label className="block text-xs font-black text-slate-500">
+                    {variationForm.type === 'overtime' ? 'المبلغ الإضافي المقطوع (ر.ي)' : 
+                     variationForm.type === 'bonus' ? 'قيمة الإكرامية / المكافأة (ر.ي)' : 'قيمة الخصم / الجزاء (ر.ي)'}
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    placeholder="أدخل المبلغ هنا..."
+                    value={variationForm.flatAmount}
+                    onChange={(e) => setVariationForm({ ...variationForm, flatAmount: e.target.value === '' ? '' : Number(e.target.value) })}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs font-mono font-bold text-slate-700 focus:outline-hidden"
+                  />
+                </div>
+              )}
+
+              {/* Reason */}
+              <div className="space-y-1">
+                <label className="block text-xs font-black text-slate-500">السبب أو التفاصيل</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="مثال: تميز في إنهاء أعمال الجرد السنوي"
+                  value={variationForm.reason}
+                  onChange={(e) => setVariationForm({ ...variationForm, reason: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs font-bold text-slate-700 focus:outline-hidden"
+                />
+              </div>
+
+              {/* Date */}
+              <div className="space-y-1">
+                <label className="block text-xs font-black text-slate-500">تاريخ الحركة</label>
+                <input
+                  type="date"
+                  required
+                  value={variationForm.date}
+                  onChange={(e) => setVariationForm({ ...variationForm, date: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs font-bold text-slate-700 focus:outline-hidden"
+                />
+              </div>
+
+              {/* Actions */}
+              <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsAddVariationModalOpen(false)}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-500 font-black text-xs px-5 py-3 rounded-xl transition-all cursor-pointer"
+                >
+                  إلغاء وتراجع
+                </button>
+                <button
+                  type="submit"
+                  className="bg-slate-900 hover:bg-slate-800 text-white font-black text-xs px-6 py-3 rounded-xl transition-all cursor-pointer shadow-xs"
+                >
+                  حفظ وإدراج الحركة ⚡
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Custody Settlement Modal */}
+      {isSettlementModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4 overflow-y-auto">
+          <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-xl w-full max-w-xl space-y-4 text-right animate-scale-up" dir="rtl">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-amber-50 text-amber-600 rounded-xl">
+                  <RefreshCcw size={20} className="stroke-[2.5]" />
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-black text-slate-800">تصفية وتسوية العهد المالية 📦</h3>
+                  <p className="text-[10px] text-slate-400 font-bold">تسوية الفواتير والمصاريف الفعلية للعهد المفتوحة في النظام</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsSettlementModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-50 transition-colors cursor-pointer"
+              >
+                <X size={18} className="stroke-[3]" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSettlementSubmit} className="space-y-4">
+              {/* Employee Selection */}
+              <div className="space-y-1">
+                <label className="block text-xs font-black text-slate-500">اختر الموظف صاحب العهدة</label>
+                <select
+                  value={settlementForm.employeeId}
+                  onChange={(e) => {
+                    const empId = e.target.value;
+                    const emp = employees.find(x => x.id === empId);
+                    setSettlementForm({
+                      ...settlementForm,
+                      employeeId: empId,
+                      custodyAmount: emp ? (emp.custody || 0) : 0
+                    });
+                  }}
+                  required
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs font-bold text-slate-700 focus:outline-hidden focus:border-amber-500"
+                >
+                  <option value="">-- اختر الموظف لعرض عهده المعلقة --</option>
+                  {employees.map(emp => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.name} ({emp.role} - العهدة الحالية: {(emp.custody || 0).toLocaleString()} ر.ي)
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {settlementForm.employeeId && (() => {
+                const emp = employees.find(x => x.id === settlementForm.employeeId);
+                if (!emp) return null;
+                
+                const custodyAmount = emp.custody || 0;
+                const totalExpenses = settlementForm.invoices.reduce((sum, inv) => sum + (Number(inv.amount) || 0), 0);
+                const difference = custodyAmount - totalExpenses; // الفارق = العهدة الأصلية - إجمالي الفواتير المقدمة
+
+                return (
+                  <div className="space-y-4 animate-scale-up">
+                    {/* Custody Info Banner */}
+                    <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-xs font-bold text-amber-900 flex justify-between items-center">
+                      <div>
+                        <span>العهدة المفتوحة المسجلة بعهدة الموظف:</span>
+                        <div className="text-sm font-black mt-0.5 text-amber-950">{emp.name}</div>
+                      </div>
+                      <div className="text-base font-black font-mono">
+                        {custodyAmount.toLocaleString()} ر.ي
+                      </div>
+                    </div>
+
+                    {custodyAmount === 0 && (
+                      <div className="bg-rose-50 border border-rose-200 text-rose-800 p-3 rounded-xl text-xs font-bold text-center">
+                        ⚠️ تنبيه: لا توجد عهد مالية معلقة لهذا الموظف في الدفاتر حالياً!
+                      </div>
+                    )}
+
+                    {custodyAmount > 0 && (
+                      <>
+                        {/* Expenses and Invoices Section */}
+                        <div className="space-y-2.5">
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs font-black text-slate-700">فواتير المصاريف الفعلية الموثقة 📑</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSettlementForm({
+                                  ...settlementForm,
+                                  invoices: [
+                                    ...settlementForm.invoices,
+                                    { id: `inv-${Date.now()}-${Math.random().toString().slice(-4)}`, category: 'أدوات مكتبية ومطبوعات', amount: '' }
+                                  ]
+                                });
+                              }}
+                              className="text-[10px] font-black text-amber-700 hover:text-amber-800 bg-amber-50 px-2 py-1 rounded-lg animate-scale-up"
+                            >
+                              ➕ إضافة فاتورة جديدة
+                            </button>
+                          </div>
+
+                          <div className="max-h-[160px] overflow-y-auto space-y-2 pr-1">
+                            {settlementForm.invoices.map((inv, idx) => (
+                              <div key={inv.id} className="flex gap-2 items-center">
+                                <span className="text-xs font-black text-slate-400 font-mono w-4">{idx + 1}</span>
+                                
+                                <select
+                                  value={inv.category}
+                                  onChange={(e) => {
+                                    const updatedInvs = settlementForm.invoices.map(x => 
+                                      x.id === inv.id ? { ...x, category: e.target.value } : x
+                                    );
+                                    setSettlementForm({ ...settlementForm, invoices: updatedInvs });
+                                  }}
+                                  className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-700"
+                                >
+                                  <option value="أدوات مكتبية ومطبوعات">أدوات مكتبية ومطبوعات</option>
+                                  <option value="محروقات ونقل لوجستي">محروقات ونقل لوجستي</option>
+                                  <option value="مصاريف كهرباء / إنترنت">مصاريف كهرباء / إنترنت</option>
+                                  <option value="صيانة تجهيزات وآلات">صيانة تجهيزات وآلات</option>
+                                  <option value="ضيافة وتغذية">ضيافة وتغذية</option>
+                                  <option value="مصاريف إيجار مستودع">مصاريف إيجار مستودع</option>
+                                  <option value="نثريات ومصاريف أخرى">نثريات ومصاريف أخرى</option>
+                                </select>
+
+                                <input
+                                  type="number"
+                                  min="0"
+                                  required
+                                  placeholder="المبلغ ر.ي"
+                                  value={inv.amount}
+                                  onChange={(e) => {
+                                    const val = e.target.value === '' ? '' : Number(e.target.value);
+                                    const updatedInvs = settlementForm.invoices.map(x => 
+                                      x.id === inv.id ? { ...x, amount: val } : x
+                                    );
+                                    setSettlementForm({ ...settlementForm, invoices: updatedInvs });
+                                  }}
+                                  className="w-[120px] bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold text-slate-700 text-left focus:outline-hidden focus:border-amber-500"
+                                />
+
+                                {settlementForm.invoices.length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const updatedInvs = settlementForm.invoices.filter(x => x.id !== inv.id);
+                                      setSettlementForm({ ...settlementForm, invoices: updatedInvs });
+                                    }}
+                                    className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg"
+                                  >
+                                    <X size={14} className="stroke-[3]" />
+                                  </button>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Totals & Difference Calculator */}
+                        <div className="bg-slate-50 p-4 rounded-2xl border border-slate-150 space-y-3">
+                          <div className="flex justify-between items-center text-xs font-bold text-slate-600">
+                            <span>إجمالي الفواتير المرفقة:</span>
+                            <span className="font-mono text-slate-800">{totalExpenses.toLocaleString()} ر.ي</span>
+                          </div>
+                          <div className="flex justify-between items-center text-xs font-bold text-slate-600">
+                            <span>الفارق في العهدة (معادلة التصفية):</span>
+                            <span className={`font-mono text-sm font-black ${difference >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                              {difference >= 0 ? `+${difference.toLocaleString()}` : `${difference.toLocaleString()}`} ر.ي
+                            </span>
+                          </div>
+
+                          {/* Dynamic 3 Case Feedback Banner */}
+                          <div className="border-t pt-2.5 mt-1">
+                            {difference > 0 && (
+                              <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-xl text-xs font-bold text-emerald-900 space-y-1">
+                                <div className="font-black">💡 الحالة (1): الفارق بالموجب (الموظف معه باقٍ)</div>
+                                <div className="leading-relaxed text-[11px] text-emerald-800">
+                                  يجب على الموظف إرجاع مبلغ <span className="font-mono font-extrabold">{difference.toLocaleString()} ر.ي</span> إلى الصندوق/البنك. ستقوم التصفية بتوليد <strong>سند قبض</strong> تلقائي لإدخال الباقي.
+                                </div>
+                              </div>
+                            )}
+
+                            {difference === 0 && (
+                              <div className="bg-blue-50 border border-blue-250 p-3 rounded-xl text-xs font-bold text-blue-900 space-y-1">
+                                <div className="font-black">✅ الحالة (2): الفارق صفر (العهدة مصفاة بالكامل)</div>
+                                <div className="leading-relaxed text-[11px] text-blue-800">
+                                  العهدة مطابقة تماماً لمستندات المصاريف المقدمة. سيتم إغلاق حساب العهدة لهذا الموظف بالكامل دون حركة نقدية متبقية.
+                                </div>
+                              </div>
+                            )}
+
+                            {difference < 0 && (
+                              <div className="bg-rose-50 border border-rose-200 p-3 rounded-xl text-xs font-bold text-rose-900 space-y-1">
+                                <div className="font-black">⚠️ الحالة (3): الفارق بالسالب (الموظف صرف زيادة)</div>
+                                <div className="leading-relaxed text-[11px] text-rose-800">
+                                  صرف الموظف زيادة من جيبه بقيمة <span className="font-mono font-extrabold">{Math.abs(difference).toLocaleString()} ر.ي</span>. ستقوم التصفية بتوليد <strong>سند صرف</strong> تلقائي لتعويض الموظف.
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Payment Method / Date / Notes (Only if difference is not zero) */}
+                        {difference !== 0 && (
+                          <div className="bg-slate-50/50 border border-slate-100 p-3 rounded-2xl space-y-3">
+                            <label className="block text-[11px] font-black text-slate-500">طريقة معالجة الفارق المالي (تسوية الصندوق/البنك)</label>
+                            <div className="grid grid-cols-2 gap-2">
+                              {[
+                                { value: 'cash', label: '💵 معالجة نقداً (الخزينة العامة)' },
+                                { value: 'bank', label: '💳 معالجة بنكياً (حساب البنك الرئيسي)' }
+                              ].map((opt) => (
+                                <button
+                                  key={opt.value}
+                                  type="button"
+                                  onClick={() => setSettlementForm({ ...settlementForm, paymentMethod: opt.value as any })}
+                                  className={`p-2 rounded-xl border text-[11px] font-bold text-center transition-all cursor-pointer ${
+                                    settlementForm.paymentMethod === opt.value
+                                      ? 'bg-slate-900 border-slate-950 text-white font-extrabold'
+                                      : 'bg-white border-slate-200 text-slate-500 hover:text-slate-700'
+                                  }`}
+                                >
+                                  {opt.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="block text-xs font-black text-slate-500">تاريخ التصفية</label>
+                            <input
+                              type="date"
+                              required
+                              value={settlementForm.date}
+                              onChange={(e) => setSettlementForm({ ...settlementForm, date: e.target.value })}
+                              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-bold text-slate-700 focus:outline-hidden focus:border-amber-500"
+                            />
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="block text-xs font-black text-slate-500">ملاحظات تسوية العهدة</label>
+                            <input
+                              type="text"
+                              placeholder="أدخل أي ملاحظات محاسبية إضافية..."
+                              value={settlementForm.notes}
+                              onChange={(e) => setSettlementForm({ ...settlementForm, notes: e.target.value })}
+                              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-bold text-slate-700 focus:outline-hidden focus:border-amber-500"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
+                          <button
+                            type="button"
+                            onClick={() => setIsSettlementModalOpen(false)}
+                            className="bg-slate-100 hover:bg-slate-200 text-slate-500 font-black text-xs px-5 py-3 rounded-xl transition-all cursor-pointer"
+                          >
+                            إلغاء وتراجع
+                          </button>
+                          <button
+                            type="submit"
+                            className="bg-amber-600 hover:bg-amber-700 text-white font-black text-xs px-6 py-3 rounded-xl transition-all cursor-pointer shadow-xs"
+                          >
+                            اعتماد تصفية العهدة وإغلاقها 📦
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                );
+              })()}
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Bank Treasury Details Modal */}
+      {isBankTreasuryModalOpen && (() => {
+        const bankAccountsList = invoiceSettings?.bankAccounts || [];
+        const totalBankAccountsBalance = bankAccountsList.reduce((sum: number, b: any) => sum + (b.balance || 0), 0);
+
+        const getBankMovements = (bankId: string) => {
+          return vouchers.map((v: any) => {
+            let isDebit = false;
+            let isMyMovement = false;
+
+            if (v.paymentMethod === 'bank' && v.bankAccountId === bankId) {
+              isMyMovement = true;
+              isDebit = v.isReceipt;
+            } else if (v.internalFrom === bankId) {
+              isMyMovement = true;
+              isDebit = false;
+            } else if (v.internalTo === bankId) {
+              isMyMovement = true;
+              isDebit = true;
+            }
+
+            return isMyMovement ? { ...v, isDebit } : null;
+          }).filter(Boolean) as any[];
+        };
+
+        const getConsolidatedBankMovements = () => {
+          const bankIds = bankAccountsList.map((b: any) => b.id);
+          return vouchers.map((v: any) => {
+            let isDebit = false;
+            let isMyMovement = false;
+            let affectedBankName = '';
+
+            if (v.paymentMethod === 'bank' && bankIds.includes(v.bankAccountId)) {
+              isMyMovement = true;
+              isDebit = v.isReceipt;
+              const bk = bankAccountsList.find((b: any) => b.id === v.bankAccountId);
+              affectedBankName = bk ? bk.name : 'حساب بنكي';
+            } else {
+              const fromIsBank = bankIds.includes(v.internalFrom);
+              const toIsBank = bankIds.includes(v.internalTo);
+
+              if (fromIsBank && toIsBank) {
+                isMyMovement = true;
+                isDebit = true;
+                const fbk = bankAccountsList.find((b: any) => b.id === v.internalFrom);
+                const tbk = bankAccountsList.find((b: any) => b.id === v.internalTo);
+                affectedBankName = `تحويل: من ${fbk?.name || 'بنك'} إلى ${tbk?.name || 'بنك'}`;
+              } else if (fromIsBank) {
+                isMyMovement = true;
+                isDebit = false;
+                const fbk = bankAccountsList.find((b: any) => b.id === v.internalFrom);
+                affectedBankName = `سحب نقدي من ${fbk?.name || 'بنك'}`;
+              } else if (toIsBank) {
+                isMyMovement = true;
+                isDebit = true;
+                const tbk = bankAccountsList.find((b: any) => b.id === v.internalTo);
+                affectedBankName = `إيداع نقدي في ${tbk?.name || 'بنك'}`;
+              }
+            }
+
+            if (isMyMovement) {
+              return { ...v, isDebit, affectedBankName };
+            }
+            return null;
+          }).filter(Boolean) as any[];
+        };
+
+        const printSingleBankStatement = (accountName: string, accountNumber: string, balance: number, movements: any[]) => {
+          const printWindow = window.open('', '_blank');
+          if (!printWindow) return;
+
+          const totalIn = movements.reduce((acc, m) => acc + (m.isDebit ? m.amount : 0), 0);
+          const totalOut = movements.reduce((acc, m) => acc + (!m.isDebit ? m.amount : 0), 0);
+
+          const html = `
+            <html>
+              <head>
+                <title>كشف حساب - ${accountName}</title>
+                <style>
+                  body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; direction: rtl; padding: 30px; color: #333; }
+                  .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #1e293b; padding-bottom: 15px; }
+                  .title { font-size: 24px; font-weight: bold; color: #1e293b; margin: 0; }
+                  .subtitle { font-size: 14px; color: #64748b; margin-top: 5px; }
+                  .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 30px; background-color: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; }
+                  .info-item { font-size: 13px; font-weight: bold; }
+                  .info-label { color: #64748b; }
+                  table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+                  th, td { border: 1px solid #e2e8f0; padding: 10px; text-align: right; font-size: 12px; }
+                  th { background-color: #1e293b; color: white; font-weight: bold; }
+                  tr:nth-child(even) { background-color: #f8fafc; }
+                  .amount { font-family: monospace; font-weight: bold; }
+                  .debit { color: #16a34a; }
+                  .credit { color: #dc2626; }
+                  .summary { margin-top: 30px; display: flex; justify-content: flex-end; gap: 20px; font-size: 14px; font-weight: bold; }
+                  .summary-item { border: 1px solid #e2e8f0; padding: 10px 15px; border-radius: 6px; background-color: #f1f5f9; }
+                  .footer { margin-top: 50px; text-align: center; font-size: 11px; color: #94a3b8; border-top: 1px dashed #cbd5e1; padding-top: 15px; }
+                  .signature-area { margin-top: 40px; display: grid; grid-template-columns: 1fr 1fr; gap: 50px; text-align: center; font-size: 13px; font-weight: bold; }
+                  .signature-box { border-top: 1px solid #94a3b8; padding-top: 10px; width: 150px; margin: 0 auto; }
+                  @media print {
+                    body { padding: 0; }
+                    button { display: none; }
+                  }
+                </style>
+              </head>
+              <body>
+                <div class="header">
+                  <div class="title">تقرير كشف الحساب المالي البنكي</div>
+                  <div class="subtitle">نظام إدارة المخازن والمالية الذكي - WMS Enterprise</div>
+                </div>
+
+                <div class="info-grid">
+                  <div class="info-item"><span class="info-label">الحساب المالي:</span> ${accountName}</div>
+                  <div class="info-item"><span class="info-label">رقم الحساب / المرجع:</span> ${accountNumber}</div>
+                  <div class="info-item"><span class="info-label">تاريخ الطباعة:</span> ${new Date().toLocaleDateString('ar-YE')} ${new Date().toLocaleTimeString('ar-YE')}</div>
+                  <div class="info-item"><span class="info-label">الرصيد الختامي الحالي:</span> ${balance.toLocaleString()} ر.ي</div>
+                </div>
+
+                <table>
+                  <thead>
+                    <tr>
+                      <th style="width: 80px;">التاريخ</th>
+                      <th style="width: 100px;">رقم السند/الحركة</th>
+                      <th>البيان والتفاصيل</th>
+                      <th style="width: 90px;">وارد (+)</th>
+                      <th style="width: 90px;">صادر (-)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${movements.map(m => `
+                      <tr>
+                        <td>${m.date}</td>
+                        <td>${m.id}</td>
+                        <td>
+                          <strong>${m.title}</strong><br/>
+                          <span style="color: #64748b; font-size: 11px;">شريك: ${m.partnerName} | ${m.notes}</span>
+                        </td>
+                        <td class="amount debit">${m.isDebit ? `+${m.amount.toLocaleString()}` : '-'}</td>
+                        <td class="amount credit">${!m.isDebit ? `-${m.amount.toLocaleString()}` : '-'}</td>
+                      </tr>
+                    `).join('')}
+                    ${movements.length === 0 ? `<tr><td colspan="5" style="text-align: center; color: #94a3b8; font-weight: bold;">لا توجد حركات مسجلة لهذا الحساب</td></tr>` : ''}
+                  </tbody>
+                </table>
+
+                <div class="summary">
+                  <div class="summary-item">إجمالي الإيداعات (+): <span class="debit">${totalIn.toLocaleString()} YER</span></div>
+                  <div class="summary-item">إجمالي السحوبات (-): <span class="credit">${totalOut.toLocaleString()} YER</span></div>
+                  <div class="summary-item" style="background-color: #1e293b; color: white;">الرصيد الختامي الفعلي: <span>${balance.toLocaleString()} ر.ي</span></div>
+                </div>
+
+                <div class="signature-area">
+                  <div>
+                    <p>توقيع أمين الصندوق / المحاسب</p>
+                    <div class="signature-box"></div>
+                  </div>
+                  <div>
+                    <p>توقيع المدير المالي / المصادقة</p>
+                    <div class="signature-box"></div>
+                  </div>
+                </div>
+
+                <div class="footer">
+                  تم إنشاء هذا الكشف تلقائياً عبر النظام المالي في ${new Date().getFullYear()} © جميع الحقوق محفوظة.
+                </div>
+
+                <script>
+                  window.print();
+                  window.onafterprint = function() { window.close(); };
+                </script>
+              </body>
+            </html>
+          `;
+
+          printWindow.document.write(html);
+          printWindow.document.close();
+        };
+
+        const handlePrintConsolidatedBankStatement = (movements: any[]) => {
+          const printWindow = window.open('', '_blank');
+          if (!printWindow) return;
+
+          const totalIn = movements.reduce((acc, m) => acc + (m.isDebit ? m.amount : 0), 0);
+          const totalOut = movements.reduce((acc, m) => acc + (!m.isDebit ? m.amount : 0), 0);
+
+          const html = `
+            <html>
+              <head>
+                <title>كشف حساب موحد - الخزينة البنكية</title>
+                <style>
+                  body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; direction: rtl; padding: 30px; color: #333; }
+                  .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #1e293b; padding-bottom: 15px; }
+                  .title { font-size: 24px; font-weight: bold; color: #1e293b; margin: 0; }
+                  .subtitle { font-size: 14px; color: #64748b; margin-top: 5px; }
+                  .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 30px; background-color: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; }
+                  .info-item { font-size: 13px; font-weight: bold; }
+                  .info-label { color: #64748b; }
+                  table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+                  th, td { border: 1px solid #e2e8f0; padding: 10px; text-align: right; font-size: 12px; }
+                  th { background-color: #1e293b; color: white; font-weight: bold; }
+                  tr:nth-child(even) { background-color: #f8fafc; }
+                  .amount { font-family: monospace; font-weight: bold; }
+                  .debit { color: #16a34a; }
+                  .credit { color: #dc2626; }
+                  .summary { margin-top: 30px; display: flex; justify-content: flex-end; gap: 20px; font-size: 14px; font-weight: bold; }
+                  .summary-item { border: 1px solid #e2e8f0; padding: 10px 15px; border-radius: 6px; background-color: #f1f5f9; }
+                  .footer { margin-top: 50px; text-align: center; font-size: 11px; color: #94a3b8; border-top: 1px dashed #cbd5e1; padding-top: 15px; }
+                  .signature-area { margin-top: 40px; display: grid; grid-template-columns: 1fr 1fr; gap: 50px; text-align: center; font-size: 13px; font-weight: bold; }
+                  .signature-box { border-top: 1px solid #94a3b8; padding-top: 10px; width: 150px; margin: 0 auto; }
+                  @media print {
+                    body { padding: 0; }
+                    button { display: none; }
+                  }
+                </style>
+              </head>
+              <body>
+                <div class="header">
+                  <div class="title">كشف الحساب الموحد للخزينة البنكية</div>
+                  <div class="subtitle">تقرير شامل لجميع الحسابات والتعاملات البنكية المدمجة - WMS Enterprise</div>
+                </div>
+
+                <div class="info-grid">
+                  <div class="info-item"><span class="info-label">الحساب المالي:</span> الخزينة البنكية الموحدة (جميع البنوك)</div>
+                  <div class="info-item"><span class="info-label">عدد الحسابات البنكية:</span> ${bankAccountsList.length}</div>
+                  <div class="info-item"><span class="info-label">تاريخ الطباعة:</span> ${new Date().toLocaleDateString('ar-YE')} ${new Date().toLocaleTimeString('ar-YE')}</div>
+                  <div class="info-item"><span class="info-label">الرصيد الموحد الإجمالي للبنك:</span> ${totalBankAccountsBalance.toLocaleString()} ر.ي</div>
+                </div>
+
+                <table>
+                  <thead>
+                    <tr>
+                      <th style="width: 80px;">التاريخ</th>
+                      <th style="width: 100px;">رقم الحركة</th>
+                      <th>الحساب البنكي المتأثر</th>
+                      <th>البيان والتفاصيل</th>
+                      <th style="width: 100px;">وارد (+)</th>
+                      <th style="width: 100px;">صادر (-)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${movements.map(m => `
+                      <tr>
+                        <td>${m.date}</td>
+                        <td>${m.id}</td>
+                        <td><span style="font-weight: bold; color: #1e3a8a;">${m.affectedBankName || 'حساب البنك'}</span></td>
+                        <td>
+                          <strong>${m.title}</strong><br/>
+                          <span style="color: #64748b; font-size: 11px;">شريك: ${m.partnerName} | ${m.notes}</span>
+                        </td>
+                        <td class="amount debit">${m.isDebit ? `+${m.amount.toLocaleString()}` : '-'}</td>
+                        <td class="amount credit">${!m.isDebit ? `-${m.amount.toLocaleString()}` : '-'}</td>
+                      </tr>
+                    `).join('')}
+                    ${movements.length === 0 ? `<tr><td colspan="6" style="text-align: center; color: #94a3b8; font-weight: bold;">لا توجد حركات بنكية مسجلة</td></tr>` : ''}
+                  </tbody>
+                </table>
+
+                <div class="summary">
+                  <div class="summary-item">إجمالي الإيداعات (+): <span class="debit">${totalIn.toLocaleString()} YER</span></div>
+                  <div class="summary-item">إجمالي السحوبات (-): <span class="credit">${totalOut.toLocaleString()} YER</span></div>
+                  <div class="summary-item" style="background-color: #1e293b; color: white;">إجمالي السيولة البنكية الموحدة: <span>${totalBankAccountsBalance.toLocaleString()} ر.ي</span></div>
+                </div>
+
+                <div class="signature-area">
+                  <div>
+                    <p>توقيع أمين الصندوق / المحاسب</p>
+                    <div class="signature-box"></div>
+                  </div>
+                  <div>
+                    <p>توقيع المدير المالي / المصادقة</p>
+                    <div class="signature-box"></div>
+                  </div>
+                </div>
+
+                <div class="footer">
+                  تم إنشاء هذا الكشف الموحد تلقائياً عبر النظام المالي في ${new Date().getFullYear()} © جميع الحقوق محفوظة.
+                </div>
+
+                <script>
+                  window.print();
+                  window.onafterprint = function() { window.close(); };
+                </script>
+              </body>
+            </html>
+          `;
+
+          printWindow.document.write(html);
+          printWindow.document.close();
+        };
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4 overflow-y-auto animate-fade-in">
+            <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col text-right animate-scale-up animate-fade-in" dir="rtl">
+              
+              {/* Modal Header */}
+              <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-4 shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-blue-50 text-blue-600 rounded-2xl">
+                    <CheckSquare size={22} className="stroke-[2.5]" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm sm:text-base font-black text-slate-800">تفاصيل الخزينة البنكية الموحدة 🏦</h3>
+                    <p className="text-[10px] text-slate-400 font-bold">عرض ومطابقة وطباعة كشوفات الحسابات البنكية المسجلة بالنظام</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsBankTreasuryModalOpen(false)}
+                  className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-50 transition-colors cursor-pointer"
+                >
+                  <X size={18} className="stroke-[3]" />
+                </button>
+              </div>
+
+              {/* Total Summary Header */}
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-50 p-5 rounded-2xl border border-slate-200/80 mb-5 shrink-0">
+                <div className="space-y-1 text-center sm:text-right">
+                  <span className="text-[10px] font-bold text-slate-400 block">إجمالي رصيد الخزينة البنكية</span>
+                  <p className="text-2xl font-black font-mono text-slate-800">{totalBankAccountsBalance.toLocaleString()} ر.ي</p>
+                </div>
+                
+                <button
+                  type="button"
+                  onClick={() => handlePrintConsolidatedBankStatement(getConsolidatedBankMovements())}
+                  className="bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs px-5 py-3 rounded-xl transition-all cursor-pointer flex items-center gap-2 shadow-xs"
+                >
+                  <Printer size={15} />
+                  <span>طباعة كشف حساب كلي موحد للبنوك 🖨️</span>
+                </button>
+              </div>
+
+              {/* Bank Accounts List */}
+              <div className="flex-1 overflow-y-auto space-y-3 pr-1 font-sans">
+                {bankAccountsList.length === 0 ? (
+                  <div className="text-center py-10 bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-slate-400 font-bold text-xs">
+                    لا توجد حسابات بنكية معرفة في الإعدادات حالياً. يمكنك إضافتها من قائمة الإعدادات.
+                  </div>
+                ) : (
+                  bankAccountsList.map((account: any) => {
+                    const accountMovements = getBankMovements(account.id);
+                    return (
+                      <div key={account.id} className="bg-white border border-slate-100 hover:border-slate-200 hover:shadow-xs p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all">
+                        <div className="flex items-center gap-3 text-right">
+                          <div className="p-3 bg-blue-50 text-blue-600 rounded-xl">
+                            <span className="text-lg">🏦</span>
+                          </div>
+                          <div className="space-y-0.5">
+                            <div className="flex items-center gap-2">
+                              <span className="font-extrabold text-xs text-slate-800">{account.name}</span>
+                              {account.isDefault && (
+                                <span className="text-[8px] bg-blue-500/10 text-blue-600 font-bold px-1.5 py-0.2 rounded-md">افتراضي</span>
+                              )}
+                            </div>
+                            <p className="text-[10px] text-slate-400 font-bold font-mono">رقم الحساب: {account.accountNumber}</p>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-3 justify-end">
+                          <div className="text-left pl-3 border-l border-slate-100 hidden sm:block">
+                            <span className="text-[9px] text-slate-400 font-bold block">الرصيد الحالي</span>
+                            <span className="text-xs font-black font-mono text-blue-600">{(account.balance || 0).toLocaleString()} ر.ي</span>
+                          </div>
+
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => printSingleBankStatement(account.name, account.accountNumber, account.balance, accountMovements)}
+                              className="bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 font-bold text-[11px] px-3.5 py-2.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5"
+                            >
+                              <Printer size={13} />
+                              <span>طباعة الكشف 🖨️</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setReconAccountId(account.id);
+                                setIsReconModalOpen(true);
+                                setIsBankTreasuryModalOpen(false);
+                              }}
+                              className="bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200/50 font-black text-[11px] px-4 py-2.5 rounded-xl transition-all cursor-pointer flex items-center gap-1"
+                            >
+                              <span>مطابقة ومراجعة 🔎</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Footer action */}
+              <div className="mt-5 pt-3 border-t border-slate-100 shrink-0 text-left">
+                <button
+                  type="button"
+                  onClick={() => setIsBankTreasuryModalOpen(false)}
+                  className="bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs px-6 py-3 rounded-xl transition-all cursor-pointer"
+                >
+                  إغلاق النافذة
+                </button>
+              </div>
+
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Month-End Bank Account Reconciliation Modal */}
+      {isReconModalOpen && (() => {
+        const bankAccountsList = invoiceSettings?.bankAccounts || [];
+        const currentAccount = reconAccountId === 'cash' 
+          ? { id: 'cash', name: 'الخزينة النقدية (الكاش)', accountNumber: 'CASH-FUND', balance: treasuryBalance }
+          : bankAccountsList.find((b: any) => b.id === reconAccountId) || { id: 'unknown', name: 'بنك مجهول', accountNumber: 'UNKNOWN', balance: 0 };
+
+        // Filter and map movements for this specific account
+        const matchedMovements = vouchers.map((v: any) => {
+          let isDebit = false; // debit = وارد/زيادة (for cash/bank), credit = صادر/نقصان
+          let isMyMovement = false;
+
+          if (reconAccountId === 'cash') {
+            if (v.paymentMethod === 'cash') {
+              isMyMovement = true;
+              isDebit = v.isReceipt; // Receipts are incoming (+)
+            } else if (v.internalFrom === 'cash') {
+              isMyMovement = true;
+              isDebit = false; // outgoing (-)
+            } else if (v.internalTo === 'cash') {
+              isMyMovement = true;
+              isDebit = true; // incoming (+)
+            }
+          } else {
+            if (v.paymentMethod === 'bank' && v.bankAccountId === reconAccountId) {
+              isMyMovement = true;
+              isDebit = v.isReceipt; // Receipts are incoming (+)
+            } else if (v.internalFrom === reconAccountId) {
+              isMyMovement = true;
+              isDebit = false; // outgoing (-)
+            } else if (v.internalTo === reconAccountId) {
+              isMyMovement = true;
+              isDebit = true; // incoming (+)
+            }
+          }
+
+          return isMyMovement ? { ...v, isDebit } : null;
+        }).filter(Boolean) as any[];
+
+        // Apply filters: Date and Search query
+        const filteredMovements = matchedMovements.filter((m) => {
+          if (reconStartDate && m.date < reconStartDate) return false;
+          if (reconEndDate && m.date > reconEndDate) return false;
+          
+          if (reconSearchText) {
+            const query = reconSearchText.toLowerCase();
+            return (
+              m.title.toLowerCase().includes(query) ||
+              m.partnerName.toLowerCase().includes(query) ||
+              m.notes.toLowerCase().includes(query) ||
+              m.id.toLowerCase().includes(query) ||
+              m.amount.toString().includes(query)
+            );
+          }
+          return true;
+        });
+
+        // Totals
+        const totalInflow = filteredMovements.reduce((sum, m) => sum + (m.isDebit ? m.amount : 0), 0);
+        const totalOutflow = filteredMovements.reduce((sum, m) => sum + (!m.isDebit ? m.amount : 0), 0);
+
+        // Reconciled Totals (marked checked)
+        const reconciledMovements = filteredMovements.filter(m => reconciledLines.includes(m.id));
+        const reconciledInflow = reconciledMovements.reduce((sum, m) => sum + (m.isDebit ? m.amount : 0), 0);
+        const reconciledOutflow = reconciledMovements.reduce((sum, m) => sum + (!m.isDebit ? m.amount : 0), 0);
+        
+        // Let's assume a start balance (can just be a mock or difference from current)
+        const currentBalance = currentAccount.balance;
+        const unreconciledDiscrepancy = currentBalance - (reconciledInflow - reconciledOutflow);
+
+        const handlePrintStatement = (accountName: string, accountNumber: string, balance: number, movements: any[]) => {
+          const printWindow = window.open('', '_blank');
+          if (!printWindow) return;
+
+          const totalIn = movements.reduce((acc, m) => acc + (m.isDebit ? m.amount : 0), 0);
+          const totalOut = movements.reduce((acc, m) => acc + (!m.isDebit ? m.amount : 0), 0);
+
+          const html = `
+            <html>
+              <head>
+                <title>كشف حساب - ${accountName}</title>
+                <style>
+                  body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; direction: rtl; padding: 30px; color: #333; }
+                  .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #1e293b; padding-bottom: 15px; }
+                  .title { font-size: 24px; font-weight: bold; color: #1e293b; margin: 0; }
+                  .subtitle { font-size: 14px; color: #64748b; margin-top: 5px; }
+                  .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 30px; background-color: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; }
+                  .info-item { font-size: 13px; font-weight: bold; }
+                  .info-label { color: #64748b; }
+                  table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+                  th, td { border: 1px solid #e2e8f0; padding: 10px; text-align: right; font-size: 12px; }
+                  th { background-color: #1e293b; color: white; font-weight: bold; }
+                  tr:nth-child(even) { background-color: #f8fafc; }
+                  .amount { font-family: monospace; font-weight: bold; }
+                  .debit { color: #16a34a; }
+                  .credit { color: #dc2626; }
+                  .summary { margin-top: 30px; display: flex; justify-content: flex-end; gap: 20px; font-size: 14px; font-weight: bold; }
+                  .summary-item { border: 1px solid #e2e8f0; padding: 10px 15px; border-radius: 6px; background-color: #f1f5f9; }
+                  .footer { margin-top: 50px; text-align: center; font-size: 11px; color: #94a3b8; border-top: 1px dashed #cbd5e1; padding-top: 15px; }
+                  .signature-area { margin-top: 40px; display: grid; grid-template-columns: 1fr 1fr; gap: 50px; text-align: center; font-size: 13px; font-weight: bold; }
+                  .signature-box { border-top: 1px solid #94a3b8; padding-top: 10px; width: 150px; margin: 0 auto; }
+                  @media print {
+                    body { padding: 0; }
+                    button { display: none; }
+                  }
+                </style>
+              </head>
+              <body>
+                <div class="header">
+                  <div class="title">تقرير كشف الحساب المالي الموحد</div>
+                  <div class="subtitle">نظام إدارة المخازن والمالية الذكي - WMS Enterprise</div>
+                </div>
+
+                <div class="info-grid">
+                  <div class="info-item"><span class="info-label">الحساب المالي:</span> ${accountName}</div>
+                  <div class="info-item"><span class="info-label">رقم الحساب / المرجع:</span> ${accountNumber}</div>
+                  <div class="info-item"><span class="info-label">تاريخ الطباعة:</span> ${new Date().toLocaleDateString('ar-YE')} ${new Date().toLocaleTimeString('ar-YE')}</div>
+                  <div class="info-item"><span class="info-label">الرصيد الختامي الحالي:</span> ${balance.toLocaleString()} ر.ي</div>
+                </div>
+
+                <table>
+                  <thead>
+                    <tr>
+                      <th style="width: 80px;">التاريخ</th>
+                      <th style="width: 100px;">رقم السند/الحركة</th>
+                      <th>البيان والتفاصيل</th>
+                      <th style="width: 90px;">وارد (+)</th>
+                      <th style="width: 90px;">صادر (-)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${movements.map(m => `
+                      <tr>
+                        <td>${m.date}</td>
+                        <td>${m.id}</td>
+                        <td>
+                          <strong>${m.title}</strong><br/>
+                          <span style="color: #64748b; font-size: 11px;">شريك: ${m.partnerName} | ${m.notes}</span>
+                        </td>
+                        <td class="amount debit">${m.isDebit ? `+${m.amount.toLocaleString()}` : '-'}</td>
+                        <td class="amount credit">${!m.isDebit ? `-${m.amount.toLocaleString()}` : '-'}</td>
+                      </tr>
+                    `).join('')}
+                    ${movements.length === 0 ? `<tr><td colspan="5" style="text-align: center; color: #94a3b8; font-weight: bold;">لا توجد حركات مسجلة لهذا الحساب</td></tr>` : ''}
+                  </tbody>
+                </table>
+
+                <div class="summary">
+                  <div class="summary-item">إجمالي الإيداعات (+): <span class="debit">${totalIn.toLocaleString()} YER</span></div>
+                  <div class="summary-item">إجمالي السحوبات (-): <span class="credit">${totalOut.toLocaleString()} YER</span></div>
+                  <div class="summary-item" style="background-color: #1e293b; color: white;">الرصيد الختامي الفعلي: <span>${balance.toLocaleString()} ر.ي</span></div>
+                </div>
+
+                <div class="signature-area">
+                  <div>
+                    <p>توقيع أمين الصندوق / المحاسب</p>
+                    <div class="signature-box"></div>
+                  </div>
+                  <div>
+                    <p>توقيع المدير المالي / المصادقة</p>
+                    <div class="signature-box"></div>
+                  </div>
+                </div>
+
+                <div class="footer">
+                  تم إنشاء هذا الكشف تلقائياً عبر النظام المالي في ${new Date().getFullYear()} © جميع الحقوق محفوظة.
+                </div>
+
+                <script>
+                  window.print();
+                  window.onafterprint = function() { window.close(); };
+                </script>
+              </body>
+            </html>
+          `;
+
+          printWindow.document.write(html);
+          printWindow.document.close();
+        };
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4 overflow-y-auto animate-fade-in">
+            <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col text-right animate-scale-up" dir="rtl">
+              
+              {/* Modal Header */}
+              <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-4 shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-blue-50 text-blue-600 rounded-2xl">
+                    <CheckSquare size={22} className="stroke-[2.5]" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm sm:text-base font-black text-slate-800">مطابقة أرصدة القنوات ومراجعة كشوف الحسابات 📑</h3>
+                    <p className="text-[10px] text-slate-400 font-bold">عرض تفصيلي للحركات وسندات القبض والصرف والتسويات المالية</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsReconModalOpen(false)}
+                  className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-50 transition-colors cursor-pointer"
+                >
+                  <X size={18} className="stroke-[3]" />
+                </button>
+              </div>
+
+              {/* Sub-selectors for accounts inside reconciliation */}
+              <div className="flex gap-2 mb-4 overflow-x-auto pb-1 shrink-0 scrollbar-none">
+                <button
+                  type="button"
+                  onClick={() => setReconAccountId('cash')}
+                  className={`px-4 py-2.5 rounded-xl border text-[11px] font-black transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                    reconAccountId === 'cash'
+                      ? 'bg-emerald-50 border-emerald-300 text-emerald-800 shadow-3xs'
+                      : 'bg-slate-50/50 border-slate-200 text-slate-500 hover:bg-slate-100'
+                  }`}
+                >
+                  <span>💵 الخزينة النقدية (الكاش)</span>
+                </button>
+                {bankAccountsList.map((b: any) => (
+                  <button
+                    key={b.id}
+                    type="button"
+                    onClick={() => setReconAccountId(b.id)}
+                    className={`px-4 py-2.5 rounded-xl border text-[11px] font-black transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                      reconAccountId === b.id
+                        ? 'bg-blue-50 border-blue-300 text-blue-800 shadow-3xs'
+                        : 'bg-slate-50/50 border-slate-200 text-slate-500 hover:bg-slate-100'
+                    }`}
+                  >
+                    <span>🏦 {b.name}</span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Account Quick Dashboard Card */}
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-200/80 mb-4 shrink-0">
+                <div className="space-y-1">
+                  <span className="text-[10px] font-bold text-slate-400 block">رقم الحساب / الرمز</span>
+                  <p className="text-xs font-black font-mono text-slate-700">{currentAccount.accountNumber}</p>
+                </div>
+                <div className="space-y-1">
+                  <span className="text-[10px] font-bold text-emerald-600 block">إجمالي الوارد (+)</span>
+                  <p className="text-xs font-black font-mono text-emerald-600">+{totalInflow.toLocaleString()} ر.ي</p>
+                </div>
+                <div className="space-y-1">
+                  <span className="text-[10px] font-bold text-rose-600 block">إجمالي الصادر (-)</span>
+                  <p className="text-xs font-black font-mono text-rose-600">-{totalOutflow.toLocaleString()} ر.ي</p>
+                </div>
+                <div className="space-y-1 bg-slate-900 text-white p-2.5 rounded-xl text-center flex flex-col justify-center">
+                  <span className="text-[9px] font-bold text-slate-300">الرصيد الفعلي الحالي</span>
+                  <p className="text-sm font-black font-mono text-amber-300">{currentAccount.balance.toLocaleString()} ر.ي</p>
+                </div>
+              </div>
+
+              {/* Date & Text filters */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-2.5 mb-4 shrink-0 bg-slate-50/50 p-3 rounded-2xl border border-slate-150">
+                <div className="flex flex-col gap-1">
+                  <span className="text-[10px] font-bold text-slate-500">من تاريخ</span>
+                  <input
+                    type="date"
+                    value={reconStartDate}
+                    onChange={(e) => setReconStartDate(e.target.value)}
+                    className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-[11px] font-bold text-slate-700 outline-hidden focus:border-blue-500"
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="text-[10px] font-bold text-slate-500">إلى تاريخ</span>
+                  <input
+                    type="date"
+                    value={reconEndDate}
+                    onChange={(e) => setReconEndDate(e.target.value)}
+                    className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-[11px] font-bold text-slate-700 outline-hidden focus:border-blue-500"
+                  />
+                </div>
+                <div className="flex flex-col gap-1 md:col-span-2">
+                  <span className="text-[10px] font-bold text-slate-500">بحث بالحركة / الرقم / المستلم</span>
+                  <div className="flex gap-1.5">
+                    <input
+                      type="text"
+                      placeholder="ابحث بالحركة أو المبلغ أو شريك العمل..."
+                      value={reconSearchText}
+                      onChange={(e) => setReconSearchText(e.target.value)}
+                      className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-[11px] font-bold text-slate-700 outline-hidden flex-1 focus:border-blue-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handlePrintStatement(currentAccount.name, currentAccount.accountNumber, currentAccount.balance, filteredMovements)}
+                      className="bg-slate-900 hover:bg-slate-800 text-white px-4 rounded-lg text-[10px] font-black flex items-center gap-1.5 cursor-pointer shadow-3xs"
+                    >
+                      <Printer size={13} />
+                      <span>طباعة كشف حساب 🖨️</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Statement List (Reconciliation Mode) */}
+              <div className="flex-1 overflow-y-auto border border-slate-200 rounded-2xl min-h-[180px]">
+                <table className="w-full text-right text-xs">
+                  <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10 text-slate-500 font-extrabold text-[11px]">
+                    <tr>
+                      <th className="p-3 w-[60px] text-center">مطابقة؟</th>
+                      <th className="p-3 w-[85px] text-center">التاريخ</th>
+                      <th className="p-3 w-[110px] text-center">رقم الحركة</th>
+                      <th className="p-3">نوع السند والبيان</th>
+                      <th className="p-3 text-left w-[110px]">وارد (+)</th>
+                      <th className="p-3 text-left w-[110px]">صادر (-)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-slate-700 font-medium">
+                    {filteredMovements.map((m) => {
+                      const isReconciled = reconciledLines.includes(m.id);
+                      return (
+                        <tr key={m.id} className={`hover:bg-slate-50/50 ${isReconciled ? 'bg-emerald-50/20' : ''}`}>
+                          <td className="p-3 text-center">
+                            <input
+                              type="checkbox"
+                              checked={isReconciled}
+                              onChange={() => toggleReconcileLine(m.id)}
+                              className="h-4 w-4 rounded-sm border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                            />
+                          </td>
+                          <td className="p-3 text-center font-mono text-[10px] text-slate-500">{m.date}</td>
+                          <td className="p-3 text-center font-mono text-[10px] font-black text-slate-800">{m.id}</td>
+                          <td className="p-3">
+                            <div className="space-y-0.5">
+                              <span className="font-extrabold text-[11px] block text-slate-800">{m.title}</span>
+                              <span className="text-[10px] text-slate-400 font-bold block leading-relaxed">
+                                شريك: {m.partnerName} | {m.notes}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="p-3 text-left font-mono font-black text-[11px] text-emerald-600">
+                            {m.isDebit ? `+${m.amount.toLocaleString()} ر.ي` : '-'}
+                          </td>
+                          <td className="p-3 text-left font-mono font-black text-[11px] text-rose-600">
+                            {!m.isDebit ? `-${m.amount.toLocaleString()} ر.ي` : '-'}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {filteredMovements.length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="text-center py-8 text-slate-400 font-extrabold text-[11px]">
+                          لا توجد حركات مسجلة تفي بمعايير البحث لهذا الحساب المالي.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Bottom stats & reconciliation status */}
+              <div className="mt-4 pt-3 border-t border-slate-150 flex flex-col md:flex-row items-center justify-between gap-3 shrink-0 text-right">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-1 rounded-md font-extrabold">
+                    المطابقة الشهرية: {reconciledMovements.length} حركة من أصل {filteredMovements.length}
+                  </span>
+                  <span className={`text-[10px] px-2 py-1 rounded-md font-extrabold ${unreconciledDiscrepancy === 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                    الفارق غير المطابق: {unreconciledDiscrepancy.toLocaleString()} ر.ي
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsReconModalOpen(false)}
+                  className="bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs px-5 py-3 rounded-xl transition-all cursor-pointer shadow-xs"
+                >
+                  إغلاق نافذة المطابقة
+                </button>
+              </div>
+
+            </div>
+          </div>
+        );
+      })()}
 
     </div>
   );

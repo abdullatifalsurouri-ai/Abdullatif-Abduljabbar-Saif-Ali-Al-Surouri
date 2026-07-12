@@ -23,9 +23,10 @@ import {
   Barcode,
   Camera,
   Layers,
-  FileCheck
+  FileCheck,
+  ChevronDown
 } from 'lucide-react';
-import { Item, Warehouse, User as UserType, Movement } from '../types';
+import { Item, Warehouse, User as UserType, Movement, InvoiceSettings, BankAccount } from '../types';
 import BarcodeScannerModal from './BarcodeScannerModal';
 
 interface Customer {
@@ -40,7 +41,9 @@ interface SalesInvoice {
   id: string;
   customerName: string;
   customerId: string; // 'cash' or registered customer id
-  paymentType: 'cash' | 'credit';
+  paymentType: 'cash' | 'credit' | 'bank';
+  bankAccountId?: string;
+  bankAccountName?: string;
   items: {
     itemId: string;
     name: string;
@@ -75,6 +78,12 @@ interface SalesViewProps {
   salesInvoices: SalesInvoice[];
   onAddSalesInvoice: (invoice: SalesInvoice) => void;
   movements: Movement[];
+  journalEntries?: any[];
+  onUpdateJournalEntries?: (entries: any[]) => void;
+  bankBalance?: number;
+  onUpdateBankBalance?: (balance: number) => void;
+  invoiceSettings?: InvoiceSettings;
+  onUpdateInvoiceSettings?: (settings: InvoiceSettings) => void;
 }
 
 export default function SalesView({
@@ -91,6 +100,12 @@ export default function SalesView({
   salesInvoices,
   onAddSalesInvoice,
   movements,
+  journalEntries = [],
+  onUpdateJournalEntries,
+  bankBalance = 7500000,
+  onUpdateBankBalance,
+  invoiceSettings,
+  onUpdateInvoiceSettings,
 }: SalesViewProps) {
   // Navigation: POS (فواتير المبيعات) vs Customers (إدارة العملاء) vs History (سجل الفواتير)
   const [subTab, setSubTab] = useState<'pos' | 'customers' | 'history'>('pos');
@@ -109,10 +124,22 @@ export default function SalesView({
   // --- POS CART STATE ---
   const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>(warehouses[0]?.id || 'main');
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('cash');
-  const [paymentType, setPaymentType] = useState<'cash' | 'credit'>('cash');
+  const [paymentType, setPaymentType] = useState<'cash' | 'credit' | 'bank'>('cash');
   const [discountAmount, setDiscountAmount] = useState<number>(0);
   const [cart, setCart] = useState<{ itemId: string; quantity: number; price: number }[]>([]);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+
+  const defaultBankId = invoiceSettings?.bankAccounts?.find(b => b.isDefault)?.id || invoiceSettings?.bankAccounts?.[0]?.id || '';
+  const [selectedBankAccountId, setSelectedBankAccountId] = useState<string>(defaultBankId);
+  const [isBankDropdownOpen, setIsBankDropdownOpen] = useState(false);
+  const [bankSearchQuery, setBankSearchQuery] = useState('');
+
+  React.useEffect(() => {
+    if (!selectedBankAccountId && invoiceSettings?.bankAccounts && invoiceSettings.bankAccounts.length > 0) {
+      const def = invoiceSettings.bankAccounts.find(b => b.isDefault)?.id || invoiceSettings.bankAccounts[0].id;
+      setSelectedBankAccountId(def);
+    }
+  }, [invoiceSettings, selectedBankAccountId]);
 
   // --- INVOICE PRINT PREVIEW STATE ---
   const [activeInvoicePreview, setActiveInvoicePreview] = useState<SalesInvoice | null>(null);
@@ -258,18 +285,24 @@ export default function SalesView({
 
     // Calculations
     const subtotal = cart.reduce((sum, ci) => sum + (ci.quantity * ci.price), 0);
-    const tax = Math.round(subtotal * 0.15); // VAT 15%
+    const taxRatePercent = invoiceSettings?.taxEnabled ? (invoiceSettings?.taxRate ?? 0) : 0;
+    const tax = Math.round(subtotal * (taxRatePercent / 100));
     const total = Math.max(0, subtotal + tax - discountAmount);
 
     const invoiceId = `INV-${Date.now().toString().slice(-6)}`;
     const customer = customers.find(c => c.id === selectedCustomerId);
     const customerName = selectedCustomerId === 'cash' ? 'زبون نقدي عام' : (customer?.name || 'عميل مسجل');
 
+    const selectedBank = invoiceSettings?.bankAccounts?.find(b => b.id === selectedBankAccountId) || invoiceSettings?.bankAccounts?.[0];
+    const bankAccountName = selectedBank ? selectedBank.name : 'حساب البنك الرئيسي';
+
     const newInvoice: SalesInvoice = {
       id: invoiceId,
       customerId: selectedCustomerId,
       customerName,
       paymentType,
+      bankAccountId: paymentType === 'bank' ? selectedBank?.id : undefined,
+      bankAccountName: paymentType === 'bank' ? bankAccountName : undefined,
       items: cart.map(ci => ({
         itemId: ci.itemId,
         name: items.find(i => i.id === ci.itemId)?.name || 'صنف غير معروف',
@@ -305,10 +338,27 @@ export default function SalesView({
       });
     });
 
-    // 3. Financial Impact
+    // 3. Financial Impact & Automatic Journal Entries
     if (paymentType === 'cash') {
       // Cash payment -> Update Treasury Balance
       onUpdateTreasuryBalance(treasuryBalance + total);
+    } else if (paymentType === 'bank') {
+      // Bank payment -> Update specific Bank Account Balance
+      if (invoiceSettings && onUpdateInvoiceSettings) {
+        const updatedAccounts = (invoiceSettings.bankAccounts || []).map(b => {
+          if (b.id === (selectedBank?.id || '')) {
+            return { ...b, balance: b.balance + total };
+          }
+          return b;
+        });
+        onUpdateInvoiceSettings({
+          ...invoiceSettings,
+          bankAccounts: updatedAccounts
+        });
+      }
+      if (onUpdateBankBalance) {
+        onUpdateBankBalance((bankBalance || 0) + total);
+      }
     } else {
       // Credit payment -> Update Customer Balance (outstanding debt)
       if (customer) {
@@ -321,12 +371,53 @@ export default function SalesView({
       }
     }
 
+    // 3.5 Generate double-entry journal entry
+    if (onUpdateJournalEntries && journalEntries) {
+      const entryId = `ENT-${Date.now().toString().slice(-6)}`;
+      let debitAccount = 'الخزينة العامة';
+      if (paymentType === 'bank') {
+        debitAccount = `حـ/ البنك - ${bankAccountName}`;
+      } else if (paymentType === 'credit') {
+        debitAccount = `حساب العميل: ${customerName}`;
+      }
+
+      const newJournalEntry = {
+        id: entryId,
+        date: new Date().toISOString().split('T')[0],
+        notes: `قيد تلقائي - فاتورة مبيعات رقم ${invoiceId} للعميل ${customerName} (${paymentType === 'cash' ? 'نقدي' : paymentType === 'bank' ? `تحويل إلى ${bankAccountName}` : 'آجل'})`,
+        reference: invoiceId,
+        createdBy: currentUser.username,
+        lines: [
+          {
+            account: debitAccount,
+            debit: total,
+            credit: 0
+          },
+          {
+            account: 'حساب المبيعات',
+            debit: 0,
+            credit: total
+          }
+        ],
+        isReversed: false
+      };
+
+      onUpdateJournalEntries([newJournalEntry, ...journalEntries]);
+    }
+
     // 4. Log Action
     if (onLogAction) {
+      let payMethodText = 'نقداً - تمت تسوية الخزينة';
+      if (paymentType === 'bank') {
+        payMethodText = `تحويل بنكي إلى (${bankAccountName}) - تم إيداعها بحساب البنك`;
+      } else if (paymentType === 'credit') {
+        payMethodText = `آجلاً - قيدت على حساب العميل: ${customerName}`;
+      }
+
       onLogAction(
         'add',
         'movements',
-        `تصدير وإصدار فاتورة مبيعات رقم ${invoiceId} بمبلغ ${total.toLocaleString()} ر.ي (${paymentType === 'cash' ? 'نقداً - تمت تسوية الخزينة' : `آجلاً - قيدت على حساب العميل: ${customerName}`})`
+        `تصدير وإصدار فاتورة مبيعات رقم ${invoiceId} بمبلغ ${total.toLocaleString()} ر.ي (${payMethodText}) وجرى توليد القيد المحاسبي المزدوج تلقائياً.`
       );
     }
 
@@ -586,32 +677,110 @@ export default function SalesView({
               {/* Payment Type */}
               <div>
                 <label className="block text-xs font-extrabold text-slate-500 mb-1.5">طريقة السداد المالي</label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-1.5">
                   <button
                     type="button"
                     onClick={() => setPaymentType('cash')}
-                    className={`py-2 px-3 rounded-xl text-xs font-black border transition-all cursor-pointer ${
+                    className={`py-2 px-1.5 rounded-xl text-[10px] sm:text-xs font-black border transition-all cursor-pointer text-center ${
                       paymentType === 'cash'
                         ? 'bg-emerald-50 border-emerald-500 text-emerald-700'
                         : 'border-slate-200 text-slate-500 hover:bg-slate-50'
                     }`}
                   >
-                    💵 نقدي (تسوية الخزينة)
+                    💵 نقدي (الخزينة)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPaymentType('bank')}
+                    className={`py-2 px-1.5 rounded-xl text-[10px] sm:text-xs font-black border transition-all cursor-pointer text-center ${
+                      paymentType === 'bank'
+                        ? 'bg-blue-50 border-blue-500 text-blue-700'
+                        : 'border-slate-200 text-slate-500 hover:bg-slate-50'
+                    }`}
+                  >
+                    🏦 بنك / شبكة
                   </button>
                   <button
                     type="button"
                     disabled={selectedCustomerId === 'cash'}
                     onClick={() => setPaymentType('credit')}
-                    className={`py-2 px-3 rounded-xl text-xs font-black border transition-all cursor-pointer ${
+                    className={`py-2 px-1.5 rounded-xl text-[10px] sm:text-xs font-black border transition-all cursor-pointer text-center ${
                       paymentType === 'credit'
                         ? 'bg-purple-50 border-purple-500 text-purple-700'
                         : 'border-slate-200 text-slate-300'
                     } ${selectedCustomerId === 'cash' ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
-                    ⏳ آجل (تأجيل الدفع)
+                    ⏳ آجل (العميل)
                   </button>
                 </div>
               </div>
+
+              {/* Bank Selection Dropdown (Only shown when "bank" is selected) */}
+              {paymentType === 'bank' && (() => {
+                const selectedBank = (invoiceSettings?.bankAccounts || []).find(b => b.id === selectedBankAccountId);
+                const filteredBanks = (invoiceSettings?.bankAccounts || []).filter(b => 
+                  b.name.toLowerCase().includes(bankSearchQuery.toLowerCase()) ||
+                  b.accountNumber.toLowerCase().includes(bankSearchQuery.toLowerCase())
+                );
+                return (
+                  <div className="animate-fade-in bg-blue-50/30 p-3 rounded-2xl border border-blue-100/50 space-y-1.5 relative">
+                    <label className="block text-[10px] sm:text-xs font-extrabold text-blue-700">تحديد البنك / الحساب المودع إليه *</label>
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() => setIsBankDropdownOpen(!isBankDropdownOpen)}
+                        className="w-full bg-white border border-blue-200 focus:border-blue-500 text-xs px-3.5 py-2.5 rounded-xl outline-hidden text-slate-700 font-bold shadow-3xs flex items-center justify-between gap-2"
+                      >
+                        <span className="flex items-center gap-1.5 truncate">
+                          🏦 {selectedBank ? `${selectedBank.name} (حساب: ${selectedBank.accountNumber})` : 'اختر البنك من القائمة...'}
+                        </span>
+                        <ChevronDown size={14} className="text-slate-400" />
+                      </button>
+
+                      {isBankDropdownOpen && (
+                        <>
+                          <div className="fixed inset-0 z-40" onClick={() => setIsBankDropdownOpen(false)}></div>
+                          <div className="absolute right-0 left-0 mt-1 bg-white border border-slate-150 rounded-2xl shadow-xl z-50 p-2 space-y-1.5 max-h-[220px] overflow-y-auto">
+                            <input
+                              type="text"
+                              autoFocus
+                              placeholder="ابحث باسم البنك أو رقم الحساب..."
+                              value={bankSearchQuery}
+                              onChange={(e) => setBankSearchQuery(e.target.value)}
+                              onClick={(e) => e.stopPropagation()}
+                              className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 font-bold focus:outline-hidden focus:border-blue-500 text-right"
+                            />
+                            <div className="space-y-0.5">
+                              {filteredBanks.map(b => (
+                                <button
+                                  key={b.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedBankAccountId(b.id);
+                                    setIsBankDropdownOpen(false);
+                                    setBankSearchQuery('');
+                                  }}
+                                  className={`w-full text-right text-[11px] font-bold p-2 rounded-lg flex items-center justify-between gap-2 hover:bg-slate-50 transition-colors ${
+                                    selectedBankAccountId === b.id ? 'bg-blue-50/50 text-blue-800' : 'text-slate-600'
+                                  }`}
+                                >
+                                  <span>🏦 {b.name}</span>
+                                  <span className="text-[10px] text-slate-400 font-mono">حساب: {b.accountNumber}</span>
+                                </button>
+                              ))}
+                              {filteredBanks.length === 0 && (
+                                <div className="text-center py-3 text-[10px] text-slate-400 font-bold">
+                                  لا توجد بنوك مطابقة للبحث
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Discount */}
               <div>
@@ -953,9 +1122,11 @@ export default function SalesView({
                     <div className="flex justify-between items-center">
                       <span className="text-xs font-black text-blue-600 font-mono">#{inv.id}</span>
                       <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-md ${
-                        inv.paymentType === 'cash' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-purple-50 text-purple-700 border border-purple-100'
+                        inv.paymentType === 'cash' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' :
+                        inv.paymentType === 'bank' ? 'bg-blue-50 text-blue-700 border border-blue-100' :
+                        'bg-purple-50 text-purple-700 border border-purple-100'
                       }`}>
-                        {inv.paymentType === 'cash' ? '💵 نقدي' : '⏳ آجل'}
+                        {inv.paymentType === 'cash' ? '💵 نقدي' : inv.paymentType === 'bank' ? '🏦 بنك' : '⏳ آجل'}
                       </span>
                     </div>
 
@@ -1029,7 +1200,7 @@ export default function SalesView({
 
                 <div className="text-center my-5">
                   <span className="text-xs bg-blue-50 border border-blue-200 text-blue-800 px-5 py-2 rounded-full font-black">
-                    فاتورة {activeInvoicePreview.paymentType === 'cash' ? 'مبيعات نقدية' : 'مبيعات آجلة على الحساب'}
+                    فاتورة {activeInvoicePreview.paymentType === 'cash' ? 'مبيعات نقدية' : activeInvoicePreview.paymentType === 'bank' ? 'مبيعات شبكة / بنك' : 'مبيعات آجلة على الحساب'}
                   </span>
                 </div>
 

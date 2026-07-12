@@ -100,12 +100,17 @@ export interface PurchaseInvoice {
   supplierId: string;
   date: string;
   items: PurchaseInvoiceItem[];
-  paymentType: 'cash' | 'credit';
+  paymentType: 'cash' | 'credit' | 'bank';
   financialApproval: 'pending' | 'approved';
   status: 'saved' | 'received';
   warehouseId: string;
   createdBy: string;
   notes?: string;
+  bankAccountId?: string;
+  bankAccountName?: string;
+  subtotal?: number;
+  tax?: number;
+  total?: number;
 }
 
 export type RoleType = 'Owner' | 'Admin' | 'Storekeeper' | 'Viewer';
@@ -299,6 +304,15 @@ export const INITIAL_AUDIT_LOGS: AuditLogEntry[] = [
   }
 ];
 
+export interface BankAccount {
+  id: string;
+  name: string;
+  accountNumber: string;
+  balance: number;
+  minimumBalance?: number;
+  isDefault?: boolean;
+}
+
 export interface InvoiceSettings {
   logo?: string; // base64 logo
   name: string;
@@ -306,6 +320,12 @@ export interface InvoiceSettings {
   phone: string;
   email?: string;
   footerNote?: string;
+  taxEnabled?: boolean;
+  taxRate?: number;
+  commercialRegistryNumber?: string;
+  commercialRegistryFileUrl?: string; // base64 file or image data URL
+  commercialRegistryFileName?: string;
+  bankAccounts?: BankAccount[];
 }
 
 export const DEFAULT_INVOICE_SETTINGS: InvoiceSettings = {
@@ -314,5 +334,14 @@ export const DEFAULT_INVOICE_SETTINGS: InvoiceSettings = {
   address: 'الجمهورية اليمنية - صنعاء - شارع الستين',
   phone: '+967775104368',
   email: 'info@almadatrading.com',
-  footerNote: 'نشكركم على حسن تعاملكم معنا. البضاعة المباعة لا ترد ولا تستبدل بعد مرور 3 أيام من تاريخ الاستلام.'
+  footerNote: 'نشكركم على حسن تعاملكم معنا. البضاعة المباعة لا ترد ولا تستبدل بعد مرور 3 أيام من تاريخ الاستلام.',
+  taxEnabled: false,
+  taxRate: 15,
+  commercialRegistryNumber: '',
+  commercialRegistryFileUrl: '',
+  commercialRegistryFileName: '',
+  bankAccounts: [
+    { id: 'bank-1', name: 'بنك التضامن الإسلامي', accountNumber: '100200300', balance: 300000, isDefault: true },
+    { id: 'bank-2', name: 'بنك اليمن والكويت', accountNumber: '400500600', balance: 200000, isDefault: false }
+  ]
 };

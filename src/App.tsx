@@ -264,6 +264,11 @@ export default function App() {
     return saved ? Number(saved) : 250000;
   });
 
+  const [bankBalance, setBankBalance] = useState<number>(() => {
+    const saved = localStorage.getItem('wms_bank_balance');
+    return saved ? Number(saved) : 500000;
+  });
+
   const [movements, setMovements] = useState<Movement[]>(() => {
     const saved = localStorage.getItem('wms_movements');
     return saved ? JSON.parse(saved) : INITIAL_MOVEMENTS;
@@ -328,6 +333,15 @@ export default function App() {
     const saved = localStorage.getItem('wms_invoice_settings');
     return saved ? JSON.parse(saved) : DEFAULT_INVOICE_SETTINGS;
   });
+
+  useEffect(() => {
+    if (invoiceSettings?.bankAccounts && invoiceSettings.bankAccounts.length > 0) {
+      const sum = invoiceSettings.bankAccounts.reduce((s, acc) => s + acc.balance, 0);
+      if (sum !== bankBalance) {
+        setBankBalance(sum);
+      }
+    }
+  }, [invoiceSettings?.bankAccounts, bankBalance]);
 
   const [dashboardStatsConfig, setDashboardStatsConfig] = useState(() => {
     const saved = localStorage.getItem('dashboard_stats_config');
@@ -867,6 +881,10 @@ export default function App() {
           setTreasuryBalance(data.treasuryBalance);
           localStorage.setItem('wms_treasury_balance', String(data.treasuryBalance));
         }
+        if (data.bankBalance !== undefined) {
+          setBankBalance(data.bankBalance);
+          localStorage.setItem('wms_bank_balance', String(data.bankBalance));
+        }
         if (data.financialVouchers) {
           setFinancialVouchers(data.financialVouchers);
           localStorage.setItem('wms_financial_vouchers', JSON.stringify(data.financialVouchers));
@@ -924,7 +942,8 @@ export default function App() {
     currentTreasuryBalance = treasuryBalance,
     currentFinancialVouchers = financialVouchers,
     currentEmployees = employees,
-    currentJournalEntries = journalEntries
+    currentJournalEntries = journalEntries,
+    currentBankBalance = bankBalance
   ) => {
     if (!isOnline) {
       if (showToast) {
@@ -951,6 +970,7 @@ export default function App() {
           invoiceSettings: invoiceSettings,
           customers: currentCustomers,
           treasuryBalance: currentTreasuryBalance,
+          bankBalance: currentBankBalance,
           financialVouchers: currentFinancialVouchers,
           employees: currentEmployees,
           journalEntries: currentJournalEntries
@@ -1034,11 +1054,11 @@ export default function App() {
   useEffect(() => {
     if (currentUser && isOnline) {
       const delayFn = setTimeout(() => {
-        pushDataToServer(items, suppliers, movements, warehouses, transfers, auditLogs, false, customers, treasuryBalance, financialVouchers, employees, journalEntries);
+        pushDataToServer(items, suppliers, movements, warehouses, transfers, auditLogs, false, customers, treasuryBalance, financialVouchers, employees, journalEntries, bankBalance);
       }, 1500); // 1.5 seconds debounce
       return () => clearTimeout(delayFn);
     }
-  }, [items, suppliers, movements, warehouses, transfers, auditLogs, isOnline, currentUser, customers, treasuryBalance, financialVouchers, employees, journalEntries]);
+  }, [items, suppliers, movements, warehouses, transfers, auditLogs, isOnline, currentUser, customers, treasuryBalance, bankBalance, financialVouchers, employees, journalEntries]);
 
   // Sync state with localStorage
   useEffect(() => {
@@ -1056,6 +1076,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('wms_treasury_balance', treasuryBalance.toString());
   }, [treasuryBalance]);
+
+  useEffect(() => {
+    localStorage.setItem('wms_bank_balance', bankBalance.toString());
+  }, [bankBalance]);
 
   useEffect(() => {
     localStorage.setItem('wms_financial_vouchers', JSON.stringify(financialVouchers));
@@ -1664,8 +1688,10 @@ export default function App() {
             suppliers={suppliers}
             customers={customers}
             treasuryBalance={treasuryBalance}
+            bankBalance={bankBalance}
             onUpdateCustomers={setCustomers}
             onUpdateTreasuryBalance={setTreasuryBalance}
+            onUpdateBankBalance={setBankBalance}
             onLogAction={logAction}
             currentUser={currentUser!}
             isDataLocked={suppliersLocked}
@@ -1681,6 +1707,12 @@ export default function App() {
             onUpdateEmployees={setEmployees}
             journalEntries={journalEntries}
             onUpdateJournalEntries={setJournalEntries}
+            invoiceSettings={invoiceSettings}
+            onUpdateInvoiceSettings={(newSettings) => {
+              setInvoiceSettings(newSettings);
+              localStorage.setItem('wms_invoice_settings', JSON.stringify(newSettings));
+              pushDataToServer(items, suppliers, movements, warehouses, transfers, auditLogs, false);
+            }}
           />
         );
       case 'purchases':
@@ -1703,6 +1735,18 @@ export default function App() {
             onAddMovement={handleAddMovement}
             onUpdateSupplierBalance={handleUpdateSupplierBalance}
             onAddSupplier={handleAddSupplier}
+            invoiceSettings={invoiceSettings}
+            onUpdateInvoiceSettings={(newSettings) => {
+              setInvoiceSettings(newSettings);
+              localStorage.setItem('wms_invoice_settings', JSON.stringify(newSettings));
+              pushDataToServer(items, suppliers, movements, warehouses, transfers, auditLogs, false);
+            }}
+            bankBalance={bankBalance}
+            onUpdateBankBalance={setBankBalance}
+            treasuryBalance={treasuryBalance}
+            onUpdateTreasuryBalance={setTreasuryBalance}
+            journalEntries={journalEntries}
+            onUpdateJournalEntries={setJournalEntries}
           />
         );
       case 'sales':
@@ -1721,6 +1765,16 @@ export default function App() {
             salesInvoices={salesInvoices}
             onAddSalesInvoice={(inv) => setSalesInvoices(prev => [...prev, inv])}
             movements={movements}
+            journalEntries={journalEntries}
+            onUpdateJournalEntries={setJournalEntries}
+            bankBalance={bankBalance}
+            onUpdateBankBalance={setBankBalance}
+            invoiceSettings={invoiceSettings}
+            onUpdateInvoiceSettings={(newSettings) => {
+              setInvoiceSettings(newSettings);
+              localStorage.setItem('wms_invoice_settings', JSON.stringify(newSettings));
+              pushDataToServer(items, suppliers, movements, warehouses, transfers, auditLogs, false);
+            }}
           />
         );
 
@@ -1879,10 +1933,38 @@ export default function App() {
       changed = true;
     }
 
+    // 4. Low Bank Balance alert
+    const bankAccountsBelowMin = (invoiceSettings?.bankAccounts || []).filter(
+      (acc: any) => acc.minimumBalance !== undefined && acc.balance < acc.minimumBalance
+    );
+    const lowBankAccountsCount = bankAccountsBelowMin.length;
+    const bankMinId = 'sys-bank-min-warning';
+    const hasLowBank = lowBankAccountsCount > 0;
+    const existingBankAlert = updated.find(n => n.id === bankMinId);
+    if (hasLowBank) {
+      const namesList = bankAccountsBelowMin.map((acc: any) => `${acc.name} (الرصيد: ${acc.balance.toLocaleString()} / الحد: ${acc.minimumBalance.toLocaleString()})`).join('، ');
+      const bodyText = `تنبيه: رصيد بعض الحسابات البنكية انخفض عن الحد الأدنى المحدد: ${namesList}.`;
+      if (!existingBankAlert || existingBankAlert.body !== bodyText) {
+        updated = updated.filter(n => n.id !== bankMinId);
+        updated.unshift({
+          id: bankMinId,
+          title: 'تنبيه انخفاض رصيد البنك 🏦⚠️',
+          body: bodyText,
+          time: 'تحديث فوري',
+          type: 'warning',
+          read: false
+        });
+        changed = true;
+      }
+    } else if (existingBankAlert) {
+      updated = updated.filter(n => n.id !== bankMinId);
+      changed = true;
+    }
+
     if (changed) {
       setNotifications(updated);
     }
-  }, [lowStockCount, expiredCount, nearExpiryCount, pendingIncomingTransfersCount]);
+  }, [lowStockCount, expiredCount, nearExpiryCount, pendingIncomingTransfersCount, invoiceSettings?.bankAccounts]);
 
   const totalNotificationsBadgeCount = notifications.filter(n => !n.read).length;
 

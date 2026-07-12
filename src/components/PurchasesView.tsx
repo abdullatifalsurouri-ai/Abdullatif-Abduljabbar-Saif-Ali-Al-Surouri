@@ -19,7 +19,8 @@ import {
   QrCode, 
   CheckCircle, 
   DollarSign,
-  Barcode
+  Barcode,
+  ChevronDown
 } from 'lucide-react';
 import { 
   PurchaseRequest, 
@@ -29,7 +30,9 @@ import {
   Supplier, 
   Warehouse, 
   User as UserType, 
-  Movement 
+  Movement,
+  InvoiceSettings,
+  BankAccount
 } from '../types';
 import MovementPhotoCapture from './MovementPhotoCapture';
 import BarcodeScannerModal from './BarcodeScannerModal';
@@ -52,6 +55,14 @@ interface PurchasesViewProps {
   onAddMovement: (m: Movement) => void;
   onUpdateSupplierBalance: (supplierId: string, amount: number) => void;
   onAddSupplier?: (supplier: Supplier) => void;
+  invoiceSettings?: InvoiceSettings;
+  onUpdateInvoiceSettings?: (settings: InvoiceSettings) => void;
+  bankBalance?: number;
+  onUpdateBankBalance?: (balance: number) => void;
+  treasuryBalance?: number;
+  onUpdateTreasuryBalance?: (balance: number) => void;
+  journalEntries?: any[];
+  onUpdateJournalEntries?: (entries: any[]) => void;
 }
 
 export default function PurchasesView({
@@ -72,6 +83,14 @@ export default function PurchasesView({
   onAddMovement,
   onUpdateSupplierBalance,
   onAddSupplier,
+  invoiceSettings,
+  onUpdateInvoiceSettings,
+  bankBalance = 7500000,
+  onUpdateBankBalance,
+  treasuryBalance = 5000000,
+  onUpdateTreasuryBalance,
+  journalEntries = [],
+  onUpdateJournalEntries,
 }: PurchasesViewProps) {
   const [subTab, setSubTab] = useState<'requests' | 'orders' | 'invoices'>('invoices');
   const [searchQuery, setSearchQuery] = useState('');
@@ -117,7 +136,18 @@ export default function PurchasesView({
   // Form State: Purchase Invoice
   const [invoiceSupplierId, setInvoiceSupplierId] = useState('');
   const [invoiceWarehouseId, setInvoiceWarehouseId] = useState('');
-  const [invoicePaymentType, setInvoicePaymentType] = useState<'cash' | 'credit'>('credit');
+  const [invoicePaymentType, setInvoicePaymentType] = useState<'cash' | 'credit' | 'bank'>('credit');
+  const defaultBankId = invoiceSettings?.bankAccounts?.find(b => b.isDefault)?.id || invoiceSettings?.bankAccounts?.[0]?.id || '';
+  const [selectedBankAccountId, setSelectedBankAccountId] = useState<string>(defaultBankId);
+  const [isBankDropdownOpen, setIsBankDropdownOpen] = useState(false);
+  const [bankSearchQuery, setBankSearchQuery] = useState('');
+
+  React.useEffect(() => {
+    if (!selectedBankAccountId && invoiceSettings?.bankAccounts && invoiceSettings.bankAccounts.length > 0) {
+      const def = invoiceSettings.bankAccounts.find(b => b.isDefault)?.id || invoiceSettings.bankAccounts[0].id;
+      setSelectedBankAccountId(def);
+    }
+  }, [invoiceSettings, selectedBankAccountId]);
   const [invoiceItems, setInvoiceItems] = useState<{ itemId: string; quantity: number; price: number }[]>([
     { itemId: '', quantity: 1, price: 0 }
   ]);
@@ -207,6 +237,14 @@ export default function PurchasesView({
       return;
     }
 
+    const subtotal = invoiceItems.reduce((sum, item) => sum + (item.quantity * item.price), 0);
+    const taxRatePercent = invoiceSettings?.taxEnabled ? (invoiceSettings?.taxRate ?? 0) : 0;
+    const tax = Math.round(subtotal * (taxRatePercent / 100));
+    const total = subtotal + tax;
+
+    const selectedBank = invoiceSettings?.bankAccounts?.find(b => b.id === selectedBankAccountId) || invoiceSettings?.bankAccounts?.[0];
+    const bankAccountName = selectedBank ? selectedBank.name : 'حساب البنك الرئيسي';
+
     const pi: PurchaseInvoice = {
       id: `PI-${Date.now().toString().slice(-4)}`,
       supplierId: invoiceSupplierId,
@@ -218,6 +256,11 @@ export default function PurchasesView({
       warehouseId: invoiceWarehouseId,
       createdBy: currentUser.username,
       notes: invoiceNotes,
+      bankAccountId: invoicePaymentType === 'bank' ? selectedBank?.id : undefined,
+      bankAccountName: invoicePaymentType === 'bank' ? bankAccountName : undefined,
+      subtotal,
+      tax,
+      total,
     };
 
     onAddPurchaseInvoice(pi);
@@ -311,17 +354,76 @@ export default function PurchasesView({
       onAddMovement(newMovement);
     });
 
-    // 3. Update Supplier Balance if Payment Type is "Credit" (آجل)
-    // Add invoice total cost to supplier outstanding dues
+    // 3. Financial Impact: Deduct/Record depending on payment method
+    const subtotal = activeReceivingInvoice.items.reduce((sum, item) => sum + (item.quantity * item.price), 0);
+    const taxRatePercent = invoiceSettings?.taxEnabled ? (invoiceSettings?.taxRate ?? 0) : 0;
+    const tax = Math.round(subtotal * (taxRatePercent / 100));
+    const totalCost = subtotal + tax;
+
     if (activeReceivingInvoice.paymentType === 'credit') {
-      const totalCost = activeReceivingInvoice.items.reduce((sum, item) => sum + (item.quantity * item.price), 0);
       onUpdateSupplierBalance(activeReceivingInvoice.supplierId, totalCost);
+    } else if (activeReceivingInvoice.paymentType === 'cash') {
+      if (onUpdateTreasuryBalance && treasuryBalance !== undefined) {
+        onUpdateTreasuryBalance(treasuryBalance - totalCost);
+      }
+    } else if (activeReceivingInvoice.paymentType === 'bank') {
+      const targetBankId = activeReceivingInvoice.bankAccountId;
+      const bankName = activeReceivingInvoice.bankAccountName || 'حساب البنك الرئيسي';
+      if (invoiceSettings && onUpdateInvoiceSettings && targetBankId) {
+        const updatedAccounts = (invoiceSettings.bankAccounts || []).map(b => {
+          if (b.id === targetBankId) {
+            return { ...b, balance: b.balance - totalCost };
+          }
+          return b;
+        });
+        onUpdateInvoiceSettings({
+          ...invoiceSettings,
+          bankAccounts: updatedAccounts
+        });
+      }
+      if (onUpdateBankBalance) {
+        onUpdateBankBalance((bankBalance || 0) - totalCost);
+      }
+    }
+
+    // 3.5 Generate double-entry journal entry for purchases
+    if (onUpdateJournalEntries && journalEntries) {
+      const entryId = `ENT-${Date.now().toString().slice(-6)}`;
+      let creditAccount = 'الخزينة العامة';
+      if (activeReceivingInvoice.paymentType === 'bank') {
+        creditAccount = `حـ/ البنك - ${activeReceivingInvoice.bankAccountName || 'حساب البنك الرئيسي'}`;
+      } else if (activeReceivingInvoice.paymentType === 'credit') {
+        creditAccount = `حساب المورد: ${supplierName}`;
+      }
+
+      const newJournalEntry = {
+        id: entryId,
+        date: new Date().toISOString().split('T')[0],
+        notes: `قيد تلقائي - فاتورة مشتريات رقم ${activeReceivingInvoice.id} من المورد ${supplierName} (${activeReceivingInvoice.paymentType === 'cash' ? 'نقدي' : activeReceivingInvoice.paymentType === 'bank' ? `تحويل من ${activeReceivingInvoice.bankAccountName || 'حساب البنك الرئيسي'}` : 'آجل'})`,
+        reference: activeReceivingInvoice.id,
+        createdBy: currentUser.username,
+        lines: [
+          {
+            account: 'حساب المشتريات',
+            debit: totalCost,
+            credit: 0
+          },
+          {
+            account: creditAccount,
+            debit: 0,
+            credit: totalCost
+          }
+        ],
+        isReversed: false
+      };
+
+      onUpdateJournalEntries([newJournalEntry, ...journalEntries]);
     }
 
     // 4. Update Invoice Status to 'received' and mark financial approval
     onUpdatePurchaseInvoiceStatus(activeReceivingInvoice.id, 'received');
 
-    alert(`✓ تم استلام فاتورة المشتريات رقم ${activeReceivingInvoice.id} بنجاح! وتم ترحيل البضائع وزيادة كميات المخزن تلقائياً، وتحديث كشف حساب المورد.`);
+    alert(`✓ تم استلام فاتورة المشتريات رقم ${activeReceivingInvoice.id} بنجاح! وتم ترحيل البضائع وزيادة كميات المخزن تلقائياً، وتحديث الأرصدة والقيود المحاسبية.`);
     setActiveReceivingInvoice(null);
   };
 
@@ -1056,11 +1158,12 @@ export default function PurchasesView({
                   <label className="text-xs font-extrabold text-slate-500">طريقة الدفع بالفاتورة *</label>
                   <select
                     value={invoicePaymentType}
-                    onChange={(e) => setInvoicePaymentType(e.target.value as 'cash' | 'credit')}
+                    onChange={(e) => setInvoicePaymentType(e.target.value as 'cash' | 'credit' | 'bank')}
                     className="w-full p-2.5 rounded-xl border text-xs font-bold text-slate-700 bg-slate-50"
                   >
                     <option value="credit">آجل (ذمم دائنة للمورد)</option>
                     <option value="cash">نقدي (تم تسليم النقد فوراً)</option>
+                    <option value="bank">🏦 تحويل بنكي / شبكة</option>
                   </select>
                 </div>
 
@@ -1075,6 +1178,72 @@ export default function PurchasesView({
                   />
                 </div>
               </div>
+
+              {invoicePaymentType === 'bank' && (() => {
+                const selectedBank = (invoiceSettings?.bankAccounts || []).find(b => b.id === selectedBankAccountId);
+                const filteredBanks = (invoiceSettings?.bankAccounts || []).filter(b => 
+                  b.name.toLowerCase().includes(bankSearchQuery.toLowerCase()) ||
+                  b.accountNumber.toLowerCase().includes(bankSearchQuery.toLowerCase())
+                );
+                return (
+                  <div className="animate-fade-in bg-blue-50/30 p-3 rounded-2xl border border-blue-100/50 space-y-1.5 relative">
+                    <label className="block text-xs font-extrabold text-blue-700">تحديد البنك المخصوم منه القيمة *</label>
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() => setIsBankDropdownOpen(!isBankDropdownOpen)}
+                        className="w-full bg-white border border-blue-200 focus:border-blue-500 text-xs p-2.5 rounded-xl outline-hidden text-slate-700 font-bold flex items-center justify-between gap-2"
+                      >
+                        <span className="flex items-center gap-1.5 truncate">
+                          🏦 {selectedBank ? `${selectedBank.name} (حساب: ${selectedBank.accountNumber})` : 'اختر البنك من القائمة...'}
+                        </span>
+                        <ChevronDown size={14} className="text-slate-400" />
+                      </button>
+
+                      {isBankDropdownOpen && (
+                        <>
+                          <div className="fixed inset-0 z-40" onClick={() => setIsBankDropdownOpen(false)}></div>
+                          <div className="absolute right-0 left-0 mt-1 bg-white border border-slate-150 rounded-2xl shadow-xl z-50 p-2 space-y-1.5 max-h-[220px] overflow-y-auto">
+                            <input
+                              type="text"
+                              autoFocus
+                              placeholder="ابحث باسم البنك أو رقم الحساب..."
+                              value={bankSearchQuery}
+                              onChange={(e) => setBankSearchQuery(e.target.value)}
+                              onClick={(e) => e.stopPropagation()}
+                              className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 font-bold focus:outline-hidden focus:border-blue-500 text-right"
+                            />
+                            <div className="space-y-0.5">
+                              {filteredBanks.map(b => (
+                                <button
+                                  key={b.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedBankAccountId(b.id);
+                                    setIsBankDropdownOpen(false);
+                                    setBankSearchQuery('');
+                                  }}
+                                  className={`w-full text-right text-[11px] font-bold p-2 rounded-lg flex items-center justify-between gap-2 hover:bg-slate-50 transition-colors ${
+                                    selectedBankAccountId === b.id ? 'bg-blue-50/50 text-blue-800' : 'text-slate-600'
+                                  }`}
+                                >
+                                  <span>🏦 {b.name}</span>
+                                  <span className="text-[10px] text-slate-400 font-mono">حساب: {b.accountNumber}</span>
+                                </button>
+                              ))}
+                              {filteredBanks.length === 0 && (
+                                <div className="text-center py-3 text-[10px] text-slate-400 font-bold">
+                                  لا توجد بنوك مطابقة للبحث
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Items List */}
               <div className="space-y-2">
@@ -1198,6 +1367,37 @@ export default function PurchasesView({
                   </tbody>
                 </table>
               </div>
+
+              {(() => {
+                const subtotal = viewingInvoice.items.reduce((sum, item) => sum + (item.quantity * item.price), 0);
+                const taxRatePercent = invoiceSettings?.taxEnabled ? (invoiceSettings?.taxRate ?? 0) : 0;
+                const tax = Math.round(subtotal * (taxRatePercent / 100));
+                const total = subtotal + tax;
+                return (
+                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100/50 space-y-1.5 text-xs text-slate-700">
+                    <div className="flex justify-between font-bold">
+                      <span>المجموع الفرعي:</span>
+                      <span className="font-mono">{subtotal.toLocaleString()} ر.ي</span>
+                    </div>
+                    {invoiceSettings?.taxEnabled && (
+                      <div className="flex justify-between font-bold text-slate-500">
+                        <span>الضريبة ({taxRatePercent}%):</span>
+                        <span className="font-mono">{tax.toLocaleString()} ر.ي</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between font-black text-sm border-t border-slate-200/60 pt-1.5 text-slate-800">
+                      <span>الإجمالي الكلي:</span>
+                      <span className="font-mono">{total.toLocaleString()} ر.ي</span>
+                    </div>
+                    {viewingInvoice.paymentType === 'bank' && (
+                      <div className="flex justify-between font-bold text-blue-600 border-t border-slate-200/60 pt-1.5">
+                        <span>الحساب البنكي المودع:</span>
+                        <span>{viewingInvoice.bankAccountName || 'حساب البنك الرئيسي'}</span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </div>
