@@ -20,6 +20,8 @@ import {
   MoreHorizontal,
   ChevronUp,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Layers,
   Info,
   AlertTriangle,
@@ -31,7 +33,9 @@ import {
   ShoppingBag,
   ShieldCheck,
   Briefcase,
-  Scale
+  Scale,
+  Menu,
+  ShoppingCart
 } from 'lucide-react';
 import { AboutModal } from './components/AboutModal';
 import { 
@@ -98,6 +102,11 @@ export default function App() {
   }, [currentUser]);
 
   const [activeTab, setActiveTab] = useState<TabType>('home');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isDesktopSidebarCollapsed, setIsDesktopSidebarCollapsed] = useState<boolean>(() => {
+    const saved = localStorage.getItem('wms_desktop_sidebar_collapsed');
+    return saved === 'true';
+  });
   const [warehouseSubTab, setWarehouseSubTab] = useState<'warehouses' | 'transfers' | 'inventory'>('warehouses');
   const [financialSubTab, setFinancialSubTab] = useState<'suppliers' | 'customers' | 'vouchers' | 'employees' | 'journal_entries'>('suppliers');
   const [financialVouchers, setFinancialVouchers] = useState<any[]>(() => {
@@ -1570,6 +1579,10 @@ export default function App() {
             auditLogs={auditLogs}
             currentLanguage={currentLanguage}
             dashboardStatsConfig={dashboardStatsConfig}
+            treasuryBalance={treasuryBalance}
+            bankBalance={bankBalance}
+            customers={customers}
+            invoiceSettings={invoiceSettings}
           />
         );
       case 'items':
@@ -1998,11 +2011,337 @@ export default function App() {
     );
   }
 
+  const renderDesktopSidebarButton = (
+    tab: TabType,
+    IconComponent: any,
+    labelAr: string,
+    labelEn: string,
+    showCondition: boolean = true
+  ) => {
+    if (!showCondition) return null;
+
+    const isActive = activeTab === tab;
+    const label = currentLanguage === 'ar' ? labelAr : labelEn;
+
+    return (
+      <button
+        key={tab}
+        onClick={() => {
+          setActiveTab(tab);
+          setIsSidebarOpen(false);
+        }}
+        className={`w-full flex items-center rounded-2xl text-xs font-black transition-all duration-300 cursor-pointer relative group ${
+          isDesktopSidebarCollapsed ? 'px-0 py-3.5 justify-center' : 'px-4 py-3 justify-start gap-3'
+        } ${
+          isActive 
+            ? 'bg-blue-600 text-white shadow-md shadow-blue-500/10' 
+            : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/50'
+        }`}
+      >
+        <IconComponent size={18} className="shrink-0 transition-transform duration-300 group-hover:scale-110" />
+        <span className={`transition-all duration-300 origin-right ${
+          isDesktopSidebarCollapsed ? 'w-0 opacity-0 scale-x-0 overflow-hidden absolute' : 'opacity-100 scale-x-100 whitespace-nowrap'
+        }`}>
+          {label}
+        </span>
+
+        {/* Custom Premium Tooltip */}
+        {isDesktopSidebarCollapsed && (
+          <div className={`absolute top-1/2 -translate-y-1/2 ${
+            currentLanguage === 'ar' ? 'right-full mr-3' : 'left-full ml-3'
+          } opacity-0 scale-95 pointer-events-none group-hover:opacity-100 group-hover:scale-100 transition-all duration-200 bg-slate-950 dark:bg-slate-900 text-white text-[11px] font-black px-3 py-2 rounded-xl shadow-xl whitespace-nowrap z-50 flex items-center gap-1.5`}>
+            <span>{label}</span>
+            <div className={`absolute top-1/2 -translate-y-1/2 ${
+              currentLanguage === 'ar' ? 'left-full border-l-slate-950 dark:border-l-slate-900' : 'right-full border-r-slate-950 dark:border-r-slate-900'
+            } border-4 border-transparent`} />
+          </div>
+        )}
+      </button>
+    );
+  };
+
   return (
-    <div className={`min-h-screen ${isDarkMode ? 'bg-slate-950 text-slate-100 dark' : 'bg-slate-50 text-slate-800'} flex flex-col pb-24 font-sans select-none transition-colors duration-200`} dir={currentLanguage === 'ar' ? 'rtl' : 'ltr'}>
+    <div className={`min-h-screen ${isDarkMode ? 'bg-slate-950 text-slate-100 dark' : 'bg-slate-50 text-slate-800'} flex flex-col md:flex-row font-sans select-none transition-colors duration-200`} dir={currentLanguage === 'ar' ? 'rtl' : 'ltr'}>
       
-      {/* Top Banner (Print-only Hidden or Styled properly) */}
-      <header className={`border-b ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-800'} py-2.5 px-6 sticky top-0 z-40 print:hidden shadow-xs`}>
+      {/* Persistent Sidebar for Desktop */}
+      <aside 
+        className={`shrink-0 border-l border-slate-200/60 dark:border-slate-800 bg-white dark:bg-slate-900 hidden md:flex flex-col h-screen sticky top-0 z-40 print:hidden transition-all duration-300 ease-in-out relative select-none ${
+          isDesktopSidebarCollapsed ? 'w-20' : 'w-72'
+        }`}
+      >
+        {/* Collapse / Expand Toggle Button for Desktop */}
+        <button
+          onClick={() => setIsDesktopSidebarCollapsed(prev => {
+            const nextVal = !prev;
+            localStorage.setItem('wms_desktop_sidebar_collapsed', String(nextVal));
+            return nextVal;
+          })}
+          className={`absolute top-6 ${
+            currentLanguage === 'ar' ? '-left-4' : '-right-4'
+          } z-50 flex items-center justify-center w-8 h-8 rounded-full border border-slate-200/60 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition-all duration-300 hover:scale-110 active:scale-95 group/toggle`}
+          title={
+            currentLanguage === 'ar' 
+              ? (isDesktopSidebarCollapsed ? 'توسيع القائمة جانبيًا' : 'طي القائمة جانبيًا') 
+              : (isDesktopSidebarCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar')
+          }
+        >
+          {currentLanguage === 'ar' ? (
+            isDesktopSidebarCollapsed ? (
+              <ChevronLeft size={16} className="transition-transform duration-300 group-hover/toggle:-translate-x-0.5" />
+            ) : (
+              <ChevronRight size={16} className="transition-transform duration-300 group-hover/toggle:translate-x-0.5" />
+            )
+          ) : (
+            isDesktopSidebarCollapsed ? (
+              <ChevronRight size={16} className="transition-transform duration-300 group-hover/toggle:translate-x-0.5" />
+            ) : (
+              <ChevronLeft size={16} className="transition-transform duration-300 group-hover/toggle:-translate-x-0.5" />
+            )
+          )}
+        </button>
+
+        {/* Sidebar Header */}
+        <div className={`border-b border-slate-100 dark:border-slate-800 flex items-center transition-all duration-300 ${
+          isDesktopSidebarCollapsed ? 'p-4 justify-center' : 'p-6 gap-3'
+        }`}>
+          {invoiceSettings?.logo ? (
+            <img 
+              src={invoiceSettings.logo} 
+              alt="Logo" 
+              className="w-10 h-10 object-contain rounded-xl transition-transform duration-300 hover:scale-105" 
+              referrerPolicy="no-referrer" 
+            />
+          ) : (
+            <div className="bg-blue-600 text-white p-2 rounded-xl shrink-0 transition-transform duration-300 hover:rotate-3">
+              <Receipt size={20} className="stroke-[2.5]" />
+            </div>
+          )}
+          <div className={`flex flex-col text-right transition-all duration-300 origin-right ${
+            isDesktopSidebarCollapsed ? 'w-0 opacity-0 pointer-events-none scale-x-0 absolute' : 'w-auto opacity-100 scale-x-100'
+          }`}>
+            <h2 className="font-extrabold text-sm text-slate-800 dark:text-white leading-tight whitespace-nowrap">مؤسسة المدى</h2>
+            <span className="text-[10px] text-blue-600 dark:text-blue-400 font-bold whitespace-nowrap">المستودع الذكي والحسابات</span>
+          </div>
+        </div>
+
+        {/* Sidebar Items */}
+        <div className="p-4 flex-1 space-y-1.5 overflow-y-auto scrollbar-none overflow-x-hidden">
+          {renderDesktopSidebarButton('home', Home, 'لوحة التحكم الرئيسية', 'Dashboard')}
+          {renderDesktopSidebarButton('items', BoxIcon, 'دليل الأصناف والكتالوج', 'Items & Catalog', currentUser.permissions.items !== 'none')}
+          {renderDesktopSidebarButton('movements', ArrowLeftRight, 'حركات الوارد والمنصرف', 'Stock Movements', currentUser.permissions.movements !== 'none')}
+          {renderDesktopSidebarButton('sales', ShoppingBag, 'فواتير المبيعات ونقاط البيع', 'Sales & POS')}
+          {renderDesktopSidebarButton('purchases', ShoppingCart, 'فواتير المشتريات والطلبيات', 'Purchases & Orders')}
+          {renderDesktopSidebarButton('warehouses', WarehouseIcon, 'المستودعات والتحويلات', 'Warehouses & Transfers')}
+          {renderDesktopSidebarButton('suppliers', Scale, 'الحسابات المتقدمة والتقارير', 'Advanced Accounts & Reports', (currentUser.role === 'Owner' || (currentUser.role as string) === 'Accountant' || currentUser.role === 'Admin'))}
+          {renderDesktopSidebarButton('print', FileText, 'السندات والطباعة', 'Vouchers & Printing')}
+          {renderDesktopSidebarButton('report', TrendingUp, 'التقارير الإحصائية والتحليلات', 'Statistical Reports')}
+          {renderDesktopSidebarButton('security', ShieldCheck, 'صلاحيات الموظفين والأمان', 'Staff Permissions & Security', (currentUser.role === 'Owner' || currentUser.role === 'Admin'))}
+          {renderDesktopSidebarButton('settings', SettingsIcon, 'إعدادات النظام والشركة', 'System Settings')}
+        </div>
+
+        {/* Sidebar Footer */}
+        <div className={`p-4 border-t border-slate-100 dark:border-slate-800 text-center text-[10px] text-slate-400 font-bold transition-all duration-300 ${
+          isDesktopSidebarCollapsed ? 'text-[9px] tracking-tighter' : ''
+        }`}>
+          {isDesktopSidebarCollapsed ? (
+            isDataLocked ? '🔒' : 'v3.0'
+          ) : (
+            isDataLocked ? 'نسخة للقراءة فقط' : 'النسخة المحاسبية الثالثة v3.0'
+          )}
+        </div>
+      </aside>
+
+      {/* Mobile Drawer Slide-out Sidebar */}
+      {isSidebarOpen && (
+        <div className="fixed inset-0 z-50 flex md:hidden print:hidden">
+          {/* Backdrop */}
+          <div 
+            onClick={() => setIsSidebarOpen(false)}
+            className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs" 
+          />
+          
+          {/* Drawer content */}
+          <div className="relative flex flex-col w-72 max-w-xs bg-white dark:bg-slate-900 h-full shadow-2xl animate-fade-in" dir="rtl">
+            <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                {invoiceSettings?.logo ? (
+                  <img src={invoiceSettings.logo} alt="Logo" className="w-8 h-8 object-contain rounded-lg" referrerPolicy="no-referrer" />
+                ) : (
+                  <div className="bg-blue-600 text-white p-1.5 rounded-lg">
+                    <Receipt size={16} className="stroke-[2.5]" />
+                  </div>
+                )}
+                <span className="font-extrabold text-xs text-slate-800 dark:text-white">مؤسسة المدى</span>
+              </div>
+              <button 
+                onClick={() => setIsSidebarOpen(false)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 rounded-xl cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-4 flex-1 space-y-1.5 overflow-y-auto">
+              <button
+                onClick={() => {
+                  setActiveTab('home');
+                  setIsSidebarOpen(false);
+                }}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-xs font-black transition-all cursor-pointer ${
+                  activeTab === 'home' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-50'
+                }`}
+              >
+                <Home size={18} />
+                <span>لوحة التحكم الرئيسية</span>
+              </button>
+
+              {currentUser.permissions.items !== 'none' && (
+                <button
+                  onClick={() => {
+                    setActiveTab('items');
+                    setIsSidebarOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-xs font-black transition-all cursor-pointer ${
+                    activeTab === 'items' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-50'
+                  }`}
+                >
+                  <BoxIcon size={18} />
+                  <span>دليل الأصناف والكتالوج</span>
+                </button>
+              )}
+
+              {currentUser.permissions.movements !== 'none' && (
+                <button
+                  onClick={() => {
+                    setActiveTab('movements');
+                    setIsSidebarOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-xs font-black transition-all cursor-pointer ${
+                    activeTab === 'movements' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-50'
+                  }`}
+                >
+                  <ArrowLeftRight size={18} />
+                  <span>حركات الوارد والمنصرف</span>
+                </button>
+              )}
+
+              <button
+                onClick={() => {
+                  setActiveTab('sales');
+                  setIsSidebarOpen(false);
+                }}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-xs font-black transition-all cursor-pointer ${
+                  activeTab === 'sales' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-50'
+                }`}
+              >
+                <ShoppingBag size={18} />
+                <span>فواتير المبيعات والعملاء</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setActiveTab('purchases');
+                  setIsSidebarOpen(false);
+                }}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-xs font-black transition-all cursor-pointer ${
+                  activeTab === 'purchases' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-50'
+                }`}
+              >
+                <ShoppingCart size={18} />
+                <span>فواتير المشتريات والطلبيات</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setActiveTab('warehouses');
+                  setIsSidebarOpen(false);
+                }}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-xs font-black transition-all cursor-pointer ${
+                  activeTab === 'warehouses' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-50'
+                }`}
+              >
+                <WarehouseIcon size={18} />
+                <span>المستودعات والتحويلات</span>
+              </button>
+
+              {(currentUser.role === 'Owner' || (currentUser.role as string) === 'Accountant' || currentUser.role === 'Admin') && (
+                <button
+                  onClick={() => {
+                    setActiveTab('suppliers');
+                    setIsSidebarOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-xs font-black transition-all cursor-pointer ${
+                    activeTab === 'suppliers' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-50'
+                  }`}
+                >
+                  <Scale size={18} />
+                  <span>الحسابات المتقدمة والتقارير</span>
+                </button>
+              )}
+
+              <button
+                onClick={() => {
+                  setActiveTab('print');
+                  setIsSidebarOpen(false);
+                }}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-xs font-black transition-all cursor-pointer ${
+                  activeTab === 'print' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-50'
+                }`}
+              >
+                <FileText size={18} />
+                <span>السندات والطباعة</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setActiveTab('report');
+                  setIsSidebarOpen(false);
+                }}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-xs font-black transition-all cursor-pointer ${
+                  activeTab === 'report' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-50'
+                }`}
+              >
+                <TrendingUp size={18} />
+                <span>التقارير الإحصائية والتحليلات</span>
+              </button>
+
+              {(currentUser.role === 'Owner' || currentUser.role === 'Admin') && (
+                <button
+                  onClick={() => {
+                    setActiveTab('security');
+                    setIsSidebarOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-xs font-black transition-all cursor-pointer ${
+                    activeTab === 'security' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-50'
+                  }`}
+                >
+                  <ShieldCheck size={18} />
+                  <span>صلاحيات الموظفين والأمان</span>
+                </button>
+              )}
+
+              <button
+                onClick={() => {
+                  setActiveTab('settings');
+                  setIsSidebarOpen(false);
+                }}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-xs font-black transition-all cursor-pointer ${
+                  activeTab === 'settings' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-50'
+                }`}
+              >
+                <SettingsIcon size={18} />
+                <span>إعدادات النظام والشركة</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Main Content Viewport Wrapper */}
+      <div className="flex-1 flex flex-col min-h-screen overflow-x-hidden">
+
+        {/* Top Banner (Print-only Hidden or Styled properly) */}
+        <header className={`border-b ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-800'} py-2.5 px-6 sticky top-0 z-40 print:hidden shadow-xs`}>
         <div className="max-w-xl md:max-w-3xl lg:max-w-5xl xl:max-w-7xl w-full mx-auto flex flex-col gap-1.5">
           
           {/* Row 1: Logo, Company Name, App Subtitle, Employee Info */}
@@ -2010,6 +2349,13 @@ export default function App() {
             
             {/* Logo and Company Name / App Subtitle */}
             <div className="flex items-center gap-3 w-full sm:w-auto">
+              <button
+                type="button"
+                onClick={() => setIsSidebarOpen(true)}
+                className="md:hidden p-2 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/80 rounded-xl cursor-pointer"
+              >
+                <Menu size={20} className="stroke-[2.5]" />
+              </button>
               {invoiceSettings?.logo ? (
                 <img src={invoiceSettings.logo} alt="Company Logo" className="w-10 h-10 object-contain rounded-xl shrink-0 bg-slate-50 dark:bg-slate-950 p-1 border border-slate-200/60 dark:border-slate-800" referrerPolicy="no-referrer" />
               ) : (
@@ -2700,7 +3046,7 @@ export default function App() {
       )}
 
       {/* Persistent Bottom Tab Navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 py-3 px-2 z-40 print:hidden shadow-lg rounded-t-3xl dark:bg-slate-900 dark:border-slate-800">
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 py-3 px-2 z-40 print:hidden shadow-lg rounded-t-3xl dark:bg-slate-900 dark:border-slate-800 md:hidden">
         <div className="max-w-xl md:max-w-3xl lg:max-w-5xl xl:max-w-7xl w-full mx-auto flex items-center justify-around">
           
           {/* Tab: الرئيسية */}
@@ -2927,6 +3273,7 @@ export default function App() {
         isDarkMode={isDarkMode}
       />
 
+      </div>
     </div>
   );
 }

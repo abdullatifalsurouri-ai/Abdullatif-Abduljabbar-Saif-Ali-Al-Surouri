@@ -59,6 +59,10 @@ interface HomeViewProps {
     showDailyMovements: boolean;
     showLowStock: boolean;
   };
+  treasuryBalance?: number;
+  bankBalance?: number;
+  customers?: any[];
+  invoiceSettings?: any;
 }
 
 export default function HomeView({
@@ -75,6 +79,10 @@ export default function HomeView({
   auditLogs = [],
   currentLanguage,
   dashboardStatsConfig,
+  treasuryBalance = 0,
+  bankBalance = 0,
+  customers = [],
+  invoiceSettings,
 }: HomeViewProps) {
   // PWA installation state
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
@@ -433,6 +441,83 @@ export default function HomeView({
           </span>
         </button>
       )}
+
+      {/* 📊 المؤشرات المالية السريعة */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-extrabold text-slate-800 flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-pulse"></span>
+            <span>لوحة المؤشرات المالية الحية 💸</span>
+          </h3>
+          <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider font-mono">FINANCE LIVE KPI</span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Card 1: السيولة النقدية */}
+          <div className="bg-gradient-to-br from-emerald-500/5 to-white border border-slate-100 rounded-3xl p-5 hover:shadow-md transition-all relative overflow-hidden group">
+            <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/5 rounded-full blur-2xl group-hover:scale-150 transition-all duration-500"></div>
+            <div className="flex items-center justify-between">
+              <div className="space-y-1 text-right">
+                <p className="text-slate-400 font-bold text-xs">السيولة النقدية (الخزينة) 💰</p>
+                <h3 className="text-xl font-black text-emerald-600 font-mono">
+                  {treasuryBalance.toLocaleString()} <span className="text-xs font-sans text-slate-400">ر.ي</span>
+                </h3>
+              </div>
+              <div className="p-3 bg-emerald-500/10 text-emerald-600 rounded-2xl group-hover:bg-emerald-500/20 transition-all">
+                <TrendingUp size={22} className="stroke-[2.5]" />
+              </div>
+            </div>
+          </div>
+
+          {/* Card 2: الأرصدة البنكية */}
+          <div className="bg-gradient-to-br from-blue-500/5 to-white border border-slate-100 rounded-3xl p-5 hover:shadow-md transition-all relative overflow-hidden group">
+            <div className="absolute top-0 right-0 w-24 h-24 bg-blue-500/5 rounded-full blur-2xl group-hover:scale-150 transition-all duration-500"></div>
+            <div className="flex items-center justify-between">
+              <div className="space-y-1 text-right">
+                <p className="text-slate-400 font-bold text-xs">إجمالي الأرصدة البنكية 🏦</p>
+                <h3 className="text-xl font-black text-blue-600 font-mono">
+                  {((invoiceSettings?.bankAccounts || []).reduce((sum: number, b: any) => sum + (b.balance || 0), 0) || bankBalance || 0).toLocaleString()} <span className="text-xs font-sans text-slate-400">ر.ي</span>
+                </h3>
+              </div>
+              <div className="p-3 bg-blue-500/10 text-blue-600 rounded-2xl group-hover:bg-blue-500/20 transition-all">
+                <Database size={22} className="stroke-[2.5]" />
+              </div>
+            </div>
+          </div>
+
+          {/* Card 3: الذمم المدينة */}
+          <div className="bg-gradient-to-br from-amber-500/5 to-white border border-slate-100 rounded-3xl p-5 hover:shadow-md transition-all relative overflow-hidden group">
+            <div className="absolute top-0 right-0 w-24 h-24 bg-amber-500/5 rounded-full blur-2xl group-hover:scale-150 transition-all duration-500"></div>
+            <div className="flex items-center justify-between">
+              <div className="space-y-1 text-right">
+                <p className="text-slate-400 font-bold text-xs">إجمالي الذمم المدينة (العملاء) 👥</p>
+                <h3 className="text-xl font-black text-amber-600 font-mono">
+                  {(customers.reduce((sum: number, c: any) => sum + (c.balance || 0), 0)).toLocaleString()} <span className="text-xs font-sans text-slate-400">ر.ي</span>
+                </h3>
+              </div>
+              <div className="p-3 bg-amber-500/10 text-amber-600 rounded-2xl group-hover:bg-amber-500/20 transition-all">
+                <ArrowUpRight size={22} className="stroke-[2.5]" />
+              </div>
+            </div>
+          </div>
+
+          {/* Card 4: الذمم الدائنة */}
+          <div className="bg-gradient-to-br from-rose-500/5 to-white border border-slate-100 rounded-3xl p-5 hover:shadow-md transition-all relative overflow-hidden group">
+            <div className="absolute top-0 right-0 w-24 h-24 bg-rose-500/5 rounded-full blur-2xl group-hover:scale-150 transition-all duration-500"></div>
+            <div className="flex items-center justify-between">
+              <div className="space-y-1 text-right">
+                <p className="text-slate-400 font-bold text-xs">إجمالي الذمم الدائنة (الموردين) 🏢</p>
+                <h3 className="text-xl font-black text-rose-600 font-mono">
+                  {(suppliers.reduce((sum: number, s: any) => sum + (s.balance || 0), 0)).toLocaleString()} <span className="text-xs font-sans text-slate-400">ر.ي</span>
+                </h3>
+              </div>
+              <div className="p-3 bg-rose-500/10 text-rose-600 rounded-2xl group-hover:bg-rose-500/20 transition-all">
+                <ArrowDownLeft size={22} className="stroke-[2.5]" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* Stats Grid (Dynamic Selection) */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">

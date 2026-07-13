@@ -494,6 +494,9 @@ export default function ReportView({ items, movements, suppliers, warehouses = [
               <p className="text-[10px] text-slate-500 font-extrabold">قسم إدارة المخازن والمستودعات</p>
               <p className="text-[9px] text-slate-400 font-mono leading-relaxed">{invoiceSettings?.address || 'الرياض، المملكة العربية السعودية'}</p>
               <p className="text-[9px] text-slate-400 font-mono">الهاتف: {invoiceSettings?.phone || '+967775104368'} {invoiceSettings?.email && ` | البريد: ${invoiceSettings.email}`}</p>
+              {invoiceSettings?.commercialRegistryNumber && (
+                <p className="text-[9px] text-blue-700 font-bold font-mono">سجل تجاري رقم: {invoiceSettings.commercialRegistryNumber}</p>
+              )}
             </div>
           </div>
           <div className="text-left space-y-1 bg-slate-50 p-3 rounded-2xl border border-slate-100 min-w-[150px]">
