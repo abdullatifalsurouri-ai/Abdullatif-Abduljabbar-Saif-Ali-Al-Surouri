@@ -543,12 +543,7 @@ export default function App() {
                 typeof Notification === 'function' &&
                 Notification.permission === 'granted'
               ) {
-                try {
-                  new Notification('تنبيه المستودع اليومي 📦', {
-                    body: 'تنبيه: لم يتم تسجيل أي حركة صادر أو وارد خلال هذا اليوم في المستودع حتى الآن. يرجى مراجعة المخزون والعمليات اليومية.',
-                  });
-                } catch (e) {
-                  console.warn('Daily notification constructor failed, trying service worker:', e);
+                const showDailyViaSW = () => {
                   if ('serviceWorker' in navigator) {
                     navigator.serviceWorker.ready.then((registration) => {
                       registration.showNotification('تنبيه المستودع اليومي 📦', {
@@ -557,6 +552,20 @@ export default function App() {
                     }).catch((err) => {
                       console.error('Service worker daily notification failed:', err);
                     });
+                  }
+                };
+
+                const isIframe = typeof window !== 'undefined' && window.self !== window.top;
+                if (isIframe) {
+                  showDailyViaSW();
+                } else {
+                  try {
+                    new Notification('تنبيه المستودع اليومي 📦', {
+                      body: 'تنبيه: لم يتم تسجيل أي حركة صادر أو وارد خلال هذا اليوم في المستودع حتى الآن. يرجى مراجعة المخزون والعمليات اليومية.',
+                    });
+                  } catch (e) {
+                    console.warn('Daily notification constructor failed, trying service worker:', e);
+                    showDailyViaSW();
                   }
                 }
               }
@@ -2628,13 +2637,32 @@ export default function App() {
                             setBrowserNotificationPermission(permission);
                             if (permission === 'granted') {
                               addToast('✓ تم تفعيل تنبيهات المتصفح بنجاح!', 'success');
-                              try {
-                                new Notification('نظام المدى الذكي WMS 🔔', {
-                                  body: 'تم تفعيل التنبيهات الفورية وبث المخزون الخلفي بنجاح.',
-                                  icon: '/icon.svg'
-                                });
-                              } catch (e) {
-                                console.warn('Notification construction failed inside sandbox:', e);
+                              const showWelcomeViaSW = () => {
+                                if ('serviceWorker' in navigator) {
+                                  navigator.serviceWorker.ready.then((registration) => {
+                                    registration.showNotification('نظام المدى الذكي WMS 🔔', {
+                                      body: 'تم تفعيل التنبيهات الفورية وبث المخزون الخلفي بنجاح.',
+                                      icon: '/icon.svg'
+                                    });
+                                  }).catch((err) => {
+                                    console.error('Service worker welcome notification failed:', err);
+                                  });
+                                }
+                              };
+
+                              const isIframe = typeof window !== 'undefined' && window.self !== window.top;
+                              if (isIframe) {
+                                showWelcomeViaSW();
+                              } else {
+                                try {
+                                  new Notification('نظام المدى الذكي WMS 🔔', {
+                                    body: 'تم تفعيل التنبيهات الفورية وبث المخزون الخلفي بنجاح.',
+                                    icon: '/icon.svg'
+                                  });
+                                } catch (e) {
+                                  console.warn('Notification construction failed, trying service worker:', e);
+                                  showWelcomeViaSW();
+                                }
                               }
                             }
                           }).catch(err => {

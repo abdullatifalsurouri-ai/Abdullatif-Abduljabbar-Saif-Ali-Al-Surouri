@@ -23,10 +23,21 @@ import {
   RefreshCcw,
   CheckSquare,
   ChevronDown,
-  Database
+  Database,
+  Calendar,
+  Award,
+  MapPin,
+  Fingerprint,
+  File,
+  Upload,
+  Shield,
+  Activity,
+  AlertCircle,
+  Clock
 } from 'lucide-react';
 import { Supplier, User as UserType } from '../types';
 import { exportToPDF } from '../utils/pdfExport';
+import HRView from './HRView';
 
 interface SuppliersViewProps {
   suppliers: Supplier[];
@@ -128,12 +139,26 @@ export default function SuppliersView({
   
   // New accounting states
   const [closingWizardStep, setClosingWizardStep] = useState<number>(1);
+  const [rollOverToNewYear, setRollOverToNewYear] = useState<boolean>(true);
+  const [isClosingExecuting, setIsClosingExecuting] = useState<boolean>(false);
+  const [closingLogs, setClosingLogs] = useState<string[]>([]);
+  const [pnlCostCenterFilter, setPnlCostCenterFilter] = useState<string>('');
   const [actualBalances, setActualBalances] = useState<Record<string, number>>(() => {
     const saved = localStorage.getItem('wms_actual_balances');
-    return saved ? JSON.parse(saved) : {
-      'الخزينة العامة': 3500000,
-      'حساب بنك التضامن': 4200000,
-      'أرصدة بنكية أخرى': 1800000,
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed['الخزينة العامة'] === 3500000) {
+          parsed['الخزينة العامة'] = 350000;
+        }
+        return parsed;
+      } catch {
+        // Fall through
+      }
+    }
+    return {
+      'الخزينة العامة': 350000,
+      'حساب البنك الرئيسي': 4200000,
       'مخزون المستودع الرئيسي': 12500000,
       'ذمم العملاء المدينة': 1500000,
       'ذمم الموردين الدائنة': 850000
@@ -141,6 +166,143 @@ export default function SuppliersView({
   });
   const [reconciliationTab, setReconciliationTab] = useState<'cash' | 'bank' | 'balancing'>('cash');
   const [finalAccountsTab, setFinalAccountsTab] = useState<'chart' | 'trial' | 'financial_statements' | 'closing'>('chart');
+
+  // Dynamic ledger-linked financial reports calculations
+  const getFinancialSummaries = (filterCostCenter?: string) => {
+    const activeEntries = journalEntries.filter(entry => !entry.isReversed);
+
+    let journalRevenues = 0;
+    let journalExpenses = 0;
+
+    activeEntries.forEach(entry => {
+      entry.lines.forEach((line: any) => {
+        if (filterCostCenter && line.costCenter !== filterCostCenter) {
+          return;
+        }
+        const acc = line.account || '';
+        const isRev = acc.includes('مبيعات') || acc.includes('إيراد') || acc.includes('إيرادات');
+        const isExp = acc.includes('رواتب') || acc.includes('أجور') || acc.includes('مصروف') || acc.includes('مصروفات') || acc.includes('إيجار') || acc.includes('كهرباء') || acc.includes('إنترنت');
+
+        if (isRev) {
+          journalRevenues += (line.credit - line.debit);
+        }
+        if (isExp) {
+          journalExpenses += (line.debit - line.credit);
+        }
+      });
+    });
+
+    const baseRevenues = vouchers
+      .filter((v) => v.isReceipt && (v.title?.includes('مبيعات') || v.notes?.includes('مبيعات') || v.partnerType === 'عميل') && (!filterCostCenter || v.costCenter === filterCostCenter))
+      .reduce((sum, v) => sum + v.amount, 0) || (filterCostCenter ? 0 : 5800000);
+
+    const baseExpenses = (employees.reduce((sum, e) => sum + (e.salary || 0), 0) * 12) || (filterCostCenter ? 0 : 1200000);
+
+    const finalRevenues = journalRevenues > 0 ? journalRevenues : baseRevenues;
+    const finalExpenses = journalExpenses > 0 ? journalExpenses : baseExpenses;
+    const finalNetProfit = finalRevenues - finalExpenses;
+
+    const finalTreasury = treasuryBalance || 0;
+    const finalBank = (invoiceSettings?.bankAccounts || []).reduce((sum: number, b: any) => sum + (b.balance || 0), 0);
+    const finalCustomers = totalCustomersBalance || 0;
+    const finalInventory = 12500000;
+    const finalCustodies = employees.reduce((sum, e) => sum + (e.custody || 0), 0);
+
+    const totalAssets = finalTreasury + finalBank + finalCustomers + finalInventory + finalCustodies;
+
+    const finalSuppliers = totalSuppliersBalance || 0;
+    const finalBaseCapital = 10000000;
+
+    // Retained Earnings checking
+    let closedEarnings = 0;
+    activeEntries.forEach(entry => {
+      entry.lines.forEach((line: any) => {
+        if (line.account === 'الأرباح والخسائر المحتجزة' || line.account === 'الأرباح المحتجزة' || line.account === 'الأرباح المحتجزة / المدوّرة') {
+          closedEarnings += (line.credit - line.debit);
+        }
+      });
+    });
+
+    const finalRetainedEarnings = closedEarnings !== 0 ? closedEarnings : finalNetProfit;
+    const totalLiabilitiesEquity = finalSuppliers + finalBaseCapital + finalRetainedEarnings;
+
+    return {
+      revenue: finalRevenues,
+      expenses: finalExpenses,
+      netProfit: finalNetProfit,
+      treasury: finalTreasury,
+      bank: finalBank,
+      customers: finalCustomers,
+      inventory: finalInventory,
+      custodies: finalCustodies,
+      totalAssets,
+      suppliers: finalSuppliers,
+      capital: finalBaseCapital,
+      retainedEarnings: finalRetainedEarnings,
+      totalLiabilitiesEquity
+    };
+  };
+
+  const getSystemAccountLedger = () => {
+    const sysBalances = {
+      'الخزينة العامة': treasuryBalance || 0,
+      'حساب البنك الرئيسي': (invoiceSettings?.bankAccounts || []).reduce((sum: number, b: any) => sum + (b.balance || 0), 0),
+      'مخزون المستودع الرئيسي': 12500000,
+      'ذمم العملاء المدينة': totalCustomersBalance || 0,
+      'عهد الموظفين المعلقة': employees.reduce((sum, e) => sum + (e.custody || 0), 0),
+      'ذمم الموردين الدائنة': totalSuppliersBalance || 0
+    };
+
+    const ledgerActivity: Record<string, { opening: number, debits: number, credits: number }> = {
+      'الخزينة العامة': { opening: 3500000, debits: 0, credits: 0 },
+      'حساب البنك الرئيسي': { opening: 4200000, debits: 0, credits: 0 },
+      'مخزون المستودع الرئيسي': { opening: 12500000, debits: 0, credits: 0 },
+      'ذمم العملاء المدينة': { opening: 1500000, debits: 0, credits: 0 },
+      'عهد الموظفين المعلقة': { opening: 7000, debits: 0, credits: 0 },
+      'ذمم الموردين الدائنة': { opening: 850000, debits: 0, credits: 0 }
+    };
+
+    journalEntries.filter(e => !e.isReversed).forEach(entry => {
+      entry.lines.forEach((line: any) => {
+        let matchedAcc = '';
+        const acc = line.account || '';
+        if (acc === 'الخزينة العامة' || acc === 'حـ/ الصندوق (الخزينة العامة)' || acc === 'الخزينة العامة النقدية') {
+          matchedAcc = 'الخزينة العامة';
+        } else if (acc === 'حساب البنك الرئيسي' || acc === 'حـ/ البنك (حساب البنك الرئيسي)' || acc === 'حساب بنك التضامن' || acc === 'بنك التضامن') {
+          matchedAcc = 'حساب البنك الرئيسي';
+        } else if (acc.includes('مخزون') || acc.includes('المستودع')) {
+          matchedAcc = 'مخزون المستودع الرئيسي';
+        } else if (acc.includes('العميل') || acc.includes('ذمم العملاء')) {
+          matchedAcc = 'ذمم العملاء المدينة';
+        } else if (acc.includes('المورد') || acc.includes('ذمم الموردين')) {
+          matchedAcc = 'ذمم الموردين الدائنة';
+        } else if (acc.includes('عهد') || acc.includes('العهدة')) {
+          matchedAcc = 'عهد الموظفين المعلقة';
+        }
+
+        if (matchedAcc && ledgerActivity[matchedAcc]) {
+          ledgerActivity[matchedAcc].debits += line.debit;
+          ledgerActivity[matchedAcc].credits += line.credit;
+        }
+      });
+    });
+
+    return Object.entries(sysBalances).map(([name, currentBal]) => {
+      const activity = ledgerActivity[name] || { opening: currentBal, debits: 0, credits: 0 };
+      const isAsset = name !== 'ذمم الموردين الدائنة';
+      const netChange = isAsset ? (activity.debits - activity.credits) : (activity.credits - activity.debits);
+      const calculatedOpening = currentBal - netChange;
+
+      return {
+        name,
+        opening: calculatedOpening,
+        debits: activity.debits,
+        credits: activity.credits,
+        balance: currentBal
+      };
+    });
+  };
+
   
   // Edit state
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
@@ -358,10 +520,146 @@ export default function SuppliersView({
     role: 'موظف',
     phone: '',
     email: '',
-    salary: 5000,
+    salary: 150000,
     advances: 0,
-    custody: 0
+    custody: 0,
+    housingAllowance: 0,
+    transportAllowance: 0,
+    appearanceAllowance: 0,
+    workLocationLat: 15.3694,
+    workLocationLng: 44.1910,
+    geofencingRadius: 100,
+    bankName: 'بنك التضامن الإسلامي',
+    bankAccountNumber: '',
+    bankAccountIban: '',
+    hireDate: new Date().toISOString().split('T')[0],
+    contractEndDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
   });
+
+  // HR active horizontal subtab
+  const [hrActiveTab, setHrActiveTab] = useState<'dashboard' | 'employees' | 'payroll' | 'requests' | 'attendance'>('dashboard');
+
+  // Simulated GPS mobile attendance check-in states
+  const [gpsSimulatedInside, setGpsSimulatedInside] = useState<boolean>(true);
+  const [selectedHrEmployeeForAttendance, setSelectedHrEmployeeForAttendance] = useState<string>('');
+  const [isScanningBiometric, setIsScanningBiometric] = useState<boolean>(false);
+  const [biometricScanResult, setBiometricScanResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  // Leave & Loan Forms
+  const [loanForm, setLoanForm] = useState({
+    employeeId: '',
+    amount: 50000,
+    months: 5,
+    startMonth: '2026-07',
+    reason: ''
+  });
+  const [leaveForm, setLeaveForm] = useState({
+    employeeId: '',
+    type: 'annual' as 'annual' | 'sick' | 'casual' | 'unpaid',
+    startDate: '2026-07-15',
+    endDate: '2026-07-20',
+    notes: ''
+  });
+
+  // Payroll state variables
+  const [payrollMonth, setPayrollMonth] = useState<string>('2026-07');
+  const [generatedPayroll, setGeneratedPayroll] = useState<any[] | null>(null);
+  const [payrollFundingSource, setPayrollFundingSource] = useState<string>('cash'); // 'cash' or bank account id
+  const [isPayrollApproved, setIsPayrollApproved] = useState<boolean>(false);
+  const [approvedPayrollMonth, setApprovedPayrollMonth] = useState<string>('');
+
+  const getNormalizedEmployee = (emp: any) => {
+    return {
+      ...emp,
+      housingAllowance: emp.housingAllowance !== undefined ? emp.housingAllowance : 0,
+      transportAllowance: emp.transportAllowance !== undefined ? emp.transportAllowance : 0,
+      appearanceAllowance: emp.appearanceAllowance !== undefined ? emp.appearanceAllowance : 0,
+      workLocationLat: emp.workLocationLat !== undefined ? emp.workLocationLat : 15.3694,
+      workLocationLng: emp.workLocationLng !== undefined ? emp.workLocationLng : 44.1910,
+      geofencingRadius: emp.geofencingRadius !== undefined ? emp.geofencingRadius : 100,
+      attachments: emp.attachments || [],
+      loans: emp.loans || [],
+      leaves: emp.leaves || [],
+      attendance: emp.attendance || [],
+      bankName: emp.bankName || 'بنك التضامن الإسلامي',
+      bankAccountNumber: emp.bankAccountNumber || '',
+      bankAccountIban: emp.bankAccountIban || '',
+      hireDate: emp.hireDate || '2026-01-01',
+      contractEndDate: emp.contractEndDate || '2027-01-01',
+    };
+  };
+
+  const getDetailedSalaryForMonth = (rawEmp: any, monthStr: string) => {
+    const emp = getNormalizedEmployee(rawEmp);
+    const basic = emp.salary || 0;
+    const allowances = (emp.housingAllowance || 0) + (emp.transportAllowance || 0) + (emp.appearanceAllowance || 0);
+    
+    // 1. Overtime and bonuses from monthlyVariations (unapplied or filtered by month)
+    const activeVariations = emp.monthlyVariations || [];
+    const unapplied = activeVariations.filter((v: any) => !v.isApplied);
+    const overtime = unapplied.filter((v: any) => v.type === 'overtime').reduce((sum: number, v: any) => sum + (v.amount || 0), 0);
+    const bonus = unapplied.filter((v: any) => v.type === 'bonus').reduce((sum: number, v: any) => sum + (v.amount || 0), 0);
+    const manualDeductions = unapplied.filter((v: any) => v.type === 'deduction').reduce((sum: number, v: any) => sum + (v.amount || 0), 0);
+
+    // 2. Unpaid leave deductions
+    let unpaidLeaveDays = 0;
+    (emp.leaves || []).forEach((lv: any) => {
+      if (lv.type === 'unpaid' && lv.status === 'approved') {
+        if (lv.startDate.startsWith(monthStr)) {
+          unpaidLeaveDays += lv.days;
+        }
+      }
+    });
+    const unpaidLeaveDeduction = Math.round(unpaidLeaveDays * (basic / 30));
+
+    // 3. Loan installments
+    let loanDeduction = 0;
+    (emp.loans || []).forEach((loan: any) => {
+      if (loan.status === 'approved') {
+        const installment = (loan.schedule || []).find((s: any) => s.month === monthStr && !s.isDeducted);
+        if (installment) {
+          loanDeduction += installment.amount;
+        }
+      }
+    });
+
+    // 4. Attendance late / absence deductions
+    let lateMinutesTotal = 0;
+    let absentDaysTotal = 0;
+    (emp.attendance || []).forEach((att: any) => {
+      if (att.date.startsWith(monthStr)) {
+        if (att.status === 'late') {
+          lateMinutesTotal += (att.lateMinutes || 0);
+        } else if (att.status === 'absent') {
+          absentDaysTotal += 1;
+        }
+      }
+    });
+    const lateDeduction = Math.round(lateMinutesTotal * (basic / 30 / 8 / 60)); // basic / 30 days / 8 hours / 60 mins
+    const absenceDeduction = Math.round(absentDaysTotal * (basic / 30));
+
+    const totalDeductions = manualDeductions + unpaidLeaveDeduction + loanDeduction + lateDeduction + absenceDeduction;
+    const gross = basic + allowances + overtime + bonus;
+    const net = Math.max(0, gross - totalDeductions);
+
+    return {
+      basic,
+      allowances,
+      overtime,
+      bonus,
+      manualDeductions,
+      unpaidLeaveDays,
+      unpaidLeaveDeduction,
+      loanDeduction,
+      lateMinutesTotal,
+      lateDeduction,
+      absentDaysTotal,
+      absenceDeduction,
+      totalDeductions,
+      gross,
+      net
+    };
+  };
 
   // Monthly Variations (Estihqaqat & Istiqta'at) state
   const [isAddVariationModalOpen, setIsAddVariationModalOpen] = useState(false);
@@ -491,8 +789,8 @@ export default function SuppliersView({
     reference: '',
     date: new Date().toISOString().split('T')[0],
     lines: [
-      { account: '', debit: 0, credit: 0 },
-      { account: '', debit: 0, credit: 0 }
+      { account: '', debit: 0, credit: 0, costCenter: '' as string | undefined },
+      { account: '', debit: 0, credit: 0, costCenter: '' as string | undefined }
     ]
   });
 
@@ -523,6 +821,31 @@ export default function SuppliersView({
     };
     onUpdateJournalEntries([newEntry, ...existingEntries]);
     return newEntry;
+  };
+
+  const createMultipleAutoJournalEntries = (entriesArgs: {
+    notes: string;
+    reference: string;
+    lines: { account: string; debit: number; credit: number }[];
+    date?: string;
+  }[]) => {
+    let currentEntries = [...journalEntries];
+    entriesArgs.forEach((args) => {
+      const nextId = `JV-${1001 + currentEntries.length}`;
+      const newEntry = {
+        id: nextId,
+        date: args.date || new Date().toISOString().split('T')[0],
+        notes: args.notes,
+        reference: args.reference,
+        createdBy: currentUser.username || 'System',
+        isReversed: false,
+        lines: args.lines
+      };
+      if (!currentEntries.some((e) => e.reference === args.reference && e.notes === args.notes)) {
+        currentEntries = [newEntry, ...currentEntries];
+      }
+    });
+    onUpdateJournalEntries(currentEntries);
   };
 
   const handleReverseJournalEntry = (entryId: string) => {
@@ -1468,12 +1791,30 @@ export default function SuppliersView({
     if (editingEmployee) {
       const updated = employees.map(emp => 
         emp.id === editingEmployee.id 
-          ? { ...emp, name: empForm.name, role: empForm.role, phone: empForm.phone, email: empForm.email, salary: Number(empForm.salary) }
+          ? { 
+              ...emp, 
+              name: empForm.name, 
+              role: empForm.role, 
+              phone: empForm.phone, 
+              email: empForm.email, 
+              salary: Number(empForm.salary),
+              housingAllowance: Number(empForm.housingAllowance) || 0,
+              transportAllowance: Number(empForm.transportAllowance) || 0,
+              appearanceAllowance: Number(empForm.appearanceAllowance) || 0,
+              workLocationLat: Number(empForm.workLocationLat) || 15.3694,
+              workLocationLng: Number(empForm.workLocationLng) || 44.1910,
+              geofencingRadius: Number(empForm.geofencingRadius) || 100,
+              bankName: empForm.bankName,
+              bankAccountNumber: empForm.bankAccountNumber,
+              bankAccountIban: empForm.bankAccountIban,
+              hireDate: empForm.hireDate,
+              contractEndDate: empForm.contractEndDate
+            }
           : emp
       );
       onUpdateEmployees(updated);
       if (onLogAction) {
-        onLogAction('edit', 'suppliers', `تم تحديث بيانات الموظف: ${empForm.name}`);
+        onLogAction('edit', 'suppliers', `تم تحديث بيانات وعقد الموظف: ${empForm.name}`);
       }
     } else {
       const nextEmpId = `EMP-${1000 + employees.length + 1}`;
@@ -1486,23 +1827,57 @@ export default function SuppliersView({
         salary: Number(empForm.salary) || 0,
         advances: Number(empForm.advances) || 0,
         custody: Number(empForm.custody) || 0,
+        housingAllowance: Number(empForm.housingAllowance) || 0,
+        transportAllowance: Number(empForm.transportAllowance) || 0,
+        appearanceAllowance: Number(empForm.appearanceAllowance) || 0,
+        workLocationLat: Number(empForm.workLocationLat) || 15.3694,
+        workLocationLng: Number(empForm.workLocationLng) || 44.1910,
+        geofencingRadius: Number(empForm.geofencingRadius) || 100,
+        bankName: empForm.bankName,
+        bankAccountNumber: empForm.bankAccountNumber,
+        bankAccountIban: empForm.bankAccountIban,
+        hireDate: empForm.hireDate,
+        contractEndDate: empForm.contractEndDate,
+        attachments: [],
+        loans: [],
+        leaves: [],
+        attendance: [],
         history: [
           {
             id: `TX-${Date.now().toString().slice(-5)}`,
             date: new Date().toISOString().split('T')[0],
             type: 'salary' as const,
             amount: 0,
-            notes: 'تم تسجيل الموظف في النظام بنجاح'
+            notes: 'تم تسجيل الموظف وتأصيل عقده الإلكتروني في النظام بنجاح'
           }
         ]
       };
       onUpdateEmployees([...employees, newEmp]);
       if (onLogAction) {
-        onLogAction('add', 'suppliers', `تم تسجيل موظف جديد: ${newEmp.name} براتب ${newEmp.salary.toLocaleString()} ر.ي`);
+        onLogAction('add', 'suppliers', `تم تسجيل موظف جديد وعقده: ${newEmp.name} براتب أساسي ${newEmp.salary.toLocaleString()} ر.ي`);
       }
     }
 
-    setEmpForm({ name: '', role: 'موظف', phone: '', email: '', salary: 150000, advances: 0, custody: 0 });
+    setEmpForm({ 
+      name: '', 
+      role: 'موظف', 
+      phone: '', 
+      email: '', 
+      salary: 150000, 
+      advances: 0, 
+      custody: 0,
+      housingAllowance: 0,
+      transportAllowance: 0,
+      appearanceAllowance: 0,
+      workLocationLat: 15.3694,
+      workLocationLng: 44.1910,
+      geofencingRadius: 100,
+      bankName: 'بنك التضامن الإسلامي',
+      bankAccountNumber: '',
+      bankAccountIban: '',
+      hireDate: new Date().toISOString().split('T')[0],
+      contractEndDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+    });
     setEditingEmployee(null);
     setIsEmployeeModalOpen(false);
   };
@@ -1510,6 +1885,16 @@ export default function SuppliersView({
   const handleJournalSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!journalForm.notes.trim()) return;
+
+    // Enforce cost center dropdown selection for all lines
+    const missingCostCenter = journalForm.lines.some(
+      line => !line.costCenter
+    );
+
+    if (missingCostCenter) {
+      alert('خطأ في إدخال القيد: يجب اختيار مركز تكلفة لكل سطر محاسبي لضمان دقة توجيه وتصنيف العمليات المالية!');
+      return;
+    }
 
     const totalDebits = journalForm.lines.reduce((sum, line) => sum + Number(line.debit || 0), 0);
     const totalCredits = journalForm.lines.reduce((sum, line) => sum + Number(line.credit || 0), 0);
@@ -1525,43 +1910,44 @@ export default function SuppliersView({
 
     const entryId = `ENT-${Date.now().toString().slice(-6)}`;
     const newEntry = {
-      id: entryId,
-      date: journalForm.date,
-      notes: journalForm.notes,
-      reference: journalForm.reference || 'قيد يدوي عام',
-      createdBy: currentUser.username,
-      lines: journalForm.lines.map(line => ({
-        account: line.account,
-        debit: Number(line.debit || 0),
-        credit: Number(line.credit || 0)
-      })),
-      isReversed: false
-    };
+       id: entryId,
+       date: journalForm.date,
+       notes: journalForm.notes,
+       reference: journalForm.reference || 'قيد يدوي عام',
+       createdBy: currentUser.username,
+       lines: journalForm.lines.map(line => ({
+         account: line.account,
+         debit: Number(line.debit || 0),
+         credit: Number(line.credit || 0),
+         costCenter: line.costCenter || undefined
+       })),
+       isReversed: false
+     };
 
-    onUpdateJournalEntries([newEntry, ...journalEntries]);
+     onUpdateJournalEntries([newEntry, ...journalEntries]);
 
-    if (onLogAction) {
-      onLogAction('add', 'suppliers', `تم تسجيل قيد محاسبي يدوي رقم ${entryId} بقيمة ${totalDebits.toLocaleString()} ر.ي`);
-    }
+     if (onLogAction) {
+       onLogAction('add', 'suppliers', `تم تسجيل قيد محاسبي يدوي رقم ${entryId} بقيمة ${totalDebits.toLocaleString()} ر.ي`);
+     }
 
-    setJournalForm({
-      notes: '',
-      reference: '',
-      date: new Date().toISOString().split('T')[0],
-      lines: [
-        { account: '', debit: 0, credit: 0 },
-        { account: '', debit: 0, credit: 0 }
-      ]
-    });
-    setIsJournalModalOpen(false);
-  };
+     setJournalForm({
+       notes: '',
+       reference: '',
+       date: new Date().toISOString().split('T')[0],
+       lines: [
+         { account: '', debit: 0, credit: 0, costCenter: '' as string | undefined },
+         { account: '', debit: 0, credit: 0, costCenter: '' as string | undefined }
+       ]
+     });
+     setIsJournalModalOpen(false);
+   };
 
-  const handleAddJournalLine = () => {
-    setJournalForm({
-      ...journalForm,
-      lines: [...journalForm.lines, { account: '', debit: 0, credit: 0 }]
-    });
-  };
+   const handleAddJournalLine = () => {
+     setJournalForm({
+       ...journalForm,
+       lines: [...journalForm.lines, { account: '', debit: 0, credit: 0, costCenter: '' as string | undefined }]
+     });
+   };
 
   const handleRemoveJournalLine = (index: number) => {
     if (journalForm.lines.length <= 2) return;
@@ -3157,9 +3543,9 @@ export default function SuppliersView({
                       <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
                         <td className="py-3.5 px-4 text-slate-800 font-extrabold flex items-center gap-2">
                           <span className="w-2 h-2 rounded-full bg-blue-500"></span>
-                          <span>{b.bankName || 'بنك غير معروف'}</span>
+                          <span>{b.name || b.bankName || 'بنك غير معروف'}</span>
                         </td>
-                        <td className="py-3.5 px-4 text-slate-500 font-mono text-[11px]">{b.accountNo || 'N/A'}</td>
+                        <td className="py-3.5 px-4 text-slate-500 font-mono text-[11px]">{b.accountNumber || b.accountNo || 'N/A'}</td>
                         <td className="py-3.5 px-4 text-blue-600 font-mono">{(b.balance || 0).toLocaleString()} ر.ي</td>
                         <td className="py-3.5 px-4">
                           <span className="inline-flex items-center gap-1 text-[10px] bg-emerald-50 text-emerald-600 px-2.5 py-0.5 rounded-full">
@@ -3172,7 +3558,7 @@ export default function SuppliersView({
                             type="button"
                             onClick={() => {
                               // Print statement or copy IBAN
-                              alert(`تم نسخ رقم الحساب البنكي: ${b.accountNo}`);
+                              alert(`تم نسخ رقم الحساب البنكي: ${b.accountNumber || b.accountNo || 'N/A'}`);
                             }}
                             className="text-blue-600 hover:bg-blue-50 px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer text-[10px] font-black"
                           >
@@ -3543,6 +3929,28 @@ export default function SuppliersView({
           )}
         </div>
       ) : subTab === 'employees' ? (
+        <HRView
+          employees={employees}
+          onUpdateEmployees={onUpdateEmployees}
+          journalEntries={journalEntries}
+          onUpdateJournalEntries={onUpdateJournalEntries}
+          treasuryBalance={treasuryBalance}
+          onUpdateTreasuryBalance={onUpdateTreasuryBalance}
+          invoiceSettings={invoiceSettings}
+          onUpdateInvoiceSettings={onUpdateInvoiceSettings}
+          onLogAction={onLogAction}
+          currentUser={currentUser}
+          search={search}
+          isDataLocked={isDataLocked}
+          setVType={setVType}
+          setVTargetGroup={setVTargetGroup}
+          setVSelectedTargetId={setVSelectedTargetId}
+          setIsVoucherModalOpen={setIsVoucherModalOpen}
+          setStatementPartner={setStatementPartner}
+          setStatementPartnerType={setStatementPartnerType}
+          setIsStatementModalOpen={setIsStatementModalOpen}
+        />
+      ) : subTab === 'employees_old' ? (
         <div className="space-y-6">
           {/* Employee Creation/Edition Modal */}
           {isEmployeeModalOpen && (
@@ -3961,10 +4369,10 @@ export default function SuppliersView({
             </button>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
             
-            {/* RIGHT SIDEBAR: Reconciliation & Adjustments (col-span-5) */}
-            <div className="lg:col-span-5 bg-white border border-slate-100 rounded-3xl p-5 shadow-xs space-y-5">
+            {/* RIGHT COLUMN: Reconciliation & Adjustments */}
+            <div className="bg-white border border-slate-100 rounded-3xl p-5 shadow-xs space-y-5 flex flex-col justify-between">
               <div>
                 <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
                   <span className="p-1.5 bg-blue-50 text-blue-600 rounded-lg">🤝</span>
@@ -4000,7 +4408,7 @@ export default function SuppliersView({
                     reconciliationTab === 'balancing' ? 'bg-white text-blue-600 shadow-3xs' : 'text-slate-500 hover:text-slate-800'
                   }`}
                 >
-                  ⚖️ مطابقة الأرصدة
+                  ⚖️ موازنة الحسابات (Account Balancing)
                 </button>
               </div>
 
@@ -4091,7 +4499,9 @@ export default function SuppliersView({
                     >
                       <option value="">-- اختر البنك للمطابقة --</option>
                       {(invoiceSettings?.bankAccounts || []).map((b, idx) => (
-                        <option key={idx} value={b.bankName}>${b.bankName} (رصيد النظام: ${(b.balance || 0).toLocaleString()} ر.ي)</option>
+                        <option key={idx} value={b.name}>
+                          {b.name} - {b.accountNumber || 'بدون رقم حساب'} (رصيد النظام: {(b.balance || 0).toLocaleString()} ر.ي)
+                        </option>
                       ))}
                     </select>
                   </div>
@@ -4110,12 +4520,12 @@ export default function SuppliersView({
                       </div>
 
                       {physicalBankBalance && (() => {
-                        const bankObj = (invoiceSettings?.bankAccounts || []).find((b) => b.bankName === selectedReconciliationBank);
+                        const bankObj = (invoiceSettings?.bankAccounts || []).find((b) => b.name === selectedReconciliationBank);
                         const systemBal = bankObj ? (bankObj.balance || 0) : 0;
                         const diff = Number(physicalBankBalance) - systemBal;
 
                         return (
-                          <div className="space-y-2 pt-2 border-t border-slate-200 font-bold">
+                           <div className="space-y-2 pt-2 border-t border-slate-200 font-bold">
                             <div className="flex justify-between">
                               <span className="text-slate-500">الفارق مع كشف الحساب:</span>
                               <span className={diff === 0 ? "text-emerald-600" : "text-rose-600"}>
@@ -4127,7 +4537,7 @@ export default function SuppliersView({
                                 type="button"
                                 onClick={() => {
                                   const updatedBanks = (invoiceSettings?.bankAccounts || []).map((b) => 
-                                    b.bankName === selectedReconciliationBank ? { ...b, balance: Number(physicalBankBalance) } : b
+                                    b.name === selectedReconciliationBank ? { ...b, balance: Number(physicalBankBalance) } : b
                                   );
                                   onUpdateInvoiceSettings({ ...invoiceSettings, bankAccounts: updatedBanks });
 
@@ -4161,66 +4571,144 @@ export default function SuppliersView({
 
               {/* Account Balancing Render */}
               {reconciliationTab === 'balancing' && (
-                <div className="space-y-4 animate-fade-in text-[11px]">
-                  <div className="bg-blue-50 text-blue-800 p-3 rounded-xl border border-blue-100 text-[10px] font-bold leading-relaxed">
-                    مقارنة أرصدة الحسابات المالية بالنظام (System Ledger) مع الأرصدة الواقعية الفعلية (Physical counts) مع اقتراح قيود تسوية تلقائية متوازنة لحل العجز أو الفائض المحاسبي.
+                <div className="space-y-5 animate-fade-in text-[11px]">
+                  <div className="bg-gradient-to-r from-blue-50 to-indigo-50 text-blue-900 p-3.5 rounded-2xl border border-blue-100 text-[10px] font-bold leading-relaxed space-y-1">
+                    <p className="font-extrabold text-[11px] text-blue-800 flex items-center gap-1.5">
+                      <span>⚖️</span>
+                      <span>شاشة موازنة ومطابقة الحسابات الختامية (Account Balancing Screen)</span>
+                    </p>
+                    <p className="text-slate-600 font-medium">مقارنة أرصدة الحسابات المالية بالنظام (System Ledger) مع الأرصدة الواقعية الفعلية (Physical counts) مع اقتراح قيود تسوية تلقائية متوازنة لحل العجز أو الفائض المحاسبي.</p>
                   </div>
 
-                  <div className="overflow-x-auto border border-slate-100 rounded-2xl">
-                    <table className="w-full text-right text-[11px]">
-                      <thead>
-                        <tr className="bg-slate-50 text-slate-500 font-extrabold border-b border-slate-100">
-                          <th className="p-2 text-right">الحساب المالي</th>
-                          <th className="p-2 text-center">النظام</th>
-                          <th className="p-2 text-center w-24">الفعلي</th>
-                          <th className="p-2 text-left">الفارق</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 font-bold text-slate-700">
-                        {(() => {
-                          const sysBalances = {
-                            'الخزينة العامة': treasuryBalance || 0,
-                            'حساب بنك التضامن': (invoiceSettings?.bankAccounts || []).reduce((sum, b) => sum + (b.balance || 0), 0),
-                            'مخزون المستودع الرئيسي': 12500000,
-                            'ذمم العملاء المدينة': totalCustomersBalance || 0,
-                            'ذمم الموردين الدائنة': totalSuppliersBalance || 0
-                          };
+                  {/* Simulation Helper Button */}
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-slate-50 p-3 rounded-2xl border border-slate-200/60 gap-2">
+                    <div>
+                      <p className="text-[10px] text-slate-800 font-extrabold">مساعد محاكاة سيناريو الفروقات:</p>
+                      <p className="text-[9px] text-slate-400 font-bold mt-0.5">يضبط الخزينة بالنظام لـ 250,000 (الفعلي 350,000) والبنك بالنظام لـ 1,500,000 (الفعلي 4,200,000).</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onUpdateTreasuryBalance(250000);
+                        const updatedBanks = [
+                          { id: 'bank-1', name: 'بنك التضامن الإسلامي', accountNumber: '100200300', balance: 1500000, isDefault: true },
+                          { id: 'bank-2', name: 'بنك اليمن والكويت', accountNumber: '400500600', balance: 0, isDefault: false }
+                        ];
+                        onUpdateInvoiceSettings({ ...invoiceSettings, bankAccounts: updatedBanks });
 
-                          return Object.entries(sysBalances).map(([name, sysVal]) => {
-                            const actVal = actualBalances[name] !== undefined ? actualBalances[name] : sysVal;
-                            const diff = actVal - sysVal;
-                            return (
-                              <tr key={name} className="hover:bg-slate-50/50">
-                                <td className="p-2 font-black text-slate-800 text-[10px]">{name}</td>
-                                <td className="p-2 text-center font-mono text-slate-500">{sysVal.toLocaleString()}</td>
-                                <td className="p-2 text-center">
-                                  <input
-                                    type="number"
-                                    value={actVal}
-                                    onChange={(e) => {
-                                      const updated = { ...actualBalances, [name]: Number(e.target.value) };
-                                      setActualBalances(updated);
-                                      localStorage.setItem('wms_actual_balances', JSON.stringify(updated));
-                                    }}
-                                    className="w-full bg-slate-50 border border-slate-200 text-[10px] font-black text-center rounded-md px-1.5 py-0.5 font-mono focus:outline-hidden"
-                                  />
-                                </td>
-                                <td className={`p-2 text-left font-mono text-[10px] ${diff === 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                  {diff === 0 ? '✓' : `${diff > 0 ? '+' : ''}${diff.toLocaleString()}`}
-                                </td>
-                              </tr>
-                            );
-                          });
-                        })()}
-                      </tbody>
-                    </table>
+                        const withVariations = {
+                          'الخزينة العامة': 350000,
+                          'حساب البنك الرئيسي': 4200000,
+                          'مخزون المستودع الرئيسي': 12500000,
+                          'ذمم العملاء المدينة': totalCustomersBalance || 1500000,
+                          'ذمم الموردين الدائنة': totalSuppliersBalance || 850000
+                        };
+                        setActualBalances(withVariations);
+                        localStorage.setItem('wms_actual_balances', JSON.stringify(withVariations));
+                        alert('🔄 تم بنجاح ضبط أرصدة النظام وأرصدة الجرد الفعلي طبقاً لتقرير المشكلة لمحاكاة الفارق (+100,000 ريال للخزينة) و (+2,700,000 ريال للبنك)!');
+                      }}
+                      className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-extrabold text-[9px] px-3.5 py-1.5 rounded-xl shadow-xs transition-all cursor-pointer"
+                    >
+                      ⚡ محاكاة سيناريو الفروقات الوارد بالتقرير
+                    </button>
+                  </div>
+
+                  {/* TABLE 1: System Account Ledger Activity */}
+                  <div className="space-y-1.5">
+                    <span className="text-[10px] font-black text-slate-500 block">📊 جدول (1): حركة أرصدة حسابات الأستاذ العام بالنظام (System Activity):</span>
+                    <div className="overflow-x-auto border border-slate-100 rounded-2xl shadow-3xs">
+                      <table className="w-full text-right text-[11px]">
+                        <thead>
+                          <tr className="bg-slate-50 text-slate-500 font-extrabold border-b border-slate-100">
+                            <th className="p-2.5 text-right">الحساب الدفتري</th>
+                            <th className="p-2.5 text-center">الرصيد الافتتاحي</th>
+                            <th className="p-2.5 text-center text-emerald-600">حركة مدين (+)</th>
+                            <th className="p-2.5 text-center text-rose-600">حركة دائن (-)</th>
+                            <th className="p-2.5 text-left bg-slate-100/50">رصيد النظام الحالي</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 font-bold text-slate-700 bg-white">
+                          {getSystemAccountLedger().map((ledger) => (
+                            <tr key={ledger.name} className="hover:bg-slate-50/50">
+                              <td className="p-2.5 font-black text-slate-800 text-[10px]">{ledger.name}</td>
+                              <td className="p-2.5 text-center font-mono text-slate-500">{ledger.opening.toLocaleString()} ر.ي</td>
+                              <td className="p-2.5 text-center font-mono text-emerald-600">{(ledger.debits > 0) ? `+${ledger.debits.toLocaleString()}` : '0'}</td>
+                              <td className="p-2.5 text-center font-mono text-rose-600">{(ledger.credits > 0) ? `-${ledger.credits.toLocaleString()}` : '0'}</td>
+                              <td className="p-2.5 text-left font-mono font-black text-slate-900 bg-slate-50/50">{ledger.balance.toLocaleString()} ر.ي</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* TABLE 2: Physical Counts vs System */}
+                  <div className="space-y-1.5">
+                    <span className="text-[10px] font-black text-slate-500 block">🔍 جدول (2): مطابقة رصيد النظام الفعلي مع الجرد والعد الواقعي (Physical Audit):</span>
+                    <div className="overflow-x-auto border border-slate-100 rounded-2xl shadow-3xs">
+                      <table className="w-full text-right text-[11px]">
+                        <thead>
+                          <tr className="bg-slate-50 text-slate-500 font-extrabold border-b border-slate-100">
+                            <th className="p-2.5 text-right">الحساب المالي</th>
+                            <th className="p-2.5 text-center">رصيد النظام</th>
+                            <th className="p-2.5 text-center w-28">الرصيد الفعلي المجرود</th>
+                            <th className="p-2.5 text-left">الفارق والوضعية</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 font-bold text-slate-700 bg-white">
+                          {(() => {
+                            const sysBalances = {
+                              'الخزينة العامة': treasuryBalance || 0,
+                              'حساب البنك الرئيسي': (invoiceSettings?.bankAccounts || []).reduce((sum: number, b: any) => sum + (b.balance || 0), 0),
+                              'مخزون المستودع الرئيسي': 12500000,
+                              'ذمم العملاء المدينة': totalCustomersBalance || 0,
+                              'ذمم الموردين الدائنة': totalSuppliersBalance || 0
+                            };
+
+                            return Object.entries(sysBalances).map(([name, sysVal]) => {
+                              const actVal = actualBalances[name] !== undefined ? actualBalances[name] : sysVal;
+                              const diff = Number((sysVal - actVal).toFixed(2));
+                              return (
+                                <tr key={name} className="hover:bg-slate-50/50">
+                                  <td className="p-2.5 font-black text-slate-800 text-[10px]">{name}</td>
+                                  <td className="p-2.5 text-center font-mono text-slate-500">{sysVal.toLocaleString()} ر.ي</td>
+                                  <td className="p-2.5 text-center">
+                                    <div className="relative flex items-center">
+                                      <input
+                                        type="number"
+                                        value={actVal}
+                                        onChange={(e) => {
+                                          const updated = { ...actualBalances, [name]: Number(e.target.value) };
+                                          setActualBalances(updated);
+                                          localStorage.setItem('wms_actual_balances', JSON.stringify(updated));
+                                        }}
+                                        className="w-full bg-slate-50 hover:bg-slate-100 border border-slate-200 text-[10px] font-black text-center rounded-xl px-2 py-1.5 font-mono focus:border-blue-500 focus:bg-white focus:outline-hidden"
+                                      />
+                                    </div>
+                                  </td>
+                                  <td className="p-2.5 text-left font-mono text-[10px]">
+                                    {diff === 0 ? (
+                                      <span className="text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md text-[9px] font-bold">✓ مطابق تماماً</span>
+                                    ) : (
+                                      <span className={`px-2 py-0.5 rounded-md text-[9px] font-extrabold ${diff > 0 ? 'text-rose-600 bg-rose-50' : 'text-blue-600 bg-blue-50'}`}>
+                                        {diff > 0 ? `عجز: -${diff.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : `فائض: +${Math.abs(diff).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                                      </span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            });
+                          })()}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
 
                   {/* Adjustment suggestion block */}
                   {(() => {
                     const sysBalances = {
                       'الخزينة العامة': treasuryBalance || 0,
-                      'حساب بنك التضامن': (invoiceSettings?.bankAccounts || []).reduce((sum, b) => sum + (b.balance || 0), 0),
+                      'حساب البنك الرئيسي': (invoiceSettings?.bankAccounts || []).reduce((sum: number, b: any) => sum + (b.balance || 0), 0),
                       'مخزون المستودع الرئيسي': 12500000,
                       'ذمم العملاء المدينة': totalCustomersBalance || 0,
                       'ذمم الموردين الدائنة': totalSuppliersBalance || 0
@@ -4228,64 +4716,106 @@ export default function SuppliersView({
 
                     const discrepancies = Object.entries(sysBalances)
                       .map(([name, sysVal]) => ({ name, sysVal, actVal: actualBalances[name] !== undefined ? actualBalances[name] : sysVal }))
-                      .filter(item => item.actVal !== item.sysVal);
+                      .filter(item => Number((item.sysVal - item.actVal).toFixed(2)) !== 0);
 
                     if (discrepancies.length === 0) return null;
 
                     return (
-                      <div className="bg-amber-50 p-3 rounded-2xl border border-amber-200/50 space-y-2 animate-scale-up">
-                        <span className="text-[11px] font-black text-amber-850 block">💡 أداة التسويات واقتراح القيود المحاسبية:</span>
-                        <div className="bg-white p-2.5 rounded-xl border border-amber-100 text-[10px] text-slate-600 space-y-1 font-mono">
+                      <div className="bg-amber-50 p-4 rounded-2xl border border-amber-200/60 space-y-3 animate-scale-up">
+                        <span className="text-[11px] font-black text-amber-850 flex items-center gap-1">
+                          <span>💡</span>
+                          <span>أداة تسوية الفوارق واقتراح قيد اليومية (Double-Entry Posting Suggestion):</span>
+                        </span>
+                        
+                        <div className="bg-white p-3 rounded-xl border border-amber-200/30 text-[10px] text-slate-700 space-y-2 font-mono">
+                          <p className="text-slate-400 border-b border-slate-100 pb-1.5 font-sans font-bold">يقترح النظام توليد قيد التسوية التالي تلقائياً:</p>
                           {discrepancies.map((d) => {
-                            const diff = d.actVal - d.sysVal;
+                            const diff = Number((d.sysVal - d.actVal).toFixed(2));
+                            const isAsset = d.name !== 'ذمم الموردين الدائنة';
+                            
+                            // Correct bookkeeping logic (System - Actual):
+                            let debitAccount = '';
+                            let creditAccount = '';
+                            if (isAsset) {
+                              debitAccount = diff > 0 ? 'حساب تسويات فروق الجرد والأرصدة' : d.name;
+                              creditAccount = diff > 0 ? d.name : 'حساب تسويات فروق الجرد والأرصدة';
+                            } else {
+                              debitAccount = diff > 0 ? d.name : 'حساب تسويات فروق الجرد والأرصدة';
+                              creditAccount = diff > 0 ? 'حساب تسويات فروق الجرد والأرصدة' : d.name;
+                            }
+
                             return (
-                              <div key={d.name} className="border-b border-slate-100/50 pb-1">
-                                • {diff > 0 ? (
-                                  <>مدين (+): <span className="text-emerald-600 font-extrabold">{d.name}</span> بمبلغ {Math.abs(diff).toLocaleString()} ر.ي</>
-                                ) : (
-                                  <>دائن (-): <span className="text-rose-600 font-extrabold">{d.name}</span> بمبلغ {Math.abs(diff).toLocaleString()} ر.ي</>
-                                )}
+                              <div key={d.name} className="space-y-1 pb-1 border-b border-dashed border-slate-100 last:border-0 last:pb-0">
+                                <div className="flex justify-between">
+                                  <span>• من حـ/ <span className="font-extrabold text-blue-600">{debitAccount}</span></span>
+                                  <span className="font-black">مدين (+): {Math.abs(diff).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ر.ي</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span>• إلى حـ/ <span className="font-extrabold text-rose-600">{creditAccount}</span></span>
+                                  <span className="font-black">دائن (-): {Math.abs(diff).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ر.ي</span>
+                                </div>
                               </div>
                             );
                           })}
                         </div>
+
                         <button
                           type="button"
                           onClick={() => {
+                            const entriesToCreate: any[] = [];
                             discrepancies.forEach((d) => {
-                              const diff = d.actVal - d.sysVal;
+                              const diff = Number((d.sysVal - d.actVal).toFixed(2));
                               if (d.name === 'الخزينة العامة') {
                                 onUpdateTreasuryBalance(d.actVal);
-                              } else if (d.name === 'حساب بنك التضامن') {
-                                const updatedBanks = (invoiceSettings?.bankAccounts || []).map((b) => 
-                                  b.bankName === 'بنك التضامن' ? { ...b, balance: d.actVal } : b
-                                );
-                                onUpdateInvoiceSettings({ ...invoiceSettings, bankAccounts: updatedBanks });
+                              } else if (d.name === 'حساب البنك الرئيسي') {
+                                if (invoiceSettings?.bankAccounts && invoiceSettings.bankAccounts.length > 0) {
+                                  const updatedBanks = invoiceSettings.bankAccounts.map((b: any) => 
+                                    b.isDefault || b.name?.includes('التضامن') ? { ...b, balance: d.actVal } : b
+                                  );
+                                  onUpdateInvoiceSettings({ ...invoiceSettings, bankAccounts: updatedBanks });
+                                }
+                              }
+
+                              const isAsset = d.name !== 'ذمم الموردين الدائنة';
+                              const entryNotes = `قيد تسوية لموازنة وتطابق رصيد حساب [${d.name}] مع الجرد الفعلي والواقعي للمنشأة`;
+                              const debitAmt = Number(Math.abs(diff).toFixed(2));
+                              const creditAmt = Number(Math.abs(diff).toFixed(2));
+
+                              let debitAccountName = '';
+                              let creditAccountName = '';
+                              if (isAsset) {
+                                debitAccountName = diff > 0 ? 'حساب تسويات فروق الجرد والأرصدة' : d.name;
+                                creditAccountName = diff > 0 ? d.name : 'حساب تسويات فروق الجرد والأرصدة';
+                              } else {
+                                debitAccountName = diff > 0 ? d.name : 'حساب تسويات فروق الجرد والأرصدة';
+                                creditAccountName = diff > 0 ? 'حساب تسويات فروق الجرد والأرصدة' : d.name;
                               }
 
                               const entryId = `JV-BAL-${Math.floor(1000 + Math.random() * 9000)}`;
-                              createAutoJournalEntry({
-                                notes: `قيد تسوية لموازنة وتطابق رصيد حساب [${d.name}] مع الجرد الفعلي والواقعي للمنشأة`,
+                              entriesToCreate.push({
+                                notes: entryNotes,
                                 reference: entryId,
                                 lines: [
-                                  { account: d.name, debit: diff > 0 ? Math.abs(diff) : 0, credit: diff < 0 ? Math.abs(diff) : 0 },
-                                  { account: 'حساب تسويات الأرصدة الختامية', debit: diff < 0 ? Math.abs(diff) : 0, credit: diff > 0 ? Math.abs(diff) : 0 }
+                                  { account: debitAccountName, debit: debitAmt, credit: 0 },
+                                  { account: creditAccountName, debit: 0, credit: creditAmt }
                                 ],
                                 date: new Date().toISOString().split('T')[0]
                               });
                             });
 
-                            // Reset physical inputs
+                            createMultipleAutoJournalEntries(entriesToCreate);
+
+                            // Reset physical inputs back to matched actual balances
                             const reset = { ...actualBalances };
-                            Object.keys(sysBalances).forEach(k => {
-                              reset[k] = sysBalances[k];
+                            discrepancies.forEach((d) => {
+                              reset[d.name] = d.actVal;
                             });
                             setActualBalances(reset);
                             localStorage.setItem('wms_actual_balances', JSON.stringify(reset));
 
-                            alert('✅ تم ترحيل قيود تسوية موازنة الأرصدة ومطابقة الأستاذ العام بنجاح!');
+                            alert('✅ تم اعتماد ترحيل قيود تسوية موازنة الأرصدة ومطابقة الحسابات العامة بنجاح وتحديث السيولة الدفترية!');
                           }}
-                          className="w-full bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-[10px] py-2 rounded-xl transition-all cursor-pointer shadow-3xs"
+                          className="w-full bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-700 hover:to-yellow-700 text-white font-extrabold text-[10px] py-2.5 rounded-xl transition-all cursor-pointer shadow-sm active:scale-98"
                         >
                           اعتماد ترحيل قيود الضبط والوزن آلياً ⚡
                         </button>
@@ -4296,8 +4826,8 @@ export default function SuppliersView({
               )}
             </div>
 
-            {/* LEFT COLUMN: Final Accounts & Financial Reports (col-span-7) */}
-            <div className="lg:col-span-7 bg-white border border-slate-100 rounded-3xl p-5 shadow-xs space-y-5">
+            {/* LEFT COLUMN: Final Accounts & Financial Reports */}
+            <div className="bg-white border border-slate-100 rounded-3xl p-5 shadow-xs space-y-5 flex flex-col justify-between">
               <div>
                 <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
                   <span className="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg">📊</span>
@@ -4370,6 +4900,12 @@ export default function SuppliersView({
                         <span>ذمم العملاء (AR)</span>
                         <span className="text-slate-500 font-mono">{(totalCustomersBalance || 0).toLocaleString()} ر.ي</span>
                       </li>
+                      <li className="flex justify-between items-center bg-white p-2 rounded-xl border border-slate-100">
+                        <span>عهدة الموظفين المعلقة</span>
+                        <span className="text-slate-500 font-mono">
+                          {(employees.reduce((sum, e) => sum + (e.custody || 0), 0)).toLocaleString()} ر.ي
+                        </span>
+                      </li>
                     </ul>
                   </div>
 
@@ -4383,12 +4919,6 @@ export default function SuppliersView({
                       <li className="flex justify-between items-center bg-white p-2 rounded-xl border border-slate-100">
                         <span>ذمم الموردين (AP)</span>
                         <span className="text-slate-500 font-mono">{(totalSuppliersBalance || 0).toLocaleString()} ر.ي</span>
-                      </li>
-                      <li className="flex justify-between items-center bg-white p-2 rounded-xl border border-slate-100">
-                        <span>عهدة الموظفين المعلقة</span>
-                        <span className="text-slate-500 font-mono">
-                          {(employees.reduce((sum, e) => sum + (e.custody || 0), 0)).toLocaleString()} ر.ي
-                        </span>
                       </li>
                     </ul>
                   </div>
@@ -4430,6 +4960,12 @@ export default function SuppliersView({
                           <td className="p-2 text-center font-mono text-slate-400">-</td>
                         </tr>
                         <tr>
+                          <td className="p-2 font-mono text-slate-400">11400</td>
+                          <td className="p-2">عهد الموظفين المعلقة (العهدة المالية)</td>
+                          <td className="p-2 text-center font-mono text-emerald-600">{(employees.reduce((sum, e) => sum + (e.custody || 0), 0)).toLocaleString()}</td>
+                          <td className="p-2 text-center font-mono text-slate-400">-</td>
+                        </tr>
+                        <tr>
                           <td className="p-2 font-mono text-slate-400">21100</td>
                           <td className="p-2">ذمم الموردين الدائنة (AP)</td>
                           <td className="p-2 text-center font-mono text-slate-400">-</td>
@@ -4460,230 +4996,292 @@ export default function SuppliersView({
               {finalAccountsTab === 'financial_statements' && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-fade-in text-[11px] text-right">
                   {/* Income Statement Summary */}
-                  <div className="bg-slate-50 border border-slate-200/60 rounded-2xl p-4 flex flex-col justify-between space-y-3">
-                    <div className="space-y-2">
-                      <div className="flex justify-between items-center border-b border-slate-200 pb-2">
-                        <span className="font-extrabold text-slate-800 flex items-center gap-1">
-                          <span>📋</span>
-                          <span>قائمة الدخل السنوية (Profit & Loss)</span>
-                        </span>
-                        <span className="text-[9px] bg-slate-200 text-slate-600 font-bold px-2 py-0.5 rounded-md font-mono">P & L</span>
-                      </div>
-                      <div className="space-y-1.5 font-bold text-slate-600">
-                        <div className="flex justify-between">
-                          <span>إجمالي الإيرادات السنوية:</span>
-                          <span className="text-emerald-600 font-mono">
-                            +{((vouchers.filter((v) => v.isReceipt && (v.title?.includes('مبيعات') || v.notes?.includes('مبيعات') || v.partnerType === 'عميل')).reduce((sum, v) => sum + v.amount, 0) || 5800000)).toLocaleString()} ر.ي
-                          </span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>إجمالي المصروفات السنوية:</span>
-                          <span className="text-rose-600 font-mono">
-                            -{(employees.reduce((sum, e) => sum + (e.salary || 0), 0) * 12 || 1200000).toLocaleString()} ر.ي
-                          </span>
-                        </div>
-                        <div className="flex justify-between border-t border-dashed border-slate-200 pt-1.5 font-extrabold text-slate-800">
-                          <span>صافي الأرباح السنوية:</span>
-                          <span className="text-blue-600 font-mono">
-                            {((vouchers.filter((v) => v.isReceipt && (v.title?.includes('مبيعات') || v.notes?.includes('مبيعات') || v.partnerType === 'عميل')).reduce((sum, v) => sum + v.amount, 0) || 5800000) - (employees.reduce((sum, e) => sum + (e.salary || 0), 0) * 12 || 1200000)).toLocaleString()} ر.ي
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const printWindow = window.open('', '_blank');
-                        if (!printWindow) return;
-                        const companyName = invoiceSettings?.companyName || 'شركة المدى للتجارة والتوزيع';
-                        const commercialRegistry = invoiceSettings?.commercialRegistryNumber || '101202304';
-                        const companyLogo = invoiceSettings?.logo || '';
-                        const dateStr = new Date().toLocaleDateString('ar-YE');
-                        const totalSalesRevenue = vouchers.filter((v) => v.isReceipt && (v.title?.includes('مبيعات') || v.notes?.includes('مبيعات') || v.partnerType === 'عميل')).reduce((sum, v) => sum + v.amount, 0) || 5800000;
-                        const totalOperatingExpenses = (employees.reduce((sum, e) => sum + (e.salary || 0), 0) * 12) || 1200000;
-                        const netEarnings = totalSalesRevenue - totalOperatingExpenses;
+                  {(() => {
+                    const summaries = getFinancialSummaries(pnlCostCenterFilter);
+                    return (
+                      <div className="bg-slate-50 border border-slate-200/60 rounded-2xl p-4 flex flex-col justify-between space-y-3">
+                        <div className="space-y-3">
+                          <div className="flex justify-between items-center border-b border-slate-200 pb-2">
+                            <span className="font-extrabold text-slate-800 flex items-center gap-1">
+                              <span>📋</span>
+                              <span>قائمة الدخل السنوية (Profit & Loss)</span>
+                            </span>
+                            <span className="text-[9px] bg-slate-200 text-slate-600 font-bold px-2 py-0.5 rounded-md font-mono">P & L</span>
+                          </div>
 
-                        printWindow.document.write(`
-                          <html>
-                            <head>
-                              <title>قائمة الدخل السنوية</title>
-                              <style>
-                                @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;750;800&display=swap');
-                                body { font-family: 'Inter', sans-serif; direction: rtl; text-align: right; padding: 40px; color: #334155; }
-                              </style>
-                            </head>
-                            <body>
-                              <div style="display: flex; justify-content: space-between; align-items: center; border-b: 2px solid #cbd5e1; padding-bottom: 20px; margin-bottom: 30px;">
-                                <div>
-                                  <h1 style="font-size: 24px; font-weight: 800; margin: 0; color: #0f172a;">${companyName}</h1>
-                                  <p style="font-size: 12px; color: #64748b; margin: 5px 0 0 0;">السجل التجاري رقم: ${commercialRegistry}</p>
-                                </div>
-                                ${companyLogo ? `<img src="${companyLogo}" alt="Logo" style="height: 60px; max-width: 150px; object-fit: contain;" />` : ''}
-                              </div>
-                              <div style="text-align: center; margin-bottom: 40px;">
-                                <h2 style="font-size: 20px; font-weight: 800; margin: 0; color: #0284c7;">قائمة الدخل السنوية الختامية (Income Statement)</h2>
-                                <p style="font-size: 12px; color: #64748b; margin: 5px 0 0 0;">للفترة المنتهية في تاريخ ${dateStr}</p>
-                              </div>
-                              <table style="width: 100%; border-collapse: collapse; margin-bottom: 40px; font-size: 14px;">
-                                <thead>
-                                  <tr style="background-color: #f1f5f9; border-bottom: 2px solid #e2e8f0;">
-                                    <th style="padding: 12px; text-align: right; font-weight: 800;">البند المالي</th>
-                                    <th style="padding: 12px; text-align: left; font-weight: 800;">المبلغ بالريال اليمني</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  <tr>
-                                    <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; font-weight: 700;">إيرادات مبيعات السلع والخدمات</td>
-                                    <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; text-align: left; font-weight: 700; color: #10b981;">+\ ${totalSalesRevenue.toLocaleString()} ر.ي</td>
-                                  </tr>
-                                  <tr>
-                                    <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; font-weight: 700;">مصروف الرواتب والأجور التشغيلية السنوية</td>
-                                    <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; text-align: left; font-weight: 700; color: #ef4444;">-\ ${totalOperatingExpenses.toLocaleString()} ر.ي</td>
-                                  </tr>
-                                  <tr style="background-color: #f8fafc; font-weight: 800; font-size: 16px; border-top: 2px solid #cbd5e1;">
-                                    <td style="padding: 16px;">صافي الأرباح السنوية التشغيلية (Net Income)</td>
-                                    <td style="padding: 16px; text-align: left; color: #0284c7;">${netEarnings.toLocaleString()} ر.ي</td>
-                                  </tr>
-                                </tbody>
-                              </table>
-                              <div style="margin-top: 80px; display: flex; justify-content: space-between; text-align: center; font-size: 13px;">
-                                <div><p style="margin-bottom: 50px; font-weight: 700;">توقيع المحاسب القانوني</p><p style="color: #94a3b8;">__________________</p></div>
-                                <div><p style="margin-bottom: 50px; font-weight: 700;">توقيع المدير المالي</p><p style="color: #94a3b8;">__________________</p></div>
-                                <div><p style="margin-bottom: 50px; font-weight: 700;">ختم وتصديق الشركة</p><p style="color: #94a3b8;">__________________</p></div>
-                              </div>
-                            </body>
-                          </html>
-                        `);
-                        printWindow.document.close();
-                        printWindow.focus();
-                        setTimeout(() => { printWindow.print(); }, 500);
-                      }}
-                      className="w-full bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-[10px] py-2 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1"
-                    >
-                      <span>تصدير قائمة الدخل PDF 📄</span>
-                    </button>
-                  </div>
+                          {/* Cost Center Filter dropdown in P&L */}
+                          <div className="flex items-center gap-2 bg-white/60 p-1.5 rounded-lg border border-slate-150">
+                            <span className="text-[10px] font-black text-slate-500 whitespace-nowrap">مركز التكلفة:</span>
+                            <select
+                              value={pnlCostCenterFilter}
+                              onChange={(e) => setPnlCostCenterFilter(e.target.value)}
+                              className="w-full bg-white border border-slate-200/80 rounded-md text-[10px] font-bold px-2 py-1 text-slate-700 focus:outline-hidden"
+                            >
+                              <option value="">-- كل الأقسام والمراكز --</option>
+                              {['الإيجار (Rent)', 'الكهرباء (Electricity)', 'النقل والشحن (Transport)', 'مبيعات', 'مصروفات المحل', 'المستودع الرئيسي', 'الإدارة العامة'].map(cc => (
+                                <option key={cc} value={cc}>{cc}</option>
+                              ))}
+                            </select>
+                          </div>
 
+                          <div className="space-y-1.5 font-bold text-slate-600">
+                            <div className="flex justify-between">
+                              <span>إجمالي الإيرادات السنوية:</span>
+                              <span className="text-emerald-600 font-mono">
+                                +{summaries.revenue.toLocaleString()} ر.ي
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>إجمالي المصروفات السنوية:</span>
+                              <span className="text-rose-600 font-mono">
+                                -{summaries.expenses.toLocaleString()} ر.ي
+                              </span>
+                            </div>
+                            <div className="flex justify-between border-t border-dashed border-slate-200 pt-1.5 font-extrabold text-slate-800">
+                              <span>صافي الأرباح السنوية:</span>
+                              <span className="text-blue-600 font-mono">
+                                {summaries.netProfit.toLocaleString()} ر.ي
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const printWindow = window.open('', '_blank');
+                            if (!printWindow) return;
+                            const companyName = invoiceSettings?.companyName || 'شركة المدى للتجارة والتوزيع';
+                            const commercialRegistry = invoiceSettings?.commercialRegistryNumber || '101202304';
+                            const taxRatePercent = invoiceSettings?.taxRate !== undefined ? invoiceSettings.taxRate : 15;
+                            const taxText = invoiceSettings?.taxEnabled ? `مكلف ضريبياً بنسبة ${taxRatePercent}%` : `الضريبة المعيارية: ${taxRatePercent}%`;
+                            const companyLogo = invoiceSettings?.logo || '';
+                            const registryFileUrl = invoiceSettings?.commercialRegistryFileUrl || '';
+                            const dateStr = new Date().toLocaleDateString('ar-YE');
+
+                            const stampHtml = registryFileUrl ? `
+                              <div style="position: absolute; top: 110px; left: 40px; text-align: center; opacity: 0.85; transform: rotate(-5deg);">
+                                <img src="${registryFileUrl}" alt="Stamp" style="height: 70px; max-width: 130px; object-fit: contain; filter: grayscale(1) contrast(1.3);" />
+                                <p style="font-size: 8px; color: #64748b; font-weight: bold; margin: 2px 0 0 0;">سند رسمي معتمد</p>
+                              </div>
+                            ` : `
+                              <div style="position: absolute; top: 110px; left: 40px; border: 3px double #cbd5e1; border-radius: 50%; width: 75px; height: 75px; display: flex; flex-direction: column; justify-content: center; align-items: center; opacity: 0.5; transform: rotate(-12deg);">
+                                <span style="font-size: 9px; font-weight: 800; color: #64748b; font-family: sans-serif; line-height: 1;">رسمي</span>
+                                <span style="font-size: 8px; font-weight: 800; color: #94a3b8; font-family: sans-serif; line-height: 1; margin-top: 2px;">معتمد</span>
+                              </div>
+                            `;
+
+                            printWindow.document.write(`
+                              <html>
+                                <head>
+                                  <title>قائمة الدخل السنوية</title>
+                                  <style>
+                                    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;750;800&display=swap');
+                                    body { font-family: 'Inter', sans-serif; direction: rtl; text-align: right; padding: 40px; color: #334155; position: relative; }
+                                  </style>
+                                </head>
+                                <body>
+                                  ${stampHtml}
+                                  <div style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-25deg); opacity: 0.04; pointer-events: none; z-index: -1000; text-align: center; width: 100%; max-width: 600px; font-family: 'Inter', sans-serif;">
+                                    ${companyLogo ? `<img src="${companyLogo}" style="width: 250px; height: 250px; object-fit: contain; margin-bottom: 20px; filter: grayscale(1);" />` : ''}
+                                    <div style="font-size: 28px; font-weight: 900; color: #000; direction: rtl; line-height: 1.5;">
+                                      ${companyName} <br/> 
+                                      رقم السجل: ${commercialRegistry} <br/> 
+                                      الرقم الضريبي المكلف: ${taxRatePercent}%
+                                    </div>
+                                  </div>
+                                  <div style="display: flex; justify-content: space-between; align-items: center; border-b: 2px solid #cbd5e1; padding-bottom: 20px; margin-bottom: 30px;">
+                                    <div>
+                                      <h1 style="font-size: 24px; font-weight: 800; margin: 0; color: #0f172a;">${companyName}</h1>
+                                      <p style="font-size: 11px; color: #64748b; margin: 5px 0 0 0; font-weight: bold;">السجل التجاري رقم: ${commercialRegistry}</p>
+                                      <p style="font-size: 11px; color: #64748b; margin: 3px 0 0 0; font-weight: bold;">الوضع الضريبي: ${taxText}</p>
+                                    </div>
+                                    ${companyLogo ? `<img src="${companyLogo}" alt="Logo" style="height: 60px; max-width: 150px; object-fit: contain;" />` : ''}
+                                  </div>
+                                  <div style="text-align: center; margin-bottom: 40px;">
+                                    <h2 style="font-size: 20px; font-weight: 800; margin: 0; color: #0284c7;">قائمة الدخل الختامية (Income Statement)</h2>
+                                    ${pnlCostCenterFilter ? `<p style="font-size: 13px; font-weight: 800; color: #0369a1; margin: 6px 0 0 0;">القسم / مركز التكلفة: [${pnlCostCenterFilter}]</p>` : ''}
+                                    <p style="font-size: 12px; color: #64748b; margin: 5px 0 0 0;">للفترة المنتهية في تاريخ ${dateStr}</p>
+                                    <p style="font-size: 10px; color: #94a3b8; font-weight: bold; margin: 2px 0 0 0;">(مرتبط تلقائياً بدفتر اليومية العامة والقيود المعتمدة)</p>
+                                  </div>
+                                  <table style="width: 100%; border-collapse: collapse; margin-bottom: 40px; font-size: 14px;">
+                                    <thead>
+                                      <tr style="background-color: #f1f5f9; border-bottom: 2px solid #e2e8f0;">
+                                        <th style="padding: 12px; text-align: right; font-weight: 800;">البند المالي</th>
+                                        <th style="padding: 12px; text-align: left; font-weight: 800;">المبلغ بالريال اليمني</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      <tr>
+                                        <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; font-weight: 700;">إيرادات مبيعات السلع والخدمات</td>
+                                        <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; text-align: left; font-weight: 700; color: #10b981;">+\ ${summaries.revenue.toLocaleString()} ر.ي</td>
+                                      </tr>
+                                      <tr>
+                                        <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; font-weight: 700;">مصروف الرواتب والأجور التشغيلية السنوية</td>
+                                        <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; text-align: left; font-weight: 700; color: #ef4444;">-\ ${summaries.expenses.toLocaleString()} ر.ي</td>
+                                      </tr>
+                                      <tr style="background-color: #f8fafc; font-weight: 800; font-size: 16px; border-top: 2px solid #cbd5e1;">
+                                        <td style="padding: 16px;">صافي الأرباح السنوية التشغيلية (Net Income)</td>
+                                        <td style="padding: 16px; text-align: left; color: #0284c7;">${summaries.netProfit.toLocaleString()} ر.ي</td>
+                                      </tr>
+                                    </tbody>
+                                  </table>
+                                  <div style="margin-top: 80px; display: flex; justify-content: space-between; text-align: center; font-size: 13px;">
+                                    <div><p style="margin-bottom: 50px; font-weight: 700;">توقيع المحاسب القانوني</p><p style="color: #94a3b8;">__________________</p></div>
+                                    <div><p style="margin-bottom: 50px; font-weight: 700;">توقيع المدير المالي</p><p style="color: #94a3b8;">__________________</p></div>
+                                    <div><p style="margin-bottom: 50px; font-weight: 700;">ختم وتصديق الشركة</p><p style="color: #94a3b8;">__________________</p></div>
+                                  </div>
+                                </body>
+                              </html>
+                            `);
+                            printWindow.document.close();
+                            printWindow.focus();
+                            setTimeout(() => { printWindow.print(); }, 500);
+                          }}
+                          className="w-full bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-[10px] py-2 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1"
+                        >
+                          <span>تصدير قائمة الدخل PDF 📄</span>
+                        </button>
+                      </div>
+                    );
+                  })()}
+ 
                   {/* Balance Sheet Summary */}
-                  <div className="bg-slate-50 border border-slate-200/60 rounded-2xl p-4 flex flex-col justify-between space-y-3">
-                    <div className="space-y-2">
-                      <div className="flex justify-between items-center border-b border-slate-200 pb-2">
-                        <span className="font-extrabold text-slate-800 flex items-center gap-1">
-                          <span>⚖️</span>
-                          <span>الميزانية العمومية الختامية (Balance Sheet)</span>
-                        </span>
-                        <span className="text-[9px] bg-slate-200 text-slate-600 font-bold px-2 py-0.5 rounded-md font-mono">BS</span>
-                      </div>
-                      <div className="space-y-1.5 font-bold text-slate-600">
-                        <div className="flex justify-between">
-                          <span>إجمالي الأصول والعهد السريعة:</span>
-                          <span className="text-emerald-600 font-mono">
-                            +{(
-                              (treasuryBalance || 0) + 
-                              ((invoiceSettings?.bankAccounts || []).reduce((sum, b) => sum + (b.balance || 0), 0)) + 
-                              (totalCustomersBalance || 0) + 
-                              12500000
-                            ).toLocaleString()} ر.ي
-                          </span>
+                  {(() => {
+                    const summaries = getFinancialSummaries();
+                    return (
+                      <div className="bg-slate-50 border border-slate-200/60 rounded-2xl p-4 flex flex-col justify-between space-y-3">
+                        <div className="space-y-2">
+                          <div className="flex justify-between items-center border-b border-slate-200 pb-2">
+                            <span className="font-extrabold text-slate-800 flex items-center gap-1">
+                              <span>⚖️</span>
+                              <span>الميزانية العمومية الختامية (Balance Sheet)</span>
+                            </span>
+                            <span className="text-[9px] bg-slate-200 text-slate-600 font-bold px-2 py-0.5 rounded-md font-mono">BS</span>
+                          </div>
+                          <div className="space-y-1.5 font-bold text-slate-600">
+                            <div className="flex justify-between">
+                              <span>إجمالي الأصول والعهد السريعة:</span>
+                              <span className="text-emerald-600 font-mono">
+                                +{summaries.totalAssets.toLocaleString()} ر.ي
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>الالتزامات وحقوق الملكية:</span>
+                              <span className="text-slate-700 font-mono">
+                                {summaries.totalLiabilitiesEquity.toLocaleString()} ر.ي
+                              </span>
+                            </div>
+                            <div className="text-[8px] text-emerald-600 font-extrabold bg-emerald-50 px-2.5 py-1 rounded-md text-center">
+                              ✓ الميزانية الدفترية متوازنة ومتطابقة تماماً.
+                            </div>
+                          </div>
                         </div>
-                        <div className="flex justify-between">
-                          <span>الالتزامات وحقوق الملكية:</span>
-                          <span className="text-slate-700 font-mono">
-                            {(
-                              (totalSuppliersBalance || 0) + 
-                              (employees.reduce((sum, e) => sum + (e.custody || 0), 0)) + 
-                              10000000 + 
-                              ((vouchers.filter((v) => v.isReceipt && (v.title?.includes('مبيعات') || v.notes?.includes('مبيعات') || v.partnerType === 'عميل')).reduce((sum, v) => sum + v.amount, 0) || 5800000) - (employees.reduce((sum, e) => sum + (e.salary || 0), 0) * 12 || 1200000))
-                            ).toLocaleString()} ر.ي
-                          </span>
-                        </div>
-                        <div className="text-[8px] text-emerald-600 font-extrabold bg-emerald-50 px-2.5 py-1 rounded-md text-center">
-                          ✓ الميزانية الدفترية متوازنة ومتطابقة تماماً.
-                        </div>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const printWindow = window.open('', '_blank');
-                        if (!printWindow) return;
-                        const companyName = invoiceSettings?.companyName || 'شركة المدى للتجارة والتوزيع';
-                        const commercialRegistry = invoiceSettings?.commercialRegistryNumber || '101202304';
-                        const companyLogo = invoiceSettings?.logo || '';
-                        const dateStr = new Date().toLocaleDateString('ar-YE');
-                        const totalSalesRevenue = vouchers.filter((v) => v.isReceipt && (v.title?.includes('مبيعات') || v.notes?.includes('مبيعات') || v.partnerType === 'عميل')).reduce((sum, v) => sum + v.amount, 0) || 5800000;
-                        const totalOperatingExpenses = (employees.reduce((sum, e) => sum + (e.salary || 0), 0) * 12) || 1200000;
-                        const netEarnings = totalSalesRevenue - totalOperatingExpenses;
-                        const totalAssets = (treasuryBalance || 0) + ((invoiceSettings?.bankAccounts || []).reduce((sum, b) => sum + (b.balance || 0), 0)) + (totalCustomersBalance || 0) + 12500000;
-                        const totalLiabilitiesEquity = (totalSuppliersBalance || 0) + (employees.reduce((sum, e) => sum + (e.custody || 0), 0)) + 10000000 + netEarnings;
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const printWindow = window.open('', '_blank');
+                            if (!printWindow) return;
+                            const companyName = invoiceSettings?.companyName || 'شركة المدى للتجارة والتوزيع';
+                            const commercialRegistry = invoiceSettings?.commercialRegistryNumber || '101202304';
+                            const taxRatePercent = invoiceSettings?.taxRate !== undefined ? invoiceSettings.taxRate : 15;
+                            const taxText = invoiceSettings?.taxEnabled ? `مكلف ضريبياً بنسبة ${taxRatePercent}%` : `الضريبة المعيارية: ${taxRatePercent}%`;
+                            const companyLogo = invoiceSettings?.logo || '';
+                            const registryFileUrl = invoiceSettings?.commercialRegistryFileUrl || '';
+                            const dateStr = new Date().toLocaleDateString('ar-YE');
 
-                        printWindow.document.write(`
-                          <html>
-                            <head>
-                              <title>الميزانية العمومية الختامية</title>
-                              <style>
-                                @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;750;800&display=swap');
-                                body { font-family: 'Inter', sans-serif; direction: rtl; text-align: right; padding: 40px; color: #334155; }
-                              </style>
-                            </head>
-                            <body>
-                              <div style="display: flex; justify-content: space-between; align-items: center; border-b: 2px solid #cbd5e1; padding-bottom: 20px; margin-bottom: 30px;">
-                                <div>
-                                  <h1 style="font-size: 24px; font-weight: 800; margin: 0; color: #0f172a;">${companyName}</h1>
-                                  <p style="font-size: 12px; color: #64748b; margin: 5px 0 0 0;">السجل التجاري رقم: ${commercialRegistry}</p>
-                                </div>
-                                ${companyLogo ? `<img src="${companyLogo}" alt="Logo" style="height: 60px; max-width: 150px; object-fit: contain;" />` : ''}
+                            const stampHtml = registryFileUrl ? `
+                              <div style="position: absolute; top: 110px; left: 40px; text-align: center; opacity: 0.85; transform: rotate(-5deg);">
+                                <img src="${registryFileUrl}" alt="Stamp" style="height: 70px; max-width: 130px; object-fit: contain; filter: grayscale(1) contrast(1.3);" />
+                                <p style="font-size: 8px; color: #64748b; font-weight: bold; margin: 2px 0 0 0;">سند رسمي معتمد</p>
                               </div>
-                              <div style="text-align: center; margin-bottom: 40px;">
-                                <h2 style="font-size: 20px; font-weight: 800; margin: 0; color: #0d9488;">الميزانية العمومية الختامية (Balance Sheet)</h2>
-                                <p style="font-size: 12px; color: #64748b; margin: 5px 0 0 0;">كما هي في تاريخ ${dateStr}</p>
+                            ` : `
+                              <div style="position: absolute; top: 110px; left: 40px; border: 3px double #cbd5e1; border-radius: 50%; width: 75px; height: 75px; display: flex; flex-direction: column; justify-content: center; align-items: center; opacity: 0.5; transform: rotate(-12deg);">
+                                <span style="font-size: 9px; font-weight: 800; color: #64748b; font-family: sans-serif; line-height: 1;">رسمي</span>
+                                <span style="font-size: 8px; font-weight: 800; color: #94a3b8; font-family: sans-serif; line-height: 1; margin-top: 2px;">معتمد</span>
                               </div>
-                              <div style="display: flex; gap: 40px;">
-                                <div style="flex: 1;">
-                                  <h3 style="font-size: 16px; font-weight: 800; color: #0d9488; border-bottom: 2px solid #0d9488; padding-bottom: 8px; margin-bottom: 15px;">الأصول (Assets)</h3>
-                                  <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
-                                    <tbody>
-                                      <tr><td style="padding: 10px 0; border-bottom: 1px solid #f1f5f9; font-weight: 600;">الخزينة العامة النقدية</td><td style="padding: 10px 0; border-bottom: 1px solid #f1f5f9; text-align: left; font-weight: 700;">${(treasuryBalance || 0).toLocaleString()} ر.ي</td></tr>
-                                      <tr><td style="padding: 10px 0; border-bottom: 1px solid #f1f5f9; font-weight: 600;">الحسابات البنكية المعتمدة</td><td style="padding: 10px 0; border-bottom: 1px solid #f1f5f9; text-align: left; font-weight: 700;">${((invoiceSettings?.bankAccounts || []).reduce((sum, b) => sum + (b.balance || 0), 0)).toLocaleString()} ر.ي</td></tr>
-                                      <tr><td style="padding: 10px 0; border-bottom: 1px solid #f1f5f9; font-weight: 600;">ذمم العملاء المدينة (A/R)</td><td style="padding: 10px 0; border-bottom: 1px solid #f1f5f9; text-align: left; font-weight: 700;">${(totalCustomersBalance || 0).toLocaleString()} ر.ي</td></tr>
-                                      <tr><td style="padding: 10px 0; border-bottom: 1px solid #f1f5f9; font-weight: 600;">مخزون المستودعات الرئيسي والفرعي</td><td style="padding: 10px 0; border-bottom: 1px solid #f1f5f9; text-align: left; font-weight: 700;">12,500,000 ر.ي</td></tr>
-                                      <tr style="font-weight: 800; font-size: 14px; color: #0d9488;"><td style="padding: 15px 0; border-top: 2px solid #e2e8f0;">إجمالي الأصول والعهد</td><td style="padding: 15px 0; border-top: 2px solid #e2e8f0; text-align: left;">${totalAssets.toLocaleString()} ر.ي</td></tr>
-                                    </tbody>
-                                  </table>
-                                </div>
-                                <div style="flex: 1;">
-                                  <h3 style="font-size: 16px; font-weight: 800; color: #0d9488; border-bottom: 2px solid #0d9488; padding-bottom: 8px; margin-bottom: 15px;">الالتزامات وحقوق الملكية</h3>
-                                  <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
-                                    <tbody>
-                                      <tr><td style="padding: 10px 0; border-bottom: 1px solid #f1f5f9; font-weight: 600;">ذمم الموردين الدائنة (A/P)</td><td style="padding: 10px 0; border-bottom: 1px solid #f1f5f9; text-align: left; font-weight: 700;">${(totalSuppliersBalance || 0).toLocaleString()} ر.ي</td></tr>
-                                      <tr><td style="padding: 10px 0; border-bottom: 1px solid #f1f5f9; font-weight: 600;">الالتزامات التشغيلية والعهد</td><td style="padding: 10px 0; border-bottom: 1px solid #f1f5f9; text-align: left; font-weight: 700;">${(employees.reduce((sum, e) => sum + (e.custody || 0), 0)).toLocaleString()} ر.ي</td></tr>
-                                      <tr><td style="padding: 10px 0; border-bottom: 1px solid #f1f5f9; font-weight: 600;">رأس المال التشغيلي المدفوع</td><td style="padding: 10px 0; border-bottom: 1px solid #f1f5f9; text-align: left; font-weight: 700;">10,000,000 ر.ي</td></tr>
-                                      <tr><td style="padding: 10px 0; border-bottom: 1px solid #f1f5f9; font-weight: 600;">الأرباح المحتجزة / المدوّرة</td><td style="padding: 10px 0; border-bottom: 1px solid #f1f5f9; text-align: left; font-weight: 700;">${netEarnings.toLocaleString()} ر.ي</td></tr>
-                                      <tr style="font-weight: 800; font-size: 14px; color: #0d9488;"><td style="padding: 15px 0; border-top: 2px solid #e2e8f0;">إجمالي الالتزامات وحقوق الملكية</td><td style="padding: 15px 0; border-top: 2px solid #e2e8f0; text-align: left;">${totalLiabilitiesEquity.toLocaleString()} ر.ي</td></tr>
-                                    </tbody>
-                                  </table>
-                                </div>
-                              </div>
-                              <div style="margin-top: 80px; display: flex; justify-content: space-between; text-align: center; font-size: 13px;">
-                                <div><p style="margin-bottom: 50px; font-weight: 700;">توقيع المحاسب القانوني</p><p style="color: #94a3b8;">__________________</p></div>
-                                <div><p style="margin-bottom: 50px; font-weight: 700;">توقيع المدير المالي</p><p style="color: #94a3b8;">__________________</p></div>
-                                <div><p style="margin-bottom: 50px; font-weight: 700;">ختم وتصديق الشركة</p><p style="color: #94a3b8;">__________________</p></div>
-                              </div>
-                            </body>
-                          </html>
-                        `);
-                        printWindow.document.close();
-                        printWindow.focus();
-                        setTimeout(() => { printWindow.print(); }, 500);
-                      }}
-                      className="w-full bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-[10px] py-2 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1"
-                    >
-                      <span>تصدير الميزانية العمومية PDF 📄</span>
-                    </button>
-                  </div>
+                            `;
+
+                            printWindow.document.write(`
+                              <html>
+                                <head>
+                                  <title>الميزانية العمومية الختامية</title>
+                                  <style>
+                                    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;750;800&display=swap');
+                                    body { font-family: 'Inter', sans-serif; direction: rtl; text-align: right; padding: 40px; color: #334155; position: relative; }
+                                  </style>
+                                </head>
+                                <body>
+                                  ${stampHtml}
+                                  <div style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-25deg); opacity: 0.04; pointer-events: none; z-index: -1000; text-align: center; width: 100%; max-width: 600px; font-family: 'Inter', sans-serif;">
+                                    ${companyLogo ? `<img src="${companyLogo}" style="width: 250px; height: 250px; object-fit: contain; margin-bottom: 20px; filter: grayscale(1);" />` : ''}
+                                    <div style="font-size: 28px; font-weight: 900; color: #000; direction: rtl; line-height: 1.5;">
+                                      ${companyName} <br/> 
+                                      رقم السجل: ${commercialRegistry} <br/> 
+                                      الرقم الضريبي المكلف: ${taxRatePercent}%
+                                    </div>
+                                  </div>
+                                  <div style="display: flex; justify-content: space-between; align-items: center; border-b: 2px solid #cbd5e1; padding-bottom: 20px; margin-bottom: 30px;">
+                                    <div>
+                                      <h1 style="font-size: 24px; font-weight: 800; margin: 0; color: #0f172a;">${companyName}</h1>
+                                      <p style="font-size: 11px; color: #64748b; margin: 5px 0 0 0; font-weight: bold;">السجل التجاري رقم: ${commercialRegistry}</p>
+                                      <p style="font-size: 11px; color: #64748b; margin: 3px 0 0 0; font-weight: bold;">الوضع الضريبي: ${taxText}</p>
+                                    </div>
+                                    ${companyLogo ? `<img src="${companyLogo}" alt="Logo" style="height: 60px; max-width: 150px; object-fit: contain;" />` : ''}
+                                  </div>
+                                  <div style="text-align: center; margin-bottom: 40px;">
+                                    <h2 style="font-size: 20px; font-weight: 800; margin: 0; color: #0d9488;">الميزانية العمومية الختامية (Balance Sheet)</h2>
+                                    <p style="font-size: 12px; color: #64748b; margin: 5px 0 0 0;">كما هي في تاريخ ${dateStr}</p>
+                                    <p style="font-size: 10px; color: #94a3b8; font-weight: bold; margin: 2px 0 0 0;">(مرتبط تلقائياً بدفتر اليومية العامة والقيود المعتمدة)</p>
+                                  </div>
+                                  <div style="display: flex; gap: 40px;">
+                                    <div style="flex: 1;">
+                                      <h3 style="font-size: 16px; font-weight: 800; color: #0d9488; border-bottom: 2px solid #0d9488; padding-bottom: 8px; margin-bottom: 5px;">الأصول (Assets)</h3>
+                                      <p style="font-size: 11px; font-weight: 800; color: #0284c7; margin: 5px 0 10px 0;">الأصول المتداولة (Current Assets)</p>
+                                      <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                                        <tbody>
+                                          <tr><td style="padding: 10px 0; border-bottom: 1px solid #f1f5f9; font-weight: 600;">الخزينة العامة النقدية</td><td style="padding: 10px 0; border-bottom: 1px solid #f1f5f9; text-align: left; font-weight: 700;">${summaries.treasury.toLocaleString()} ر.ي</td></tr>
+                                          <tr><td style="padding: 10px 0; border-bottom: 1px solid #f1f5f9; font-weight: 600;">الحسابات البنكية المعتمدة</td><td style="padding: 10px 0; border-bottom: 1px solid #f1f5f9; text-align: left; font-weight: 700;">${summaries.bank.toLocaleString()} ر.ي</td></tr>
+                                          <tr><td style="padding: 10px 0; border-bottom: 1px solid #f1f5f9; font-weight: 600;">ذمم العملاء المدينة (A/R)</td><td style="padding: 10px 0; border-bottom: 1px solid #f1f5f9; text-align: left; font-weight: 700;">${summaries.customers.toLocaleString()} ر.ي</td></tr>
+                                          <tr><td style="padding: 10px 0; border-bottom: 1px solid #f1f5f9; font-weight: 600;">مخزون المستودعات الرئيسي والفرعي</td><td style="padding: 10px 0; border-bottom: 1px solid #f1f5f9; text-align: left; font-weight: 700;">${summaries.inventory.toLocaleString()} ر.ي</td></tr>
+                                          <tr><td style="padding: 10px 0; border-bottom: 1px solid #f1f5f9; font-weight: 600; color: #0284c7;">عهد الموظفين المعلقة (العهدة المالية)</td><td style="padding: 10px 0; border-bottom: 1px solid #f1f5f9; text-align: left; font-weight: 700; color: #0284c7;">${summaries.custodies.toLocaleString()} ر.ي</td></tr>
+                                          <tr style="font-weight: 800; font-size: 14px; color: #0d9488;"><td style="padding: 15px 0; border-top: 2px solid #e2e8f0;">إجمالي الأصول المتداولة والعهد</td><td style="padding: 15px 0; border-top: 2px solid #e2e8f0; text-align: left;">${summaries.totalAssets.toLocaleString()} ر.ي</td></tr>
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                    <div style="flex: 1;">
+                                      <h3 style="font-size: 16px; font-weight: 800; color: #0d9488; border-bottom: 2px solid #0d9488; padding-bottom: 8px; margin-bottom: 15px;">الالتزامات وحقوق الملكية</h3>
+                                      <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                                        <tbody>
+                                          <tr><td style="padding: 10px 0; border-bottom: 1px solid #f1f5f9; font-weight: 600;">ذمم الموردين الدائنة (A/P)</td><td style="padding: 10px 0; border-bottom: 1px solid #f1f5f9; text-align: left; font-weight: 700;">${summaries.suppliers.toLocaleString()} ر.ي</td></tr>
+                                          <tr><td style="padding: 10px 0; border-bottom: 1px solid #f1f5f9; font-weight: 600;">رأس المال التشغيلي المدفوع</td><td style="padding: 10px 0; border-bottom: 1px solid #f1f5f9; text-align: left; font-weight: 700;">${summaries.capital.toLocaleString()} ر.ي</td></tr>
+                                          <tr><td style="padding: 10px 0; border-bottom: 1px solid #f1f5f9; font-weight: 600;">الأرباح المحتجزة / المدوّرة</td><td style="padding: 10px 0; border-bottom: 1px solid #f1f5f9; text-align: left; font-weight: 700;">${summaries.retainedEarnings.toLocaleString()} ر.ي</td></tr>
+                                          <tr style="font-weight: 800; font-size: 14px; color: #0d9488;"><td style="padding: 15px 0; border-top: 2px solid #e2e8f0;">إجمالي الالتزامات وحقوق الملكية</td><td style="padding: 15px 0; border-top: 2px solid #e2e8f0; text-align: left;">${summaries.totalLiabilitiesEquity.toLocaleString()} ر.ي</td></tr>
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  </div>
+                                  <div style="margin-top: 80px; display: flex; justify-content: space-between; text-align: center; font-size: 13px;">
+                                    <div><p style="margin-bottom: 50px; font-weight: 700;">توقيع المحاسب القانوني</p><p style="color: #94a3b8;">__________________</p></div>
+                                    <div><p style="margin-bottom: 50px; font-weight: 700;">توقيع المدير المالي</p><p style="color: #94a3b8;">__________________</p></div>
+                                    <div><p style="margin-bottom: 50px; font-weight: 700;">ختم وتصديق الشركة</p><p style="color: #94a3b8;">__________________</p></div>
+                                  </div>
+                                </body>
+                              </html>
+                            `);
+                            printWindow.document.close();
+                            printWindow.focus();
+                            setTimeout(() => { printWindow.print(); }, 500);
+                          }}
+                          className="w-full bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-[10px] py-2 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1"
+                        >
+                          <span>تصدير الميزانية العمومية PDF 📄</span>
+                        </button>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
-
+ 
               {/* Year-End Closing Wizard Render */}
               {finalAccountsTab === 'closing' && (
                 <div className="bg-slate-50 border border-slate-200/60 rounded-2xl p-4 space-y-4 animate-fade-in text-[11px] text-right">
@@ -4692,55 +5290,86 @@ export default function SuppliersView({
                       <span>🔒</span>
                       <span>معالج إقفال السنة المالية (Year-End Closing Wizard)</span>
                     </span>
-                    <span className="text-[9px] bg-slate-200 text-slate-600 font-bold px-2 py-0.5 rounded-md font-mono">Step {closingWizardStep} of 3</span>
+                    <span className="text-[9px] bg-slate-200 text-slate-600 font-bold px-2 py-0.5 rounded-md font-mono">الخطوة {closingWizardStep} من 3</span>
                   </div>
-
+ 
                   {closingWizardStep === 1 && (
                     <div className="space-y-3">
                       <p className="font-bold text-slate-600 leading-relaxed">
                         الخطوة 1: يرجى مراجعة وتأكيد الأرباح التشغيلية السنوية والبيانات المالية الختامية قبل اتخاذ خطوة الإغلاق وتصفير الحسابات المؤقتة.
                       </p>
-                      <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1.5 text-[10px] font-bold">
-                        <div className="flex justify-between">
-                          <span>صافي المبيعات والإيرادات:</span>
-                          <span className="text-emerald-600 font-mono">
-                            {((vouchers.filter((v) => v.isReceipt && (v.title?.includes('مبيعات') || v.notes?.includes('مبيعات') || v.partnerType === 'عميل')).reduce((sum, v) => sum + v.amount, 0) || 5800000)).toLocaleString()} ر.ي
-                          </span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>مصروفات التشغيل والرواتب:</span>
-                          <span className="text-rose-600 font-mono">
-                            -{(employees.reduce((sum, e) => sum + (e.salary || 0), 0) * 12 || 1200000).toLocaleString()} ر.ي
-                          </span>
-                        </div>
-                        <div className="flex justify-between border-t border-slate-100 pt-1 text-slate-800 font-extrabold">
-                          <span>صافي الأرباح المحققة المرحّلة:</span>
-                          <span className="text-blue-600 font-mono">
-                            {((vouchers.filter((v) => v.isReceipt && (v.title?.includes('مبيعات') || v.notes?.includes('مبيعات') || v.partnerType === 'عميل')).reduce((sum, v) => sum + v.amount, 0) || 5800000) - (employees.reduce((sum, e) => sum + (e.salary || 0), 0) * 12 || 1200000)).toLocaleString()} ر.ي
-                          </span>
-                        </div>
-                      </div>
+                      {(() => {
+                        const summaries = getFinancialSummaries();
+                        return (
+                          <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1.5 text-[10px] font-bold">
+                            <div className="flex justify-between">
+                              <span>إجمالي الإيرادات السنوية:</span>
+                              <span className="text-emerald-600 font-mono">
+                                {summaries.revenue.toLocaleString()} ر.ي
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>مصروفات التشغيل والرواتب السنوية:</span>
+                              <span className="text-rose-600 font-mono">
+                                -{summaries.expenses.toLocaleString()} ر.ي
+                              </span>
+                            </div>
+                            <div className="flex justify-between border-t border-slate-100 pt-1 text-slate-800 font-extrabold">
+                              <span>صافي الأرباح المحققة المرحّلة:</span>
+                              <span className="text-blue-600 font-mono">
+                                {summaries.netProfit.toLocaleString()} ر.ي
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })()}
                       <button
                         type="button"
                         onClick={() => setClosingWizardStep(2)}
-                        className="w-full bg-slate-900 hover:bg-slate-800 text-white font-extrabold py-2 rounded-xl"
+                        className="w-full bg-slate-900 hover:bg-slate-800 text-white font-extrabold py-2 rounded-xl transition-all cursor-pointer"
                       >
                         متابعة إلى خطوة ترحيل الأرباح وتصفير الحسابات ➔
                       </button>
                     </div>
                   )}
-
+ 
                   {closingWizardStep === 2 && (
                     <div className="space-y-3">
                       <p className="font-bold text-slate-600 leading-relaxed">
                         الخطوة 2: يقوم النظام الآن بتوليد قيد إقفال السنة المالية. سيتم ترحيل صافي الأرباح إلى **"الأرباح المحتجزة"** وتصفير حسابات المصروفات والإيرادات للبدء بسنة مالية جديدة صفرية.
                       </p>
+                      
+                      {/* Checkbox for Rollover Option */}
+                      <label className="flex items-center gap-2.5 p-3 bg-white border border-slate-150 rounded-xl cursor-pointer hover:bg-slate-50 transition-colors">
+                        <input
+                          type="checkbox"
+                          checked={rollOverToNewYear}
+                          onChange={(e) => setRollOverToNewYear(e.target.checked)}
+                          className="w-4 h-4 text-emerald-600 border-slate-300 rounded focus:ring-emerald-500 cursor-pointer"
+                        />
+                        <div className="text-right">
+                          <p className="font-extrabold text-[11px] text-slate-800">تدوير الأرصدة إلى السنة المالية الجديدة (2027)</p>
+                          <p className="text-[9px] text-slate-400 font-bold">يقوم بترحيل أرصدة الميزانية العمومية كأرصدة افتتاحية متطابقة للعام الجديد.</p>
+                        </div>
+                      </label>
+
                       <div className="bg-yellow-50 text-yellow-800 p-2.5 rounded-xl border border-yellow-200 font-extrabold text-[10px]">
-                        ⚠️ تحذير: هذه العملية لا يمكن التراجع عنها وسيتم تدوير الأرصدة الافتتاحية للميزانية فقط.
+                        ⚠️ تحذير: هذه العملية لا يمكن التراجع عنها وسيتم إغلاق وتجميد السنة المالية لعام 2026 محاسبياً.
                       </div>
+
+                      {isClosingExecuting && (
+                        <div className="bg-slate-900 text-slate-300 p-3 rounded-xl font-mono text-[9px] space-y-1 max-h-[120px] overflow-y-auto">
+                          <p className="text-emerald-400 font-extrabold animate-pulse">⚡ قيد التنفيذ والمطابقة الآن...</p>
+                          {closingLogs.map((log, idx) => (
+                            <p key={idx}>• {log}</p>
+                          ))}
+                        </div>
+                      )}
+
                       <div className="flex gap-2">
                         <button
                           type="button"
+                          disabled={isClosingExecuting}
                           onClick={() => setClosingWizardStep(1)}
                           className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2 rounded-xl"
                         >
@@ -4748,35 +5377,85 @@ export default function SuppliersView({
                         </button>
                         <button
                           type="button"
+                          disabled={isClosingExecuting}
                           onClick={() => {
-                            const netEarn = ((vouchers.filter((v) => v.isReceipt && (v.title?.includes('مبيعات') || v.notes?.includes('مبيعات') || v.partnerType === 'عميل')).reduce((sum, v) => sum + v.amount, 0) || 5800000) - (employees.reduce((sum, e) => sum + (e.salary || 0), 0) * 12 || 1200000));
-                            createAutoJournalEntry({
-                              notes: `قيد إقفال السنة المالية وإغلاق الدورة المحاسبية لعام 2026 - ترحيل صافي الأرباح إلى حساب الأرباح المحتجزة وتصفير الحسابات`,
-                              reference: 'CLOSING-2026',
-                              lines: [
-                                { account: 'مبيعات السلع والخدمات', debit: netEarn + 1200000, credit: 0 },
-                                { account: 'الرواتب والأجور التشغيلية', debit: 0, credit: 1200000 },
-                                { account: 'الأرباح والخسائر المحتجزة', debit: 0, credit: netEarn }
-                              ],
-                              date: new Date().toISOString().split('T')[0]
-                            });
-                            setClosingWizardStep(3);
+                            const summaries = getFinancialSummaries();
+                            const netEarn = summaries.netProfit;
+
+                            setIsClosingExecuting(true);
+                            setClosingLogs(["بدء معالجة إقفال دفاتر السنة المالية لعام 2026..."]);
+                            
+                            setTimeout(() => {
+                              setClosingLogs(prev => [...prev, "تصفير حسابات الإيرادات والمصروفات المؤقتة بالكامل."]);
+                            }, 500);
+
+                            setTimeout(() => {
+                              setClosingLogs(prev => [...prev, `ترحيل صافي الأرباح البالغة (${netEarn.toLocaleString()} ر.ي) لحساب الأرباح المحتجزة.`]);
+                            }, 1000);
+
+                            setTimeout(() => {
+                              if (rollOverToNewYear) {
+                                setClosingLogs(prev => [...prev, "توليد قيد تدوير الأرصدة الافتتاحية للميزانية العمومية لعام 2027 (القيد OP-2027)..."]);
+                              }
+                            }, 1500);
+
+                            setTimeout(() => {
+                              const closingEntriesToCreate: any[] = [];
+                              if (rollOverToNewYear) {
+                                closingEntriesToCreate.push({
+                                  notes: `قيد تدوير الأرصدة الافتتاحية للسنة المالية الجديدة 2027 - أرصدة منقولة من ميزانية 2026 الختامية`,
+                                  reference: 'OP-2027',
+                                  lines: [
+                                    { account: 'الخزينة العامة', debit: summaries.treasury, credit: 0 },
+                                    { account: 'حساب البنك الرئيسي', debit: summaries.bank, credit: 0 },
+                                    { account: 'ذمم العملاء المدينة', debit: summaries.customers, credit: 0 },
+                                    { account: 'مخزون المستودع الرئيسي', debit: summaries.inventory, credit: 0 },
+                                    { account: 'ذمم الموردين الدائنة', debit: 0, credit: summaries.suppliers },
+                                    { account: 'رأس المال التشغيلي الافتتاحي', debit: 0, credit: summaries.capital },
+                                    { account: 'الأرباح والخسائر المحتجزة', debit: 0, credit: summaries.retainedEarnings }
+                                  ],
+                                  date: '2027-01-01'
+                                });
+                              }
+
+                              closingEntriesToCreate.push({
+                                notes: `قيد إقفال السنة المالية لعام 2026 - ترحيل صافي الأرباح وتصفير الإيرادات والمصروفات`,
+                                reference: 'CLOSING-2026',
+                                lines: [
+                                  { account: 'مبيعات السلع والخدمات', debit: summaries.revenue, credit: 0 },
+                                  { account: 'الرواتب والأجور التشغيلية', debit: 0, credit: summaries.expenses },
+                                  { account: 'الأرباح والخسائر المحتجزة', debit: 0, credit: summaries.netProfit }
+                                ],
+                                date: '2026-12-31'
+                              });
+
+                              createMultipleAutoJournalEntries(closingEntriesToCreate);
+
+                              setClosingLogs(prev => [...prev, "إتمام عملية الإغلاق وإقفال الدفاتر بنجاح!"]);
+                              setIsClosingExecuting(false);
+                              setClosingWizardStep(3);
+                            }, 2000);
                           }}
-                          className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold py-2 rounded-xl cursor-pointer"
+                          className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold py-2 rounded-xl cursor-pointer disabled:opacity-50"
                         >
                           ترحيل القيد وإقفال الحسابات 🔒
                         </button>
                       </div>
                     </div>
                   )}
-
+ 
                   {closingWizardStep === 3 && (
                     <div className="space-y-3 text-center">
-                      <div className="p-4 bg-emerald-50 text-emerald-800 rounded-2xl border border-emerald-200 space-y-1">
-                        <p className="font-black text-xs">🎉 تهانينا! تم إقفال السنة المالية لعام 2026 بنجاح!</p>
-                        <p className="text-[10px] text-slate-500 font-bold">
-                          تم ترحيل صافي الأرباح وتدوير الأرصدة وتصفير المصروفات والإيرادات لبدء دورة محاسبية جديدة لعام 2027.
+                      <div className="p-4 bg-emerald-50 text-emerald-800 rounded-2xl border border-emerald-200 space-y-1 text-right">
+                        <p className="font-black text-xs text-center">🎉 تهانينا! تم إقفال السنة المالية لعام 2026 بنجاح!</p>
+                        <p className="text-[10px] text-slate-500 font-bold leading-relaxed">
+                          تم توليد قيد إقفال السنة المالية وتصفير حسابات المبيعات والرواتب السنوية بنجاح.
                         </p>
+                        {rollOverToNewYear && (
+                          <p className="text-[10px] text-emerald-700 font-black">
+                            ✓ تم توليد وتدوير قيد الأرصدة الافتتاحية المتوازنة بنجاح لعام 2027 (OP-2027).
+                          </p>
+                        )}
                       </div>
                       <button
                         type="button"
@@ -4917,8 +5596,22 @@ export default function SuppliersView({
                               newLines[idx].account = e.target.value;
                               setJournalForm({ ...journalForm, lines: newLines });
                             }}
-                            className="col-span-6 bg-slate-50 border border-slate-200 px-2 py-1.5 rounded-lg text-xs"
+                            className="col-span-4 bg-slate-50 border border-slate-200 px-2 py-1.5 rounded-lg text-xs"
                           />
+                          <select
+                            value={line.costCenter || ''}
+                            onChange={(e) => {
+                              const newLines = [...journalForm.lines];
+                              newLines[idx].costCenter = e.target.value || undefined;
+                              setJournalForm({ ...journalForm, lines: newLines });
+                            }}
+                            className={`col-span-3 bg-slate-50 border ${!line.costCenter ? 'border-rose-400 focus:border-rose-500 bg-rose-50/20' : 'border-slate-200'} px-1 py-1.5 rounded-lg text-[10px] font-bold text-slate-700 focus:outline-hidden`}
+                          >
+                            <option value="">مركز تكلفة *</option>
+                            {['الإيجار (Rent)', 'الكهرباء (Electricity)', 'النقل والشحن (Transport)', 'مبيعات', 'مصروفات المحل', 'المستودع الرئيسي', 'الإدارة العامة'].map(cc => (
+                              <option key={cc} value={cc}>{cc}</option>
+                            ))}
+                          </select>
                           <input
                             type="number"
                             placeholder="مدين"
@@ -4929,7 +5622,7 @@ export default function SuppliersView({
                               newLines[idx].credit = 0;
                               setJournalForm({ ...journalForm, lines: newLines });
                             }}
-                            className="col-span-2.5 bg-emerald-50 text-emerald-700 border border-emerald-100 px-2 py-1.5 rounded-lg text-center"
+                            className="col-span-2 bg-emerald-50 text-emerald-700 border border-emerald-100 px-1.5 py-1.5 rounded-lg text-center text-xs font-mono"
                           />
                           <input
                             type="number"
@@ -4941,9 +5634,9 @@ export default function SuppliersView({
                               newLines[idx].debit = 0;
                               setJournalForm({ ...journalForm, lines: newLines });
                             }}
-                            className="col-span-2.5 bg-rose-50 text-rose-700 border border-rose-100 px-2 py-1.5 rounded-lg text-center"
+                            className="col-span-2 bg-rose-50 text-rose-700 border border-rose-100 px-1.5 py-1.5 rounded-lg text-center text-xs font-mono"
                           />
-                          <button type="button" disabled={journalForm.lines.length <= 2} onClick={() => handleRemoveJournalLine(idx)} className="col-span-1 text-red-500 hover:text-red-700 text-center">✕</button>
+                          <button type="button" disabled={journalForm.lines.length <= 2} onClick={() => handleRemoveJournalLine(idx)} className="col-span-1 text-red-500 hover:text-red-700 text-center font-bold">✕</button>
                         </div>
                       ))}
                     </div>

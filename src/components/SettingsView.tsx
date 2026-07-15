@@ -209,12 +209,7 @@ export default function SettingsView({
     }
 
     if (isGranted) {
-      try {
-        new Notification('تجربة تنبيه المستودع اليومي 📦', {
-          body: 'هذا إشعار تجريبي من نظام إدارة المستودعات الذكي. يعمل التنبيه تلقائياً إذا لم تسجل أي حركة اليوم.',
-        });
-      } catch (e) {
-        console.warn('Notification constructor failed, trying service worker:', e);
+      const showViaServiceWorker = () => {
         if ('serviceWorker' in navigator) {
           navigator.serviceWorker.ready.then((registration) => {
             registration.showNotification('تجربة تنبيه المستودع اليومي 📦', {
@@ -223,6 +218,20 @@ export default function SettingsView({
           }).catch((err) => {
             console.error('Service worker notification failed:', err);
           });
+        }
+      };
+
+      const isIframe = typeof window !== 'undefined' && window.self !== window.top;
+      if (isIframe) {
+        showViaServiceWorker();
+      } else {
+        try {
+          new Notification('تجربة تنبيه المستودع اليومي 📦', {
+            body: 'هذا إشعار تجريبي من نظام إدارة المستودعات الذكي. يعمل التنبيه تلقائياً إذا لم تسجل أي حركة اليوم.',
+          });
+        } catch (e) {
+          console.warn('Notification constructor failed, trying service worker:', e);
+          showViaServiceWorker();
         }
       }
     } else {
