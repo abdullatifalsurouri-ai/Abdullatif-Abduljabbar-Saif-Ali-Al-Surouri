@@ -38,6 +38,7 @@ export interface Supplier {
   phone: string;
   email: string;
   balance?: number; // الرصيد المالي / مستحقات المورد
+  accountCode?: string;
 }
 
 export interface Warehouse {
@@ -164,7 +165,7 @@ export interface SyncPayload {
   groups?: any[]; // optional groups array
 }
 
-export type ReportFilterType = 'monthly' | 'top-moving' | 'items' | 'suppliers';
+export type ReportFilterType = 'monthly' | 'top-moving' | 'items' | 'suppliers' | 'financials';
 
 // Initial data corresponding exactly to the provided screenshots
 export const INITIAL_ITEMS: Item[] = [

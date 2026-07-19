@@ -1,5 +1,4 @@
 import React, { useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
 import { CheckCircle, AlertCircle, Info, WifiOff, X } from 'lucide-react';
 
 export interface ToastMessage {
@@ -25,16 +24,30 @@ export default function Toast({ toasts, onClose, currentLanguage }: ToastProps) 
       } z-[9999] flex flex-col gap-2.5 max-w-sm w-full px-4 md:px-0`}
       dir={isRtl ? 'rtl' : 'ltr'}
     >
-      <AnimatePresence>
-        {toasts.map((toast) => (
-          <ToastItem 
-            key={toast.id} 
-            toast={toast} 
-            onClose={onClose} 
-            isRtl={isRtl} 
-          />
-        ))}
-      </AnimatePresence>
+      <style>{`
+        @keyframes toastSlideUp {
+          from {
+            opacity: 0;
+            transform: translateY(15px) scale(0.95);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+          }
+        }
+        @keyframes shrinkWidth {
+          from { width: 100%; }
+          to { width: 0%; }
+        }
+      `}</style>
+      {toasts.map((toast) => (
+        <ToastItem 
+          key={toast.id} 
+          toast={toast} 
+          onClose={onClose} 
+          isRtl={isRtl} 
+        />
+      ))}
     </div>
   );
 }
@@ -78,12 +91,10 @@ function ToastItem({
   }[type];
 
   return (
-    <motion.div
-      layout
-      initial={{ opacity: 0, y: 15, scale: 0.95 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.9, y: -10 }}
-      transition={{ type: 'spring', stiffness: 350, damping: 25 }}
+    <div
+      style={{
+        animation: 'toastSlideUp 300ms cubic-bezier(0.16, 1, 0.3, 1) forwards'
+      }}
       className={`flex items-center justify-between gap-3 p-4 rounded-2xl border backdrop-blur-md shadow-2xl ${config.bg} relative overflow-hidden`}
     >
       <div className="flex items-center gap-3 flex-1">
@@ -98,16 +109,16 @@ function ToastItem({
       </button>
 
       {/* Progress timeline bar */}
-      <motion.div
-        initial={{ width: '100%' }}
-        animate={{ width: '0%' }}
-        transition={{ duration: duration / 1000, ease: 'linear' }}
+      <div
+        style={{
+          animation: `shrinkWidth ${duration}ms linear forwards`
+        }}
         className={`absolute bottom-0 left-0 h-[3px] ${
           type === 'success' ? 'bg-emerald-500' :
           type === 'error' ? 'bg-rose-500' :
           type === 'warning' ? 'bg-amber-500' : 'bg-blue-500'
         }`}
       />
-    </motion.div>
+    </div>
   );
 }

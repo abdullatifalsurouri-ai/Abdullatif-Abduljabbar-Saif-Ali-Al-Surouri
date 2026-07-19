@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { 
   User, 
   Plus, 
+  UserPlus,
   X, 
   Check, 
   Search, 
@@ -125,6 +126,20 @@ export default function HRView({
   const [attachmentForm, setAttachmentForm] = useState({
     name: '',
     fileType: 'عقد عمل موقع PDF'
+  });
+
+  // Monthly variations (Overtime, Bonus, Deductions) states
+  const [isAddVariationModalOpen, setIsAddVariationModalOpen] = useState(false);
+  const [expandedEmpId, setExpandedEmpId] = useState<string | null>(null);
+  const [variationForm, setVariationForm] = useState({
+    employeeId: '',
+    type: 'bonus' as 'bonus' | 'overtime' | 'deduction',
+    amountType: 'flat' as 'flat' | 'hourly',
+    hours: '' as string | number,
+    hourlyRate: '' as string | number,
+    flatAmount: '' as string | number,
+    reason: '',
+    date: new Date().toISOString().split('T')[0]
   });
 
   // Payroll state variables
@@ -838,6 +853,94 @@ export default function HRView({
     alert('تم حذف الوثيقة المؤرشفة.');
   };
 
+  // Add monthly variation handler
+  const handleAddVariationSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const { employeeId, type, amountType, hours, hourlyRate, flatAmount, reason, date } = variationForm;
+    if (!employeeId) {
+      alert('الرجاء اختيار الموظف');
+      return;
+    }
+
+    let calculatedAmount = 0;
+    if (type === 'overtime' && amountType === 'hourly') {
+      calculatedAmount = Number(hours || 0) * Number(hourlyRate || 0);
+    } else {
+      calculatedAmount = Number(flatAmount || 0);
+    }
+
+    if (calculatedAmount <= 0) {
+      alert('الرجاء إدخال مبلغ صحيح أكبر من الصفر');
+      return;
+    }
+
+    const targetEmp = employees.find(emp => emp.id === employeeId);
+    if (!targetEmp) return;
+
+    const newVariation = {
+      id: `VAR-${Date.now().toString().slice(-6)}`,
+      type,
+      amount: calculatedAmount,
+      reason: reason || 'حركة شهرية عامة',
+      date,
+      isApplied: false,
+      amountType,
+      hours: type === 'overtime' && amountType === 'hourly' ? Number(hours) : undefined,
+      hourlyRate: type === 'overtime' && amountType === 'hourly' ? Number(hourlyRate) : undefined,
+    };
+
+    const updatedEmployees = employees.map(emp => {
+      if (emp.id === employeeId) {
+        return {
+          ...emp,
+          monthlyVariations: [...(emp.monthlyVariations || []), newVariation]
+        };
+      }
+      return emp;
+    });
+
+    onUpdateEmployees(updatedEmployees);
+
+    if (onLogAction) {
+      const typeAr = type === 'overtime' ? 'ساعات إضافية' : type === 'bonus' ? 'إكرامية / مكافأة' : 'خصم / جزاء';
+      onLogAction('edit', 'suppliers', `تم تسجيل حركة شهرية (${typeAr}) للموظف ${targetEmp.name} بقيمة ${calculatedAmount.toLocaleString()} ر.ي`);
+    }
+
+    // Reset Form
+    setVariationForm({
+      employeeId: '',
+      type: 'bonus',
+      amountType: 'flat',
+      hours: '',
+      hourlyRate: '',
+      flatAmount: '',
+      reason: '',
+      date: new Date().toISOString().split('T')[0]
+    });
+    setIsAddVariationModalOpen(false);
+  };
+
+  // Delete monthly variation handler
+  const handleDeleteVariation = (empId: string, varId: string) => {
+    if (!confirm('هل أنت متأكد من حذف هذه الحركة الشهرية من سجل الانتظار؟')) return;
+
+    const updatedEmployees = employees.map(emp => {
+      if (emp.id === empId) {
+        return {
+          ...emp,
+          monthlyVariations: (emp.monthlyVariations || []).filter((v: any) => v.id !== varId)
+        };
+      }
+      return emp;
+    });
+
+    onUpdateEmployees(updatedEmployees);
+
+    if (onLogAction) {
+      onLogAction('edit', 'suppliers', `تم حذف حركة شهرية معلقة من حساب الموظف.`);
+    }
+  };
+
   return (
     <div className="space-y-6 text-right font-sans" dir="rtl">
       {/* Top Banner and Horizontal Navigation Tabs */}
@@ -865,7 +968,7 @@ export default function HRView({
           }}
           className="bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs px-4 py-2.5 rounded-xl transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
         >
-          <Plus size={14} />
+          <UserPlus size={14} className="stroke-[2.5]" />
           <span>تسجيل عقد موظف جديد 👥</span>
         </button>
       </div>
@@ -875,47 +978,52 @@ export default function HRView({
         <button
           type="button"
           onClick={() => setHrActiveTab('dashboard')}
-          className={`flex-1 min-w-[120px] py-2.5 text-xs font-black rounded-xl transition-all cursor-pointer ${
+          className={`flex-1 min-w-[120px] py-2.5 text-xs font-black rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
             hrActiveTab === 'dashboard' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:text-slate-800'
           }`}
         >
-          📊 لوحة التحكم والمؤشرات
+          <Activity size={14} className={hrActiveTab === 'dashboard' ? 'text-indigo-400 animate-pulse' : 'text-slate-500'} />
+          <span>لوحة التحكم والمؤشرات</span>
         </button>
         <button
           type="button"
           onClick={() => setHrActiveTab('employees')}
-          className={`flex-1 min-w-[120px] py-2.5 text-xs font-black rounded-xl transition-all cursor-pointer ${
+          className={`flex-1 min-w-[120px] py-2.5 text-xs font-black rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
             hrActiveTab === 'employees' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:text-slate-800'
           }`}
         >
-          👥 ملفات الموظفين والعقود
+          <User size={14} className={hrActiveTab === 'employees' ? 'text-indigo-400' : 'text-slate-500'} />
+          <span>ملفات الموظفين والعقود</span>
         </button>
         <button
           type="button"
           onClick={() => setHrActiveTab('payroll')}
-          className={`flex-1 min-w-[120px] py-2.5 text-xs font-black rounded-xl transition-all cursor-pointer ${
+          className={`flex-1 min-w-[120px] py-2.5 text-xs font-black rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
             hrActiveTab === 'payroll' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:text-slate-800'
           }`}
         >
-          💳 مسيّر الرواتب والعمليات المالية
+          <FileText size={14} className={hrActiveTab === 'payroll' ? 'text-indigo-400' : 'text-slate-500'} />
+          <span>مسيّر الرواتب والعمليات</span>
         </button>
         <button
           type="button"
           onClick={() => setHrActiveTab('requests')}
-          className={`flex-1 min-w-[120px] py-2.5 text-xs font-black rounded-xl transition-all cursor-pointer ${
+          className={`flex-1 min-w-[120px] py-2.5 text-xs font-black rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
             hrActiveTab === 'requests' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:text-slate-800'
           }`}
         >
-          📝 إدارة السلف والإجازات
+          <Calendar size={14} className={hrActiveTab === 'requests' ? 'text-indigo-400' : 'text-slate-500'} />
+          <span>إدارة السلف والإجازات</span>
         </button>
         <button
           type="button"
           onClick={() => setHrActiveTab('attendance')}
-          className={`flex-1 min-w-[120px] py-2.5 text-xs font-black rounded-xl transition-all cursor-pointer ${
+          className={`flex-1 min-w-[120px] py-2.5 text-xs font-black rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
             hrActiveTab === 'attendance' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:text-slate-800'
           }`}
         >
-          🕒 الخدمة الذاتية والبصمة الجغرافية
+          <Clock size={14} className={hrActiveTab === 'attendance' ? 'text-indigo-400 animate-spin-slow' : 'text-slate-500'} />
+          <span>البصمة الجغرافية والخدمة</span>
         </button>
       </div>
 
@@ -1131,6 +1239,23 @@ export default function HRView({
       {/* TAB 2: EMPLOYEES & CONTRACTS */}
       {hrActiveTab === 'employees' && (
         <div className="space-y-6">
+          {/* Top Controls and Actions Bar */}
+          <div className="bg-white border border-slate-100 p-5 rounded-3xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 shadow-3xs">
+            <div>
+              <h3 className="text-sm font-black text-slate-800">إدارة العقود والحركات الكادرية للشهر</h3>
+              <p className="text-[10px] text-slate-400 font-bold mt-0.5">تسجيل الإضافيات، الإكراميات والمكافآت، والجزاءات والخصومات المعلقة قبل اعتماد الرواتب.</p>
+            </div>
+            <div className="flex gap-2 w-full sm:w-auto">
+              <button
+                type="button"
+                onClick={() => setIsAddVariationModalOpen(true)}
+                className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-extrabold text-xs px-4 py-2.5 rounded-xl transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 shadow-sm border border-indigo-100/40"
+              >
+                <span>⚡ تسجيل حركة استحقاق / خصم شهري</span>
+              </button>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             {filteredEmployees.length === 0 ? (
               <div className="col-span-full bg-white border border-slate-100 rounded-3xl p-12 text-center text-slate-400">
@@ -1199,6 +1324,56 @@ export default function HRView({
                           <span className="font-black text-amber-700 font-mono">{(emp.custody || 0).toLocaleString()} ر.ي</span>
                         </div>
                       </div>
+                    </div>
+
+                    {/* Collapsible Accordion for Monthly Variations */}
+                    <div className="border border-slate-100 rounded-2xl overflow-hidden">
+                      <button
+                        type="button"
+                        onClick={() => setExpandedEmpId(expandedEmpId === emp.id ? null : emp.id)}
+                        className="w-full flex justify-between items-center text-[10px] text-slate-700 hover:text-slate-950 font-extrabold cursor-pointer bg-slate-50 hover:bg-slate-100/80 px-3 py-2.5 transition-all"
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-indigo-600">⚡</span>
+                          <span>الحركات الشهرية المعلقة ({emp.monthlyVariations?.length || 0})</span>
+                        </div>
+                        <span className="font-extrabold text-slate-400 text-[9px]">{expandedEmpId === emp.id ? 'إخفاء ▲' : 'عرض التفاصيل ▼'}</span>
+                      </button>
+
+                      {/* Expanded variations list */}
+                      {expandedEmpId === emp.id && (
+                        <div className="bg-white border-t border-slate-100 p-3 text-[10px] animate-scale-up text-right space-y-2">
+                          {!emp.monthlyVariations || emp.monthlyVariations.length === 0 ? (
+                            <p className="text-slate-400 italic text-center py-2 font-bold">لا توجد حركات معلقة مسجلة لهذا الشهر.</p>
+                          ) : (
+                            <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                              {emp.monthlyVariations.map((v: any) => (
+                                <div key={v.id} className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 flex justify-between items-start gap-1">
+                                  <div className="text-right font-bold space-y-0.5">
+                                    <span className="block text-slate-800 text-[10px]">
+                                      {v.type === 'bonus' ? '🎁 إكرامية / مكافأة' : v.type === 'overtime' ? '⏱️ ساعات إضافية' : '🛑 خصم جزاء'}
+                                    </span>
+                                    <span className="text-[9px] text-slate-500 block font-bold">{v.reason}</span>
+                                    <span className="text-[8px] text-slate-400 font-mono font-bold block">{v.date}</span>
+                                  </div>
+                                  <div className="flex flex-col items-end gap-1 shrink-0">
+                                    <span className={`font-mono font-black text-[10px] ${v.type === 'deduction' ? 'text-rose-600' : 'text-emerald-600'}`}>
+                                      {v.type === 'deduction' ? '-' : '+'}{Number(v.amount).toLocaleString()} ر.ي
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteVariation(emp.id, v.id)}
+                                      className="text-[8px] text-red-500 hover:text-red-700 font-black cursor-pointer bg-red-50 hover:bg-red-100 px-1.5 py-0.5 rounded-md transition-all"
+                                    >
+                                      حذف 🗑️
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     {/* Actions and details footer */}
@@ -2273,6 +2448,192 @@ export default function HRView({
                   className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs px-5 py-2.5 rounded-xl transition-all shadow-md cursor-pointer"
                 >
                   {editingEmployee ? 'حفظ التعديلات' : 'تسجيل العقد وتوثيقه بالكادر'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ADD MONTHLY VARIATION MODAL */}
+      {isAddVariationModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4 overflow-y-auto">
+          <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-xl w-full max-w-lg space-y-4 text-right animate-scale-up" dir="rtl">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <h3 className="text-sm sm:text-base font-black text-slate-800">إضافة حركة شهرية كادرية (استحقاق / استقطاع) ⚡</h3>
+              <button
+                type="button"
+                onClick={() => setIsAddVariationModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-50 transition-colors cursor-pointer"
+              >
+                <X size={18} className="stroke-[3]" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddVariationSubmit} className="space-y-4">
+              {/* Target Employee */}
+              <div className="space-y-1">
+                <label className="block text-xs font-black text-slate-500">الموظف المعني</label>
+                <select
+                  value={variationForm.employeeId}
+                  onChange={(e) => setVariationForm({ ...variationForm, employeeId: e.target.value })}
+                  required
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs font-bold text-slate-700 focus:outline-hidden focus:border-indigo-500"
+                >
+                  <option value="">-- اختر الموظف --</option>
+                  {employees.map(emp => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.name} ({emp.role} - الراتب: {(emp.salary || 0).toLocaleString()} ر.ي)
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Variation Type */}
+              <div className="space-y-1">
+                <label className="block text-xs font-black text-slate-500">نوع الحركة</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { value: 'bonus', label: '🎁 إكرامية / مكافأة', color: 'emerald' },
+                    { value: 'overtime', label: '⚡ عمل إضافي', color: 'amber' },
+                    { value: 'deduction', label: '🛑 خصم / جزاء', color: 'rose' }
+                  ].map((t) => (
+                    <button
+                      key={t.value}
+                      type="button"
+                      onClick={() => setVariationForm({ 
+                        ...variationForm, 
+                        type: t.value as any,
+                        amountType: t.value === 'overtime' ? 'hourly' : 'flat'
+                      })}
+                      className={`py-2.5 rounded-xl border text-[11px] font-black transition-all cursor-pointer ${
+                        variationForm.type === t.value
+                          ? t.color === 'emerald' ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                            : t.color === 'amber' ? 'bg-amber-50 border-amber-300 text-amber-800'
+                            : 'bg-rose-50 border-rose-300 text-rose-800'
+                          : 'bg-white border-slate-200 text-slate-500 hover:text-slate-700'
+                      }`}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Overtime Sub-Type Choice */}
+              {variationForm.type === 'overtime' && (
+                <div className="bg-slate-50 border border-slate-100 p-3 rounded-2xl space-y-2">
+                  <label className="block text-[10px] font-black text-slate-500">طريقة احتساب الإضافي</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { value: 'hourly', label: '⏱️ بالساعات (ساعات × قيمة الساعة)' },
+                      { value: 'flat', label: '💰 مبلغ مقطوع مباشرة' }
+                    ].map((mode) => (
+                      <button
+                        key={mode.value}
+                        type="button"
+                        onClick={() => setVariationForm({ ...variationForm, amountType: mode.value as any })}
+                        className={`py-2 rounded-lg border text-[10px] font-bold transition-all cursor-pointer ${
+                          variationForm.amountType === mode.value
+                            ? 'bg-slate-900 border-slate-900 text-white font-extrabold'
+                            : 'bg-white border-slate-200 text-slate-500 hover:text-slate-700'
+                        }`}
+                      >
+                        {mode.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Numeric Inputs depending on choice */}
+              {variationForm.type === 'overtime' && variationForm.amountType === 'hourly' ? (
+                <div className="grid grid-cols-2 gap-3 bg-amber-50/20 border border-amber-100/50 p-4 rounded-2xl">
+                  <div className="space-y-1">
+                    <label className="block text-[11px] font-black text-slate-500">عدد الساعات الإضافية</label>
+                    <input
+                      type="number"
+                      required
+                      min="0.5"
+                      step="0.5"
+                      placeholder="مثال: 4 ساعات"
+                      value={variationForm.hours}
+                      onChange={(e) => setVariationForm({ ...variationForm, hours: e.target.value === '' ? '' : Number(e.target.value) })}
+                      className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-mono font-bold text-slate-700 focus:outline-hidden"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-[11px] font-black text-slate-500">قيمة ساعة الإضافي (ر.ي)</label>
+                    <input
+                      type="number"
+                      required
+                      min="1"
+                      placeholder="مثال: 1500 ريال"
+                      value={variationForm.hourlyRate}
+                      onChange={(e) => setVariationForm({ ...variationForm, hourlyRate: e.target.value === '' ? '' : Number(e.target.value) })}
+                      className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-mono font-bold text-slate-700 focus:outline-hidden"
+                    />
+                  </div>
+                  <div className="col-span-2 text-center pt-2 border-t border-amber-100 text-xs font-black text-amber-900 bg-amber-50 rounded-lg py-1.5">
+                    إجمالي المستحق للإضافي: {((Number(variationForm.hours || 0)) * (Number(variationForm.hourlyRate || 0))).toLocaleString()} ر.ي
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  <label className="block text-xs font-black text-slate-500">
+                    {variationForm.type === 'overtime' ? 'المبلغ الإضافي المقطوع (ر.ي)' : 
+                     variationForm.type === 'bonus' ? 'قيمة الإكرامية / المكافأة (ر.ي)' : 'قيمة الخصم / الجزاء (ر.ي)'}
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    placeholder="أدخل المبلغ هنا..."
+                    value={variationForm.flatAmount}
+                    onChange={(e) => setVariationForm({ ...variationForm, flatAmount: e.target.value === '' ? '' : Number(e.target.value) })}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs font-mono font-bold text-slate-700 focus:outline-hidden text-left"
+                  />
+                </div>
+              )}
+
+              {/* Reason */}
+              <div className="space-y-1">
+                <label className="block text-xs font-black text-slate-500">السبب أو التفاصيل</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="مثال: تميز في إنهاء أعمال الجرد السنوي"
+                  value={variationForm.reason}
+                  onChange={(e) => setVariationForm({ ...variationForm, reason: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs font-bold text-slate-700 focus:outline-hidden"
+                />
+              </div>
+
+              {/* Date */}
+              <div className="space-y-1">
+                <label className="block text-xs font-black text-slate-500">تاريخ الحركة</label>
+                <input
+                  type="date"
+                  required
+                  value={variationForm.date}
+                  onChange={(e) => setVariationForm({ ...variationForm, date: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs font-bold text-slate-700 focus:outline-hidden"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsAddVariationModalOpen(false)}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-600 font-extrabold text-xs px-5 py-2.5 rounded-xl transition-colors cursor-pointer"
+                >
+                  إلغاء التراجع
+                </button>
+                <button
+                  type="submit"
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs px-5 py-2.5 rounded-xl transition-all shadow-md cursor-pointer"
+                >
+                  تسجيل الحركة وتعميدها
                 </button>
               </div>
             </form>

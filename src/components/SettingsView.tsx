@@ -221,19 +221,8 @@ export default function SettingsView({
         }
       };
 
-      const isIframe = typeof window !== 'undefined' && window.self !== window.top;
-      if (isIframe) {
-        showViaServiceWorker();
-      } else {
-        try {
-          new Notification('تجربة تنبيه المستودع اليومي 📦', {
-            body: 'هذا إشعار تجريبي من نظام إدارة المستودعات الذكي. يعمل التنبيه تلقائياً إذا لم تسجل أي حركة اليوم.',
-          });
-        } catch (e) {
-          console.warn('Notification constructor failed, trying service worker:', e);
-          showViaServiceWorker();
-        }
-      }
+      // Always use Service Worker registration to trigger notification safely
+      showViaServiceWorker();
     } else {
       alert('يرجى تفعيل سماحية إشعارات المتصفح أولاً عبر الضغط على زر "طلب سماحية الإشعارات".');
     }

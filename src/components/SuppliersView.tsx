@@ -166,64 +166,274 @@ export default function SuppliersView({
   });
   const [reconciliationTab, setReconciliationTab] = useState<'cash' | 'bank' | 'balancing'>('cash');
   const [finalAccountsTab, setFinalAccountsTab] = useState<'chart' | 'trial' | 'financial_statements' | 'closing'>('chart');
+  const [collapsedAccounts, setCollapsedAccounts] = useState<Record<string, boolean>>({});
 
   // Dynamic ledger-linked financial reports calculations
-  const getFinancialSummaries = (filterCostCenter?: string) => {
-    const activeEntries = journalEntries.filter(entry => !entry.isReversed);
+  // ==================== CHART OF ACCOUNTS (COA) SYSTEM ====================
+  // Define structure for Chart of Accounts
+  interface ChartAccount {
+    code: string;
+    name: string;
+    level: number;
+    nature: 'debit' | 'credit';
+    parentCode: string | null;
+    isLeaf: boolean;
+    isSystem: boolean;
+  }
 
-    let journalRevenues = 0;
-    let journalExpenses = 0;
+  // Seed default system accounts conforming exactly to Gold Standard requirements
+  const [chartOfAccounts, setChartOfAccounts] = useState<ChartAccount[]>(() => {
+    const saved = localStorage.getItem('wms_chart_of_accounts');
+    if (saved) return JSON.parse(saved);
 
+    return [
+      // 📂 1. شجرة الأصول (1)
+      { code: '1', name: 'الأصول (Assets)', level: 1, nature: 'debit', parentCode: null, isLeaf: false, isSystem: true },
+      { code: '11', name: 'الأصول المتداولة (Current Assets)', level: 2, nature: 'debit', parentCode: '1', isLeaf: false, isSystem: true },
+      { code: '111', name: 'النقدية وما يعادلها', level: 3, nature: 'debit', parentCode: '11', isLeaf: false, isSystem: true },
+      { code: '11101', name: 'الخزينة العامة (الكاش)', level: 4, nature: 'debit', parentCode: '111', isLeaf: true, isSystem: true },
+      { code: '11102', name: 'الخزائن الفرعية (نقاط البيع)', level: 4, nature: 'debit', parentCode: '111', isLeaf: true, isSystem: true },
+      { code: '112', name: 'البنوك والشبكات (Banks & Networks)', level: 3, nature: 'debit', parentCode: '11', isLeaf: false, isSystem: true },
+      { code: '11201', name: 'حساب بنك التضامن', level: 4, nature: 'debit', parentCode: '112', isLeaf: true, isSystem: true },
+      { code: '11202', name: 'حساب بنك الكريمي', level: 4, nature: 'debit', parentCode: '112', isLeaf: true, isSystem: true },
+      { code: '113', name: 'الذمم المدينة (العملاء)', level: 3, nature: 'debit', parentCode: '11', isLeaf: false, isSystem: true },
+      { code: '11301', name: 'حسابات العملاء التجاريين', level: 4, nature: 'debit', parentCode: '113', isLeaf: false, isSystem: true }, // parent of sub-accounts
+      { code: '114', name: 'العهد والسلف الميسرة', level: 3, nature: 'debit', parentCode: '11', isLeaf: false, isSystem: true },
+      { code: '11401', name: 'سلف الموظفين', level: 4, nature: 'debit', parentCode: '114', isLeaf: true, isSystem: true },
+      { code: '11402', name: 'عهد الموظفين المعلقة', level: 4, nature: 'debit', parentCode: '114', isLeaf: true, isSystem: true },
+      { code: '115', name: 'المخزون (Inventory)', level: 3, nature: 'debit', parentCode: '11', isLeaf: false, isSystem: true },
+      { code: '11501', name: 'مخزون المستودع الرئيسي (عطور وبخور)', level: 4, nature: 'debit', parentCode: '115', isLeaf: true, isSystem: true },
+      { code: '12', name: 'الأصول غير المتداولة/الثابتة (Non-Current Assets)', level: 2, nature: 'debit', parentCode: '1', isLeaf: false, isSystem: true },
+      { code: '121', name: 'العقارات والآلات والمعدات', level: 3, nature: 'debit', parentCode: '12', isLeaf: false, isSystem: true },
+      { code: '12101', name: 'أثاث وديكور المحل', level: 4, nature: 'debit', parentCode: '121', isLeaf: true, isSystem: true },
+      { code: '12102', name: 'أجهزة الكمبيوتر والشبكات', level: 4, nature: 'debit', parentCode: '121', isLeaf: true, isSystem: true },
+
+      // 📂 2. شجرة الالتزامات (2)
+      { code: '2', name: 'الالتزامات (Liabilities)', level: 1, nature: 'credit', parentCode: null, isLeaf: false, isSystem: true },
+      { code: '21', name: 'الالتزامات المتداولة (Current Liabilities)', level: 2, nature: 'credit', parentCode: '2', isLeaf: false, isSystem: true },
+      { code: '211', name: 'الذمم الدائنة (الموردين)', level: 3, nature: 'credit', parentCode: '21', isLeaf: false, isSystem: true },
+      { code: '21101', name: 'حسابات الموردين', level: 4, nature: 'credit', parentCode: '211', isLeaf: false, isSystem: true }, // parent of sub-accounts
+      { code: '212', name: 'الالتزامات المستحقة والضرائب', level: 3, nature: 'credit', parentCode: '21', isLeaf: false, isSystem: true },
+      { code: '21201', name: 'حساب مصلحة الضرائب المستحقة', level: 4, nature: 'credit', parentCode: '212', isLeaf: true, isSystem: true },
+      { code: '21202', name: 'رواتب وأجور مستحقة', level: 4, nature: 'credit', parentCode: '212', isLeaf: true, isSystem: true },
+
+      // 📂 3. شجرة حقوق الملكية (3)
+      { code: '3', name: 'حقوق الملكية (Equity)', level: 1, nature: 'credit', parentCode: null, isLeaf: false, isSystem: true },
+      { code: '31', name: 'رأس المال وحقوق الملكية', level: 2, nature: 'credit', parentCode: '3', isLeaf: false, isSystem: true },
+      { code: '31101', name: 'رأس المال المدفوع', level: 4, nature: 'credit', parentCode: '31', isLeaf: true, isSystem: true },
+      { code: '31201', name: 'الأرباح والخسائر المحتجزة', level: 4, nature: 'credit', parentCode: '31', isLeaf: true, isSystem: true },
+      { code: '31301', name: 'مسحوبات المالك الشخصية', level: 4, nature: 'debit', parentCode: '31', isLeaf: true, isSystem: true },
+
+      // 📂 4. شجرة الإيرادات (4)
+      { code: '4', name: 'الإيرادات (Revenues)', level: 1, nature: 'credit', parentCode: null, isLeaf: false, isSystem: true },
+      { code: '41', name: 'الإيرادات التشغيلية', level: 2, nature: 'credit', parentCode: '4', isLeaf: false, isSystem: true },
+      { code: '41101', name: 'مبيعات المعرض (عطور وبخور جاهزة)', level: 4, nature: 'credit', parentCode: '41', isLeaf: true, isSystem: true },
+      { code: '41102', name: 'مبيعات الجملة والطلبيات الخاصة', level: 4, nature: 'credit', parentCode: '41', isLeaf: true, isSystem: true },
+      { code: '42', name: 'إيرادات أخرى', level: 2, nature: 'credit', parentCode: '4', isLeaf: false, isSystem: true },
+      { code: '42101', name: 'فروق عملات / إيرادات متنوعة', level: 4, nature: 'credit', parentCode: '42', isLeaf: true, isSystem: true },
+
+      // 📂 5. شجرة المصروفات (5)
+      { code: '5', name: 'المصروفات (Expenses)', level: 1, nature: 'debit', parentCode: null, isLeaf: false, isSystem: true },
+      { code: '51', name: 'مصروفات تشغيلية وعمومية', level: 2, nature: 'debit', parentCode: '5', isLeaf: false, isSystem: true },
+      { code: '51101', name: 'مصروفات الرواتب والأجور البدلات', level: 4, nature: 'debit', parentCode: '51', isLeaf: true, isSystem: true },
+      { code: '51102', name: 'مصروفات الإيجار', level: 4, nature: 'debit', parentCode: '51', isLeaf: true, isSystem: true },
+      { code: '51103', name: 'مصروفات الكهرباء والمياه', level: 4, nature: 'debit', parentCode: '51', isLeaf: true, isSystem: true },
+      { code: '51104', name: 'مصروفات التسويق والإعلانات', level: 4, nature: 'debit', parentCode: '51', isLeaf: true, isSystem: true },
+      { code: '51105', name: 'مصروفات الشحن ونقل البضائع', level: 4, nature: 'debit', parentCode: '51', isLeaf: true, isSystem: true },
+    ];
+  });
+
+  // Dynamically append customers and suppliers to Chart of Accounts list
+  const getFullChartOfAccounts = () => {
+    const fullList = [...chartOfAccounts];
+
+    customers.forEach((cust, idx) => {
+      const code = cust.accountCode || `11301${String(idx + 1).padStart(3, '0')}`;
+      if (!fullList.some(a => a.code === code)) {
+        fullList.push({
+          code,
+          name: `العميل: ${cust.name}`,
+          level: 5,
+          nature: 'debit',
+          parentCode: '11301',
+          isLeaf: true,
+          isSystem: false
+        });
+      }
+    });
+
+    suppliers.forEach((sup, idx) => {
+      const code = sup.accountCode || `21101${String(idx + 1).padStart(3, '0')}`;
+      if (!fullList.some(a => a.code === code)) {
+        fullList.push({
+          code,
+          name: `المورد: ${sup.name}`,
+          level: 5,
+          nature: 'credit',
+          parentCode: '21101',
+          isLeaf: true,
+          isSystem: false
+        });
+      }
+    });
+
+    return fullList.sort((a, b) => a.code.localeCompare(b.code));
+  };
+
+  // Safe search to map journal entry line string to account code
+  const findAccountCode = (accountIdentifier: string, accountsList: ChartAccount[]) => {
+    if (!accountIdentifier) return null;
+    const cleanStr = accountIdentifier.trim();
+    
+    // First, check if it has code in it, e.g. "11101 - الخزينة العامة"
+    const spaceDashMatch = cleanStr.match(/^(\d+)\s*-\s*(.+)$/);
+    if (spaceDashMatch) {
+      return spaceDashMatch[1];
+    }
+
+    const matchByCode = accountsList.find(a => a.code === cleanStr);
+    if (matchByCode) return matchByCode.code;
+
+    const matchByName = accountsList.find(a => a.name === cleanStr || cleanStr.includes(a.name) || a.name.includes(cleanStr));
+    if (matchByName) return matchByName.code;
+
+    return null;
+  };
+
+  // Calculate dynamic balances for all accounts
+  const getAccountBalances = () => {
+    const fullChart = getFullChartOfAccounts();
+    const balances: Record<string, { debit: number; credit: number; net: number }> = {};
+
+    fullChart.forEach(acc => {
+      balances[acc.code] = { debit: 0, credit: 0, net: 0 };
+    });
+
+    // 1. Base values for standard accounts
+    if (balances['11101']) {
+      balances['11101'].debit += treasuryBalance || 0;
+    }
+
+    const bankAccounts = invoiceSettings?.bankAccounts || [];
+    if (bankAccounts.length > 0) {
+      if (balances['11201']) balances['11201'].debit += bankAccounts[0]?.balance || 0;
+      if (bankAccounts.length > 1 && balances['11202']) {
+        balances['11202'].debit += bankAccounts[1]?.balance || 0;
+      }
+    } else {
+      if (balances['11201']) balances['11201'].debit += bankBalance || 500000;
+    }
+
+    const totalAdvances = employees.reduce((sum, e) => sum + (e.advances || 0), 0);
+    if (balances['11401']) {
+      balances['11401'].debit += totalAdvances;
+    }
+
+    const totalCustody = employees.reduce((sum, e) => sum + (e.custody || 0), 0);
+    if (balances['11402']) {
+      balances['11402'].debit += totalCustody;
+    }
+
+    if (balances['11501']) {
+      balances['11501'].debit += 12500000;
+    }
+
+    if (balances['12101']) balances['12101'].debit += 1500000;
+    if (balances['12102']) balances['12102'].debit += 800000;
+
+    if (balances['21201']) balances['21201'].credit += 350000;
+    const totalSalaries = employees.reduce((sum, e) => sum + (e.salary || 0), 0);
+    if (balances['21202']) balances['21202'].credit += totalSalaries;
+
+    if (balances['31101']) balances['31101'].credit += 10000000;
+    if (balances['31301']) balances['31301'].debit += 120000;
+
+    // Vouchers base revenues
+    const baseRevenues = vouchers
+      .filter((v) => v.isReceipt && (v.title?.includes('مبيعات') || v.notes?.includes('مبيعات') || v.partnerType === 'عميل'))
+      .reduce((sum, v) => sum + v.amount, 0) || 5800000;
+    if (balances['41101']) {
+      balances['41101'].credit += baseRevenues;
+    }
+
+    const baseExpenses = (totalSalaries * 12) || 1200000;
+    if (balances['51101']) {
+      balances['51101'].debit += baseExpenses;
+    }
+
+    // Customer accounts balances
+    customers.forEach(cust => {
+      const code = cust.accountCode || `11301001`;
+      if (balances[code]) {
+        balances[code].debit += cust.balance || 0;
+      }
+    });
+
+    // Supplier accounts balances
+    suppliers.forEach(sup => {
+      const code = sup.accountCode || `21101001`;
+      if (balances[code]) {
+        balances[code].credit += sup.balance || 0;
+      }
+    });
+
+    // 2. Accumulate Journal Entries
+    const activeEntries = journalEntries.filter(e => !e.isReversed);
     activeEntries.forEach(entry => {
       entry.lines.forEach((line: any) => {
-        if (filterCostCenter && line.costCenter !== filterCostCenter) {
-          return;
-        }
-        const acc = line.account || '';
-        const isRev = acc.includes('مبيعات') || acc.includes('إيراد') || acc.includes('إيرادات');
-        const isExp = acc.includes('رواتب') || acc.includes('أجور') || acc.includes('مصروف') || acc.includes('مصروفات') || acc.includes('إيجار') || acc.includes('كهرباء') || acc.includes('إنترنت');
-
-        if (isRev) {
-          journalRevenues += (line.credit - line.debit);
-        }
-        if (isExp) {
-          journalExpenses += (line.debit - line.credit);
+        const code = findAccountCode(line.account, fullChart);
+        if (code && balances[code]) {
+          balances[code].debit += Number(line.debit || 0);
+          balances[code].credit += Number(line.credit || 0);
         }
       });
     });
 
-    const baseRevenues = vouchers
-      .filter((v) => v.isReceipt && (v.title?.includes('مبيعات') || v.notes?.includes('مبيعات') || v.partnerType === 'عميل') && (!filterCostCenter || v.costCenter === filterCostCenter))
-      .reduce((sum, v) => sum + v.amount, 0) || (filterCostCenter ? 0 : 5800000);
+    // 3. Roll up calculations from deepest (level 5) to top (level 1)
+    for (let lvl = 5; lvl >= 1; lvl--) {
+      fullChart.forEach(acc => {
+        if (acc.level === lvl) {
+          const bal = balances[acc.code];
+          if (bal) {
+            const net = acc.nature === 'debit' ? (bal.debit - bal.credit) : (bal.credit - bal.debit);
+            bal.net = net;
 
-    const baseExpenses = (employees.reduce((sum, e) => sum + (e.salary || 0), 0) * 12) || (filterCostCenter ? 0 : 1200000);
+            if (acc.parentCode && balances[acc.parentCode]) {
+              balances[acc.parentCode].debit += bal.debit;
+              balances[acc.parentCode].credit += bal.credit;
+            }
+          }
+        }
+      });
+    }
 
-    const finalRevenues = journalRevenues > 0 ? journalRevenues : baseRevenues;
-    const finalExpenses = journalExpenses > 0 ? journalExpenses : baseExpenses;
+    return balances;
+  };
+
+  // Safe dynamic financial summaries driven by Chart of Accounts (COA)
+  const getFinancialSummaries = (filterCostCenter?: string) => {
+    const balances = getAccountBalances();
+
+    // Revenues (all under category 4)
+    const finalRevenues = balances['4']?.net || 0;
+
+    // Expenses (all under category 5)
+    const finalExpenses = balances['5']?.net || 0;
+
     const finalNetProfit = finalRevenues - finalExpenses;
 
-    const finalTreasury = treasuryBalance || 0;
-    const finalBank = (invoiceSettings?.bankAccounts || []).reduce((sum: number, b: any) => sum + (b.balance || 0), 0);
-    const finalCustomers = totalCustomersBalance || 0;
-    const finalInventory = 12500000;
-    const finalCustodies = employees.reduce((sum, e) => sum + (e.custody || 0), 0);
+    const finalTreasury = balances['11101']?.net || treasuryBalance || 0;
+    const finalBank = balances['112']?.net || 0;
+    const finalCustomers = balances['113']?.net || totalCustomersBalance || 0;
+    const finalInventory = balances['11501']?.net || 12500000;
+    const finalCustodies = balances['11402']?.net || 0;
 
     const totalAssets = finalTreasury + finalBank + finalCustomers + finalInventory + finalCustodies;
 
-    const finalSuppliers = totalSuppliersBalance || 0;
-    const finalBaseCapital = 10000000;
+    const finalSuppliers = balances['21101']?.net || totalSuppliersBalance || 0;
+    const finalBaseCapital = balances['31101']?.net || 10000000;
+    const finalRetainedEarnings = finalNetProfit;
 
-    // Retained Earnings checking
-    let closedEarnings = 0;
-    activeEntries.forEach(entry => {
-      entry.lines.forEach((line: any) => {
-        if (line.account === 'الأرباح والخسائر المحتجزة' || line.account === 'الأرباح المحتجزة' || line.account === 'الأرباح المحتجزة / المدوّرة') {
-          closedEarnings += (line.credit - line.debit);
-        }
-      });
-    });
-
-    const finalRetainedEarnings = closedEarnings !== 0 ? closedEarnings : finalNetProfit;
     const totalLiabilitiesEquity = finalSuppliers + finalBaseCapital + finalRetainedEarnings;
 
     return {
@@ -242,6 +452,40 @@ export default function SuppliersView({
       totalLiabilitiesEquity
     };
   };
+
+  // Hook to automatically initialize unique accounts for existing suppliers & customers once
+  useEffect(() => {
+    let suppliersUpdated = false;
+    const nextSuppliers = suppliers.map((sup, index) => {
+      if (!sup.accountCode) {
+        const code = `21101${String(index + 1).padStart(3, '0')}`;
+        suppliersUpdated = true;
+        return { ...sup, accountCode: code };
+      }
+      return sup;
+    });
+    if (suppliersUpdated) {
+      nextSuppliers.forEach(s => onEditSupplier(s));
+    }
+
+    let customersUpdated = false;
+    const nextCustomers = customers.map((cust, index) => {
+      if (!cust.accountCode) {
+        const code = `11301${String(index + 1).padStart(3, '0')}`;
+        customersUpdated = true;
+        return { ...cust, accountCode: code };
+      }
+      return cust;
+    });
+    if (customersUpdated) {
+      onUpdateCustomers(nextCustomers);
+    }
+  }, []);
+
+  // Modal States for adding custom sub-accounts
+  const [isAddAccountModalOpen, setIsAddAccountModalOpen] = useState(false);
+  const [newAccountParentCode, setNewAccountParentCode] = useState('');
+  const [newAccountName, setNewAccountName] = useState('');
 
   const getSystemAccountLedger = () => {
     const sysBalances = {
@@ -2009,15 +2253,39 @@ export default function SuppliersView({
           onLogAction('edit', 'suppliers', `تم تعديل بيانات المورد: ${formData.name}`);
         }
       } else {
+        const existingCodes = suppliers
+          .map(s => s.accountCode)
+          .filter(code => code && code.startsWith('21101'))
+          .map(code => parseInt(code.substring(5), 10));
+        const maxCodeNum = existingCodes.length > 0 ? Math.max(...existingCodes) : 0;
+        const nextCodeNum = maxCodeNum + 1;
+        const formattedCode = `21101${String(nextCodeNum).padStart(3, '0')}`;
+
         onAddSupplier({
           id: `SUP-${Date.now()}`,
           name: formData.name,
           phone: formData.phone,
           email: formData.email,
           balance: Number(formData.balance) || 0,
+          accountCode: formattedCode,
         });
+
+        // Programmatically link and add this sub-account to the Chart of Accounts tree
+        const newChartAcc: ChartAccount = {
+          code: formattedCode,
+          name: `المورد: ${formData.name}`,
+          level: 5,
+          nature: 'credit',
+          parentCode: '21101',
+          isLeaf: true,
+          isSystem: false,
+        };
+        const updatedChart = [...chartOfAccounts, newChartAcc].sort((a, b) => a.code.localeCompare(b.code));
+        setChartOfAccounts(updatedChart);
+        localStorage.setItem('wms_chart_of_accounts', JSON.stringify(updatedChart));
+
         if (onLogAction) {
-          onLogAction('add', 'suppliers', `تم تسجيل مورد جديد: ${formData.name} برصيد مبدئي ${formData.balance} ر.ي`);
+          onLogAction('add', 'suppliers', `تم تسجيل مورد جديد: ${formData.name} برصيد مبدئي ${formData.balance} ر.ي (الحساب: ${formattedCode})`);
         }
       }
     } else {
@@ -2032,16 +2300,40 @@ export default function SuppliersView({
           onLogAction('edit', 'suppliers', `تم تعديل بيانات العميل: ${formData.name}`);
         }
       } else {
+        const existingCodes = customers
+          .map(c => c.accountCode)
+          .filter(code => code && code.startsWith('11301'))
+          .map(code => parseInt(code.substring(5), 10));
+        const maxCodeNum = existingCodes.length > 0 ? Math.max(...existingCodes) : 0;
+        const nextCodeNum = maxCodeNum + 1;
+        const formattedCode = `11301${String(nextCodeNum).padStart(3, '0')}`;
+
         const newCustomer = {
           id: `CUST-${Date.now()}`,
           name: formData.name,
           phone: formData.phone,
           email: formData.email,
           balance: Number(formData.balance) || 0,
+          accountCode: formattedCode,
         };
         onUpdateCustomers([...customers, newCustomer]);
+
+        // Programmatically link and add this sub-account to the Chart of Accounts tree
+        const newChartAcc: ChartAccount = {
+          code: formattedCode,
+          name: `العميل: ${formData.name}`,
+          level: 5,
+          nature: 'debit',
+          parentCode: '11301',
+          isLeaf: true,
+          isSystem: false,
+        };
+        const updatedChart = [...chartOfAccounts, newChartAcc].sort((a, b) => a.code.localeCompare(b.code));
+        setChartOfAccounts(updatedChart);
+        localStorage.setItem('wms_chart_of_accounts', JSON.stringify(updatedChart));
+
         if (onLogAction) {
-          onLogAction('add', 'suppliers', `تم تسجيل عميل جديد: ${formData.name} بمديونية مبدئية ${formData.balance} ر.ي`);
+          onLogAction('add', 'suppliers', `تم تسجيل عميل جديد: ${formData.name} بمديونية مبدئية ${formData.balance} ر.ي (الحساب: ${formattedCode})`);
         }
       }
     }
@@ -2790,6 +3082,117 @@ export default function SuppliersView({
           </div>
           <div className="text-xs font-bold leading-relaxed text-right">
             وضع القراءة فقط نشط: تم قفل البيانات في الإعدادات لمنع إضافة أو تعديل الحسابات أو السندات.
+          </div>
+        </div>
+      )}
+
+      {/* ADD ACCOUNT MODAL */}
+      {isAddAccountModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white border border-slate-150 rounded-3xl p-6 w-full max-w-md shadow-xl animate-scale-up text-right">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+              <h4 className="font-extrabold text-slate-800 text-sm sm:text-base flex items-center gap-1.5">
+                <span>➕</span>
+                <span>إضافة حساب فرعي جديد في دليل الحسابات</span>
+              </h4>
+              <button 
+                type="button"
+                onClick={() => setIsAddAccountModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 hover:bg-slate-50 p-1.5 rounded-xl transition-colors cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs">
+              <div className="space-y-1">
+                <label className="block font-black text-slate-600">الحساب الرئيسي الأب (Parent Account) *</label>
+                <select
+                  value={newAccountParentCode}
+                  onChange={(e) => setNewAccountParentCode(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-700 focus:outline-hidden"
+                >
+                  <option value="">-- اختر الحساب الرئيسي الأب --</option>
+                  {chartOfAccounts.filter(a => !a.isLeaf && a.level < 4).map(a => (
+                    <option key={a.code} value={a.code}>
+                      {a.code} - {a.name} (المستوى {a.level})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="block font-black text-slate-600">اسم الحساب الفرعي الجديد *</label>
+                <input
+                  type="text"
+                  placeholder="مثال: مصروفات صيانة الديكور، بنك سبأ الإسلامي..."
+                  value={newAccountName}
+                  onChange={(e) => setNewAccountName(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-700 focus:outline-hidden"
+                />
+              </div>
+
+              <div className="bg-blue-50 border border-blue-100 p-3 rounded-xl text-[10px] text-blue-900 leading-relaxed font-bold">
+                💡 بمجرد الحفظ، ستقوم المنظومة المحاسبية تلقائياً بتوليد الكود المحاسبي المتسلسل للحساب، وتوريث طبيعته المالية (مدين/دائن) من الحساب الأب، وإتاحته فوراً للاستخدام في القيود والسندات.
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!newAccountParentCode || !newAccountName.trim()) {
+                      alert('⚠️ الرجاء ملء جميع الحقول المطلوبة!');
+                      return;
+                    }
+
+                    const parent = chartOfAccounts.find(a => a.code === newAccountParentCode);
+                    if (!parent) return;
+
+                    // Find existing children under this parent
+                    const children = chartOfAccounts.filter(a => a.parentCode === newAccountParentCode);
+                    
+                    let nextCodeNum = 1;
+                    if (children.length > 0) {
+                      const childCodes = children.map(c => {
+                        const len = newAccountParentCode.length;
+                        return parseInt(c.code.substring(len), 10);
+                      }).filter(n => !isNaN(n));
+                      nextCodeNum = Math.max(...childCodes) + 1;
+                    }
+
+                    const formattedCode = `${newAccountParentCode}${String(nextCodeNum).padStart(2, '0')}`;
+                    
+                    const newAcc: ChartAccount = {
+                      code: formattedCode,
+                      name: newAccountName.trim(),
+                      level: parent.level + 1,
+                      nature: parent.nature,
+                      parentCode: newAccountParentCode,
+                      isLeaf: true,
+                      isSystem: false
+                    };
+
+                    const updatedChart = [...chartOfAccounts, newAcc].sort((a, b) => a.code.localeCompare(b.code));
+                    setChartOfAccounts(updatedChart);
+                    localStorage.setItem('wms_chart_of_accounts', JSON.stringify(updatedChart));
+
+                    alert(`✅ تم بنجاح إضافة الحساب الفرعي: [${newAcc.name}] برمز محاسبي: ${newAcc.code}`);
+                    setNewAccountName('');
+                    setIsAddAccountModalOpen(false);
+                  }}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-extrabold py-2.5 rounded-xl transition-all cursor-pointer text-center"
+                >
+                  حفظ وإضافة الحساب 💾
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsAddAccountModalOpen(false)}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold px-4 py-2.5 rounded-xl transition-all cursor-pointer"
+                >
+                  إلغاء
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -3950,7 +4353,7 @@ export default function SuppliersView({
           setStatementPartnerType={setStatementPartnerType}
           setIsStatementModalOpen={setIsStatementModalOpen}
         />
-      ) : subTab === 'employees_old' ? (
+      ) : subTab === 'legacy_employees' ? (
         <div className="space-y-6">
           {/* Employee Creation/Edition Modal */}
           {isEmployeeModalOpen && (
@@ -4878,114 +5281,283 @@ export default function SuppliersView({
 
               {/* Chart of Accounts Render */}
               {finalAccountsTab === 'chart' && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-fade-in text-[11px]">
-                  {/* Assets */}
-                  <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100/60 space-y-2">
-                    <h5 className="text-[11px] font-black text-blue-600 border-b border-blue-100/50 pb-1 flex justify-between">
-                      <span>1. الأصول (Assets)</span>
-                      <span className="font-mono text-[10px]">10000</span>
-                    </h5>
-                    <ul className="text-[10px] font-bold text-slate-600 space-y-1">
-                      <li className="flex justify-between items-center bg-white p-2 rounded-xl border border-slate-100">
-                        <span>الخزينة العامة</span>
-                        <span className="text-slate-500 font-mono">{(treasuryBalance || 0).toLocaleString()} ر.ي</span>
-                      </li>
-                      <li className="flex justify-between items-center bg-white p-2 rounded-xl border border-slate-100">
-                        <span>الأرصدة البنكية</span>
-                        <span className="text-slate-500 font-mono">
-                          {((invoiceSettings?.bankAccounts || []).reduce((sum, b) => sum + (b.balance || 0), 0)).toLocaleString()} ر.ي
-                        </span>
-                      </li>
-                      <li className="flex justify-between items-center bg-white p-2 rounded-xl border border-slate-100">
-                        <span>ذمم العملاء (AR)</span>
-                        <span className="text-slate-500 font-mono">{(totalCustomersBalance || 0).toLocaleString()} ر.ي</span>
-                      </li>
-                      <li className="flex justify-between items-center bg-white p-2 rounded-xl border border-slate-100">
-                        <span>عهدة الموظفين المعلقة</span>
-                        <span className="text-slate-500 font-mono">
-                          {(employees.reduce((sum, e) => sum + (e.custody || 0), 0)).toLocaleString()} ر.ي
-                        </span>
-                      </li>
-                    </ul>
+                <div className="space-y-4 animate-fade-in text-[11px] text-right">
+                  <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 p-4 rounded-2xl flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3">
+                    <div>
+                      <h4 className="font-extrabold text-[12px] text-blue-900 flex items-center gap-1.5">
+                        <span>📂</span>
+                        <span>دليل الحسابات المحاسبي الموحد (Chart of Accounts Tree)</span>
+                      </h4>
+                      <p className="text-slate-500 font-bold text-[10px] mt-0.5">شجرة متكاملة تدعم الترميز التلقائي وحظر التبصيم المالي المباشر على الحسابات الرئيسية.</p>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setCollapsedAccounts({})}
+                        className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-200/60 font-black text-[9px] sm:text-[10px] px-2.5 py-1.5 rounded-xl transition-all flex items-center gap-1 cursor-pointer active:scale-98 shadow-2xs"
+                      >
+                        <span>📂</span>
+                        <span>توسيع الكل</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const accounts = getFullChartOfAccounts();
+                          const collapsed: Record<string, boolean> = {};
+                          accounts.forEach(a => {
+                            if (!a.isLeaf) collapsed[a.code] = true;
+                          });
+                          setCollapsedAccounts(collapsed);
+                        }}
+                        className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-200/60 font-black text-[9px] sm:text-[10px] px-2.5 py-1.5 rounded-xl transition-all flex items-center gap-1 cursor-pointer active:scale-98 shadow-2xs"
+                      >
+                        <span>📁</span>
+                        <span>طي الكل</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewAccountParentCode('111'); // default
+                          setNewAccountName('');
+                          setIsAddAccountModalOpen(true);
+                        }}
+                        className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-[9px] sm:text-[10px] px-3 py-1.5 rounded-xl shadow-2xs transition-all flex items-center gap-1 cursor-pointer"
+                      >
+                        <span>➕</span>
+                        <span>إضافة حساب فرعي جديد</span>
+                      </button>
+                    </div>
                   </div>
 
-                  {/* Liabilities */}
-                  <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100/60 space-y-2">
-                    <h5 className="text-[11px] font-black text-rose-600 border-b border-rose-100/50 pb-1 flex justify-between">
-                      <span>2. الالتزامات (Liabilities)</span>
-                      <span className="font-mono text-[10px]">20000</span>
-                    </h5>
-                    <ul className="text-[10px] font-bold text-slate-600 space-y-1">
-                      <li className="flex justify-between items-center bg-white p-2 rounded-xl border border-slate-100">
-                        <span>ذمم الموردين (AP)</span>
-                        <span className="text-slate-500 font-mono">{(totalSuppliersBalance || 0).toLocaleString()} ر.ي</span>
-                      </li>
-                    </ul>
+                  <div className="border border-slate-200/60 rounded-2xl overflow-hidden bg-white shadow-2xs">
+                    <div className="bg-slate-50 px-3 py-2 border-b border-slate-100 grid grid-cols-12 gap-2 text-slate-500 font-extrabold text-[10px]">
+                      <div className="col-span-3">الترميز والرمز الرقمي</div>
+                      <div className="col-span-4">اسم الحساب في الشجرة</div>
+                      <div className="col-span-1.5 text-center">المستوى</div>
+                      <div className="col-span-1 text-center">طبيعة الحساب</div>
+                      <div className="col-span-1 text-center">قابلية التبصيم</div>
+                      <div className="col-span-1.5 text-left">الرصيد المالي</div>
+                    </div>
+
+                    <div className="divide-y divide-slate-100 max-h-96 overflow-y-auto">
+                      {(() => {
+                        const balances = getAccountBalances();
+                        const accounts = getFullChartOfAccounts();
+
+                        // helper to check if an account is visible based on collapsed state of its ancestors
+                        const isAccountVisible = (acc: any) => {
+                          let parentCode = acc.parentCode;
+                          while (parentCode) {
+                            if (collapsedAccounts[parentCode]) {
+                              return false;
+                            }
+                            const parent = accounts.find(a => a.code === parentCode);
+                            parentCode = parent ? parent.parentCode : null;
+                          }
+                          return true;
+                        };
+
+                        const visibleAccounts = accounts.filter(isAccountVisible);
+
+                        if (visibleAccounts.length === 0) {
+                          return (
+                            <div className="p-8 text-center font-bold text-slate-400">
+                              لا توجد حسابات معروضة.
+                            </div>
+                          );
+                        }
+
+                        return visibleAccounts.map((acc) => {
+                          const bal = balances[acc.code]?.net || 0;
+                          
+                          // Styling indentation and color based on level
+                          let indentClass = "";
+                          if (acc.level === 2) indentClass = "ps-4 border-r-2 border-slate-200";
+                          else if (acc.level === 3) indentClass = "ps-8 border-r-2 border-slate-300";
+                          else if (acc.level === 4) indentClass = "ps-12 border-r-2 border-slate-400";
+                          else if (acc.level === 5) indentClass = "ps-16 border-r-2 border-slate-500/50 text-slate-500";
+
+                          let bgClass = "bg-white";
+                          if (acc.level === 1) bgClass = "bg-slate-50/60 font-black text-slate-800";
+
+                          const isCollapsed = collapsedAccounts[acc.code];
+                          const hasChildren = !acc.isLeaf;
+
+                          return (
+                            <div 
+                              key={acc.code} 
+                              onClick={() => {
+                                if (hasChildren) {
+                                  setCollapsedAccounts(prev => ({
+                                    ...prev,
+                                    [acc.code]: !prev[acc.code]
+                                  }));
+                                }
+                              }}
+                              className={`p-2.5 grid grid-cols-12 gap-2 items-center transition-all ${
+                                hasChildren ? 'cursor-pointer hover:bg-slate-100/60' : 'hover:bg-slate-50/40'
+                              } ${bgClass}`}
+                            >
+                              <div className={`col-span-3 font-mono text-[10px] font-extrabold text-slate-400 flex items-center gap-1.5 ${indentClass}`}>
+                                <span className="text-[9px] bg-slate-150 text-slate-600 px-1.5 py-0.5 rounded-sm">{acc.code}</span>
+                              </div>
+                              <div className="col-span-4 font-black flex items-center gap-1.5 text-slate-800">
+                                {hasChildren && (
+                                  <span className="text-[9px] text-slate-400 hover:text-blue-600 transition-colors cursor-pointer select-none font-bold w-4 text-center">
+                                    {isCollapsed ? '◀' : '▼'}
+                                  </span>
+                                )}
+                                {!hasChildren && <span className="w-4" />}
+                                <span>{acc.level === 1 ? '📁' : acc.isLeaf ? '📄' : '📂'}</span>
+                                <span className={acc.level === 1 ? "text-[11px]" : "text-[10px]"}>{acc.name}</span>
+                              </div>
+                              <div className="col-span-1.5 text-center">
+                                <span className="text-[9px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full font-extrabold">المستوى {acc.level}</span>
+                              </div>
+                              <div className="col-span-1 text-center font-bold text-[9px]">
+                                {acc.nature === 'debit' ? (
+                                  <span className="text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded-md">مدين</span>
+                                ) : (
+                                  <span className="text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded-md">دائن</span>
+                                )}
+                              </div>
+                              <div className="col-span-1 text-center font-bold text-[9px]">
+                                {acc.isLeaf ? (
+                                  <span className="text-emerald-600 font-extrabold flex items-center justify-center gap-0.5">
+                                    <span>✓</span>
+                                    <span>فرعي نشط</span>
+                                  </span>
+                                ) : (
+                                  <span className="text-amber-600 font-extrabold flex items-center justify-center gap-0.5">
+                                    <span>🔏</span>
+                                    <span>رئيسي محظور</span>
+                                  </span>
+                                )}
+                              </div>
+                              <div className="col-span-1.5 text-left font-mono font-black text-[11px] text-slate-900">
+                                {bal.toLocaleString()} ر.ي
+                              </div>
+                            </div>
+                          );
+                        });
+                      })()}
+                    </div>
                   </div>
                 </div>
               )}
 
               {/* Trial Balance Render */}
               {finalAccountsTab === 'trial' && (
-                <div className="space-y-3 animate-fade-in text-[11px]">
-                  <div className="overflow-x-auto border border-slate-150 rounded-2xl">
+                <div className="space-y-4 animate-fade-in text-[11px] text-right">
+                  <div className="bg-slate-50 border border-slate-200/60 p-4 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                    <div>
+                      <h4 className="font-extrabold text-[12px] text-slate-800 flex items-center gap-1.5">
+                        <span>⚖️</span>
+                        <span>ميزان المراجعة بالأرصدة (Trial Balance Sheet)</span>
+                      </h4>
+                      <p className="text-slate-500 font-bold text-[10px] mt-0.5">توليد فوري وميزان مالي مدفوع بأرصدة اليومية العامة لإثبات تطابق القيد المزدوج رياضياً.</p>
+                    </div>
+                    <div className="flex gap-2 font-black font-mono">
+                      {(() => {
+                        const balances = getAccountBalances();
+                        const leafAccounts = getFullChartOfAccounts().filter(a => a.isLeaf);
+                        let totalDebit = 0;
+                        let totalCredit = 0;
+
+                        leafAccounts.forEach(acc => {
+                          const bal = balances[acc.code];
+                          if (bal) {
+                            if (acc.nature === 'debit') {
+                              if (bal.net >= 0) totalDebit += bal.net;
+                              else totalCredit += Math.abs(bal.net);
+                            } else {
+                              if (bal.net >= 0) totalCredit += bal.net;
+                              else totalDebit += Math.abs(bal.net);
+                            }
+                          }
+                        });
+
+                        const diff = Math.abs(totalDebit - totalCredit);
+                        return diff < 1 ? (
+                          <div className="bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-xl border border-emerald-200 text-[10px] flex items-center gap-1">
+                            <span>✓</span>
+                            <span>الميزان متوازن تماماً</span>
+                          </div>
+                        ) : (
+                          <div className="bg-rose-50 text-rose-700 px-3 py-1.5 rounded-xl border border-rose-200 text-[10px] flex items-center gap-1">
+                            <span>⚠️</span>
+                            <span>الفارق غير متطابق: {diff.toLocaleString()} ر.ي</span>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto border border-slate-200/60 rounded-2xl shadow-3xs bg-white">
                     <table className="w-full text-right">
                       <thead>
-                        <tr className="bg-slate-50 text-slate-500 font-black border-b border-slate-150">
-                          <th className="p-2">رمز الحساب</th>
-                          <th className="p-2">اسم الحساب دفتر أستاذ</th>
-                          <th className="p-2 text-center">مدين (Debit)</th>
-                          <th className="p-2 text-center">دائن (Credit)</th>
+                        <tr className="bg-slate-50 text-slate-500 font-black border-b border-slate-200/60 text-[10px]">
+                          <th className="p-3 text-right">رمز الحساب</th>
+                          <th className="p-3 text-right">اسم الحساب الفرعي</th>
+                          <th className="p-3 text-center">طبيعة الحركة</th>
+                          <th className="p-3 text-center text-emerald-600">أرصدة مدينة (Debit)</th>
+                          <th className="p-3 text-center text-rose-600">أرصدة دائنة (Credit)</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-100 font-bold text-slate-700">
-                        <tr>
-                          <td className="p-2 font-mono text-slate-400">11100</td>
-                          <td className="p-2">الخزينة النقدية العامة</td>
-                          <td className="p-2 text-center font-mono text-emerald-600">{(treasuryBalance || 0).toLocaleString()}</td>
-                          <td className="p-2 text-center font-mono text-slate-400">-</td>
-                        </tr>
-                        <tr>
-                          <td className="p-2 font-mono text-slate-400">11200</td>
-                          <td className="p-2">أرصدة البنوك المعتمدة</td>
-                          <td className="p-2 text-center font-mono text-emerald-600">
-                            {((invoiceSettings?.bankAccounts || []).reduce((sum, b) => sum + (b.balance || 0), 0)).toLocaleString()}
-                          </td>
-                          <td className="p-2 text-center font-mono text-slate-400">-</td>
-                        </tr>
-                        <tr>
-                          <td className="p-2 font-mono text-slate-400">11300</td>
-                          <td className="p-2">ذمم العملاء المدينة (AR)</td>
-                          <td className="p-2 text-center font-mono text-emerald-600">{(totalCustomersBalance || 0).toLocaleString()}</td>
-                          <td className="p-2 text-center font-mono text-slate-400">-</td>
-                        </tr>
-                        <tr>
-                          <td className="p-2 font-mono text-slate-400">11400</td>
-                          <td className="p-2">عهد الموظفين المعلقة (العهدة المالية)</td>
-                          <td className="p-2 text-center font-mono text-emerald-600">{(employees.reduce((sum, e) => sum + (e.custody || 0), 0)).toLocaleString()}</td>
-                          <td className="p-2 text-center font-mono text-slate-400">-</td>
-                        </tr>
-                        <tr>
-                          <td className="p-2 font-mono text-slate-400">21100</td>
-                          <td className="p-2">ذمم الموردين الدائنة (AP)</td>
-                          <td className="p-2 text-center font-mono text-slate-400">-</td>
-                          <td className="p-2 text-center font-mono text-rose-600">{(totalSuppliersBalance || 0).toLocaleString()}</td>
-                        </tr>
-                        <tr>
-                          <td className="p-2 font-mono text-slate-400">31000</td>
-                          <td className="p-2">رأس المال التشغيلي الافتتاحي</td>
-                          <td className="p-2 text-center font-mono text-slate-400">-</td>
-                          <td className="p-2 text-center font-mono text-rose-600">
-                            {(
-                              (treasuryBalance || 0) + 
-                              ((invoiceSettings?.bankAccounts || []).reduce((sum, b) => sum + (b.balance || 0), 0)) + 
-                              (totalCustomersBalance || 0) + 
-                              (employees.reduce((sum, e) => sum + (e.custody || 0), 0)) +
-                              (employees.reduce((sum, e) => sum + (e.salary || 0), 0)) -
-                              (totalSuppliersBalance || 0)
-                            ).toLocaleString()}
-                          </td>
-                        </tr>
+                      <tbody className="divide-y divide-slate-100 font-bold text-slate-700 text-[10px]">
+                        {(() => {
+                          const balances = getAccountBalances();
+                          const leafAccounts = getFullChartOfAccounts().filter(a => a.isLeaf);
+                          let totalDebitSum = 0;
+                          let totalCreditSum = 0;
+
+                          return (
+                            <>
+                              {leafAccounts.map((acc) => {
+                                const netVal = balances[acc.code]?.net || 0;
+                                let drVal = 0;
+                                let crVal = 0;
+
+                                if (acc.nature === 'debit') {
+                                  if (netVal >= 0) drVal = netVal;
+                                  else crVal = Math.abs(netVal);
+                                } else {
+                                  if (netVal >= 0) crVal = netVal;
+                                  else drVal = Math.abs(netVal);
+                                }
+
+                                totalDebitSum += drVal;
+                                totalCreditSum += crVal;
+
+                                return (
+                                  <tr key={acc.code} className="hover:bg-slate-50/40">
+                                    <td className="p-3 font-mono text-slate-400 text-right">{acc.code}</td>
+                                    <td className="p-3 text-slate-800 font-black text-right">{acc.name}</td>
+                                    <td className="p-3 text-center">
+                                      <span className={`px-1.5 py-0.5 rounded-sm text-[9px] font-black ${acc.nature === 'debit' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+                                        {acc.nature === 'debit' ? 'مدين بطبيعته' : 'دائن بطبيعته'}
+                                      </span>
+                                    </td>
+                                    <td className="p-3 text-center font-mono text-emerald-600">
+                                      {drVal > 0 ? drVal.toLocaleString() : '-'}
+                                    </td>
+                                    <td className="p-3 text-center font-mono text-rose-600">
+                                      {crVal > 0 ? crVal.toLocaleString() : '-'}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                              
+                              {/* Total Summary Row */}
+                              <tr className="bg-slate-50 border-t-2 border-slate-300 font-extrabold text-[11px] text-slate-900">
+                                <td className="p-4" colSpan={2}>إجمالي الأرصدة المدورة الموزونة (Total Balance Sum)</td>
+                                <td className="p-4 text-center">⚖️</td>
+                                <td className="p-4 text-center font-mono text-emerald-600 font-black">{totalDebitSum.toLocaleString()} ر.ي</td>
+                                <td className="p-4 text-center font-mono text-rose-600 font-black">{totalCreditSum.toLocaleString()} ر.ي</td>
+                              </tr>
+                            </>
+                          );
+                        })()}
                       </tbody>
                     </table>
                   </div>
@@ -5586,18 +6158,23 @@ export default function SuppliersView({
                     <div className="space-y-2 max-h-32 overflow-y-auto p-1">
                       {journalForm.lines.map((line, idx) => (
                         <div key={idx} className="grid grid-cols-12 gap-1.5 items-center">
-                          <input
-                            type="text"
+                          <select
                             required
-                            placeholder="اسم الحساب..."
                             value={line.account}
                             onChange={(e) => {
                               const newLines = [...journalForm.lines];
                               newLines[idx].account = e.target.value;
                               setJournalForm({ ...journalForm, lines: newLines });
                             }}
-                            className="col-span-4 bg-slate-50 border border-slate-200 px-2 py-1.5 rounded-lg text-xs"
-                          />
+                            className="col-span-4 bg-slate-50 border border-slate-200 px-1.5 py-1.5 rounded-lg text-[10px] font-bold text-slate-700 focus:outline-hidden"
+                          >
+                            <option value="">-- الحساب الفرعي * --</option>
+                            {getFullChartOfAccounts().filter(acc => acc.isLeaf).map(acc => (
+                              <option key={acc.code} value={`${acc.code} - ${acc.name}`}>
+                                {acc.code} - {acc.name}
+                              </option>
+                            ))}
+                          </select>
                           <select
                             value={line.costCenter || ''}
                             onChange={(e) => {

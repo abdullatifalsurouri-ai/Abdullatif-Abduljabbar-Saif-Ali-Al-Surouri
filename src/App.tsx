@@ -555,19 +555,8 @@ export default function App() {
                   }
                 };
 
-                const isIframe = typeof window !== 'undefined' && window.self !== window.top;
-                if (isIframe) {
-                  showDailyViaSW();
-                } else {
-                  try {
-                    new Notification('تنبيه المستودع اليومي 📦', {
-                      body: 'تنبيه: لم يتم تسجيل أي حركة صادر أو وارد خلال هذا اليوم في المستودع حتى الآن. يرجى مراجعة المخزون والعمليات اليومية.',
-                    });
-                  } catch (e) {
-                    console.warn('Daily notification constructor failed, trying service worker:', e);
-                    showDailyViaSW();
-                  }
-                }
+                // Always use Service Worker registration to trigger notification safely
+                showDailyViaSW();
               }
             } catch (permErr) {
               console.warn('Failed checking permissions or showing daily notification inside iframe:', permErr);
@@ -1662,7 +1651,21 @@ export default function App() {
         return null;
       case 'report':
         if (currentUser?.role !== 'Owner' && currentUser.permissions.reports === 'none') return <div className="text-center py-12 text-slate-400 font-bold">🔒 عذراً، التقارير غير متاحة لحسابك الحالي.</div>;
-        return <ReportView items={items} movements={movements} suppliers={suppliers} warehouses={warehouses} invoiceSettings={invoiceSettings} currentUser={currentUser} />;
+        return (
+          <ReportView
+            items={items}
+            movements={movements}
+            suppliers={suppliers}
+            warehouses={warehouses}
+            invoiceSettings={invoiceSettings}
+            currentUser={currentUser}
+            journalEntries={journalEntries}
+            customers={customers}
+            employees={employees}
+            treasuryBalance={treasuryBalance}
+            bankBalance={bankBalance}
+          />
+        );
       case 'print':
         if (currentUser?.role !== 'Owner' && currentUser.permissions.reports === 'none') return <div className="text-center py-12 text-slate-400 font-bold">🔒 عذراً، السندات غير متاحة لحسابك الحالي.</div>;
         return <PrintView movements={movements} items={items} warehouses={warehouses} invoiceSettings={invoiceSettings} currentUser={currentUser} />;
@@ -2650,20 +2653,8 @@ export default function App() {
                                 }
                               };
 
-                              const isIframe = typeof window !== 'undefined' && window.self !== window.top;
-                              if (isIframe) {
-                                showWelcomeViaSW();
-                              } else {
-                                try {
-                                  new Notification('نظام المدى الذكي WMS 🔔', {
-                                    body: 'تم تفعيل التنبيهات الفورية وبث المخزون الخلفي بنجاح.',
-                                    icon: '/icon.svg'
-                                  });
-                                } catch (e) {
-                                  console.warn('Notification construction failed, trying service worker:', e);
-                                  showWelcomeViaSW();
-                                }
-                              }
+                              // Always use Service Worker registration to trigger notification safely
+                              showWelcomeViaSW();
                             }
                           }).catch(err => {
                             console.warn('Notification permission request rejected:', err);
